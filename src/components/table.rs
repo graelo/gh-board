@@ -16,9 +16,14 @@ pub struct Column {
     /// Display header text.
     pub header: String,
     /// Default width as a fraction of total width (0.0..1.0).
+    /// Ignored when `fixed_width` is set.
     pub default_width_pct: f32,
     /// Text alignment for this column.
     pub align: TextAlign,
+    /// Fixed character width. When set, the column always uses this width
+    /// instead of scaling proportionally. Remaining space goes to flexible
+    /// columns.
+    pub fixed_width: Option<u16>,
 }
 
 /// A single styled fragment within a cell.
@@ -412,7 +417,12 @@ fn compute_column_widths(
 ) -> Vec<u16> {
     let mut widths: Vec<Option<u16>> = columns
         .iter()
-        .map(|c| overrides.and_then(|o| o.get(&c.id)).copied())
+        .map(|c| {
+            overrides
+                .and_then(|o| o.get(&c.id))
+                .copied()
+                .or(c.fixed_width)
+        })
         .collect();
 
     let fixed_total: u16 = widths.iter().filter_map(|w| *w).sum();
@@ -455,24 +465,28 @@ mod tests {
                 header: "State".to_owned(),
                 default_width_pct: 0.08,
                 align: TextAlign::Left,
+                fixed_width: None,
             },
             Column {
                 id: "title".to_owned(),
                 header: "Title".to_owned(),
                 default_width_pct: 0.50,
                 align: TextAlign::Left,
+                fixed_width: None,
             },
             Column {
                 id: "author".to_owned(),
                 header: "Author".to_owned(),
                 default_width_pct: 0.15,
                 align: TextAlign::Left,
+                fixed_width: None,
             },
             Column {
                 id: "updated".to_owned(),
                 header: "Updated".to_owned(),
                 default_width_pct: 0.12,
                 align: TextAlign::Right,
+                fixed_width: None,
             },
         ]
     }

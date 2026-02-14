@@ -34,36 +34,42 @@ fn notification_columns() -> Vec<Column> {
             header: " ".to_owned(),
             default_width_pct: 0.03,
             align: TextAlign::Center,
+            fixed_width: Some(3),
         },
         Column {
             id: "type".to_owned(),
             header: "Type".to_owned(),
             default_width_pct: 0.05,
             align: TextAlign::Center,
+            fixed_width: Some(6),
         },
         Column {
             id: "title".to_owned(),
             header: "Title".to_owned(),
             default_width_pct: 0.38,
             align: TextAlign::Left,
+            fixed_width: None,
         },
         Column {
             id: "repo".to_owned(),
             header: "Repo".to_owned(),
             default_width_pct: 0.20,
             align: TextAlign::Left,
+            fixed_width: None,
         },
         Column {
             id: "reason".to_owned(),
             header: "Reason".to_owned(),
             default_width_pct: 0.14,
             align: TextAlign::Left,
+            fixed_width: None,
         },
         Column {
             id: "updated".to_owned(),
             header: "Updated".to_owned(),
             default_width_pct: 0.12,
             align: TextAlign::Right,
+            fixed_width: Some(8),
         },
     ]
 }

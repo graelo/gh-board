@@ -186,30 +186,35 @@ fn branch_columns(icons: &ResolvedIcons) -> Vec<Column> {
             header: " ".to_owned(),
             default_width_pct: 0.03,
             align: TextAlign::Center,
+            fixed_width: Some(3),
         },
         Column {
             id: "name".to_owned(),
             header: "Branch".to_owned(),
             default_width_pct: 0.25,
             align: TextAlign::Left,
+            fixed_width: None,
         },
         Column {
             id: "message".to_owned(),
             header: "Last Commit".to_owned(),
             default_width_pct: 0.35,
             align: TextAlign::Left,
+            fixed_width: None,
         },
         Column {
             id: "ahead_behind".to_owned(),
             header: format!("{}/{}", icons.branch_ahead, icons.branch_behind),
             default_width_pct: 0.10,
             align: TextAlign::Center,
+            fixed_width: Some(10),
         },
         Column {
             id: "updated".to_owned(),
             header: "Updated".to_owned(),
             default_width_pct: 0.12,
             align: TextAlign::Right,
+            fixed_width: Some(8),
         },
     ]
 }

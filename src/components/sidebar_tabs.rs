@@ -65,7 +65,7 @@ pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<
     lines.push(StyledLine::from_spans(vec![
         StyledSpan::bold("Branch: ", theme.text_secondary),
         StyledSpan::text(&pr.head_ref, theme.text_primary),
-        StyledSpan::text(" \u{2192} ", theme.text_faint),
+        StyledSpan::text(format!(" {} ", theme.icons.branch_arrow), theme.text_faint),
         StyledSpan::text(&pr.base_ref, theme.text_primary),
     ]));
 
@@ -297,28 +297,21 @@ fn check_status_icon(
     status: Option<CheckStatus>,
     conclusion: Option<CheckConclusion>,
     theme: &ResolvedTheme,
-) -> (&'static str, AppColor) {
+) -> (String, AppColor) {
+    let icons = &theme.icons;
     match (status, conclusion) {
         (Some(CheckStatus::Completed), Some(CheckConclusion::Success)) => {
-            ("\u{2714}", theme.text_success) // ✔
+            (icons.check_success.clone(), theme.text_success)
         }
         (
             Some(CheckStatus::Completed),
             Some(CheckConclusion::Failure | CheckConclusion::TimedOut),
-        ) => {
-            ("\u{2716}", theme.text_error) // ✖
-        }
-        (
-            Some(CheckStatus::Completed),
-            Some(CheckConclusion::Neutral | CheckConclusion::Skipped),
-        ) => {
-            ("\u{25cb}", theme.text_faint) // ○
-        }
+        ) => (icons.check_failure.clone(), theme.text_error),
         (Some(CheckStatus::Completed), Some(CheckConclusion::Cancelled))
         | (Some(CheckStatus::InProgress | CheckStatus::Queued), _) => {
-            ("\u{25cb}", theme.text_warning) // ○
+            (icons.check_pending.clone(), theme.text_warning)
         }
-        _ => ("\u{25cb}", theme.text_faint),
+        _ => (icons.check_pending.clone(), theme.text_faint),
     }
 }
 

@@ -11,6 +11,7 @@ use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
+use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 
 // ---------------------------------------------------------------------------
@@ -175,7 +176,7 @@ fn checkout_branch(repo_path: &Path, branch: &str) -> Result<String, String> {
 // T080: Table columns and row conversion
 // ---------------------------------------------------------------------------
 
-fn branch_columns() -> Vec<Column> {
+fn branch_columns(icons: &ResolvedIcons) -> Vec<Column> {
     vec![
         Column {
             id: "current".to_owned(),
@@ -197,7 +198,7 @@ fn branch_columns() -> Vec<Column> {
         },
         Column {
             id: "ahead_behind".to_owned(),
-            header: "\u{2191}/\u{2193}".to_owned(),
+            header: format!("{}/{}", icons.branch_ahead, icons.branch_behind),
             default_width_pct: 0.10,
             align: TextAlign::Center,
         },
@@ -233,10 +234,14 @@ fn branch_to_row(branch: &Branch, theme: &ResolvedTheme, date_format: &str) -> R
         Cell::colored(&branch.last_commit_message, theme.text_secondary),
     );
 
+    let icons = &theme.icons;
     let ab_text = if branch.ahead == 0 && branch.behind == 0 {
         String::new()
     } else {
-        format!("\u{2191}{} \u{2193}{}", branch.ahead, branch.behind)
+        format!(
+            "{}{} {}{}",
+            icons.branch_ahead, branch.ahead, icons.branch_behind, branch.behind
+        )
     };
     row.insert(
         "ahead_behind".to_owned(),
@@ -482,7 +487,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     });
 
     // Build table.
-    let columns = branch_columns();
+    let columns = branch_columns(&theme.icons);
     let rows: Vec<Row> = branches
         .iter()
         .map(|b| branch_to_row(b, &theme, date_format))
@@ -510,6 +515,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         border_color: Some(theme.border_faint),
         show_separator: props.show_separator,
         empty_message: Some("No branches found"),
+        subtitle_column: None,
     });
 
     let tabs = vec![Tab {
@@ -607,7 +613,8 @@ mod tests {
 
     #[test]
     fn branch_columns_has_five_entries() {
-        let cols = branch_columns();
+        let theme = test_theme();
+        let cols = branch_columns(&theme.icons);
         assert_eq!(cols.len(), 5);
         assert_eq!(cols[0].id, "current");
         assert_eq!(cols[1].id, "name");
@@ -621,7 +628,7 @@ mod tests {
         let theme = test_theme();
         let branch = sample_branch("main", true);
         let row = branch_to_row(&branch, &theme, "relative");
-        assert_eq!(row.get("current").unwrap().text, "*");
+        assert_eq!(row.get("current").unwrap().text(), "*");
     }
 
     #[test]
@@ -629,7 +636,7 @@ mod tests {
         let theme = test_theme();
         let branch = sample_branch("feature", false);
         let row = branch_to_row(&branch, &theme, "relative");
-        assert_eq!(row.get("current").unwrap().text, " ");
+        assert_eq!(row.get("current").unwrap().text(), " ");
     }
 
     #[test]
@@ -637,7 +644,7 @@ mod tests {
         let theme = test_theme();
         let branch = sample_branch("feature-xyz", false);
         let row = branch_to_row(&branch, &theme, "relative");
-        assert_eq!(row.get("name").unwrap().text, "feature-xyz");
+        assert_eq!(row.get("name").unwrap().text(), "feature-xyz");
     }
 
     #[test]
@@ -645,7 +652,7 @@ mod tests {
         let theme = test_theme();
         let branch = sample_branch("dev", false);
         let row = branch_to_row(&branch, &theme, "relative");
-        let ab = &row.get("ahead_behind").unwrap().text;
+        let ab = &row.get("ahead_behind").unwrap().text();
         assert!(ab.contains('2'), "should contain ahead count");
         assert!(ab.contains('1'), "should contain behind count");
     }
@@ -657,7 +664,7 @@ mod tests {
         branch.ahead = 0;
         branch.behind = 0;
         let row = branch_to_row(&branch, &theme, "relative");
-        assert_eq!(row.get("ahead_behind").unwrap().text, "");
+        assert_eq!(row.get("ahead_behind").unwrap().text(), "");
     }
 
     #[test]
@@ -666,7 +673,7 @@ mod tests {
         let mut branch = sample_branch("fix", false);
         branch.last_commit_message = "fix: resolve bug".to_owned();
         let row = branch_to_row(&branch, &theme, "relative");
-        assert_eq!(row.get("message").unwrap().text, "fix: resolve bug");
+        assert_eq!(row.get("message").unwrap().text(), "fix: resolve bug");
     }
 
     #[test]

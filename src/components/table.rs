@@ -21,37 +21,62 @@ pub struct Column {
     pub align: TextAlign,
 }
 
-/// A single cell value to display.
+/// A single styled fragment within a cell.
 #[derive(Debug, Clone)]
-pub struct Cell {
+pub struct Span {
     pub text: String,
     pub color: Option<AppColor>,
     pub bold: bool,
 }
 
+/// A cell value composed of one or more styled spans.
+#[derive(Debug, Clone)]
+pub struct Cell {
+    pub spans: Vec<Span>,
+}
+
 impl Cell {
     pub fn plain(text: impl Into<String>) -> Self {
         Self {
-            text: text.into(),
-            color: None,
-            bold: false,
+            spans: vec![Span {
+                text: text.into(),
+                color: None,
+                bold: false,
+            }],
         }
     }
 
     pub fn colored(text: impl Into<String>, color: AppColor) -> Self {
         Self {
-            text: text.into(),
-            color: Some(color),
-            bold: false,
+            spans: vec![Span {
+                text: text.into(),
+                color: Some(color),
+                bold: false,
+            }],
         }
     }
 
     pub fn bold(text: impl Into<String>) -> Self {
         Self {
-            text: text.into(),
-            color: None,
-            bold: true,
+            spans: vec![Span {
+                text: text.into(),
+                color: None,
+                bold: true,
+            }],
         }
+    }
+
+    pub fn from_spans(spans: Vec<Span>) -> Self {
+        Self { spans }
+    }
+
+    /// Concatenate all span texts into a single string (for filtering).
+    pub fn text(&self) -> String {
+        let mut s = String::new();
+        for span in &self.spans {
+            s.push_str(&span.text);
+        }
+        s
     }
 }
 
@@ -85,12 +110,18 @@ pub struct RenderedRow {
     pub key: usize,
     pub bg: Option<Color>,
     pub cells: Vec<RenderedCell>,
+    /// Optional subtitle line rendered below the cells (full row width).
+    pub subtitle: Option<RenderedCell>,
 }
 
-pub struct RenderedCell {
+pub struct RenderedSpan {
     pub text: String,
     pub fg: Color,
     pub weight: Weight,
+}
+
+pub struct RenderedCell {
+    pub spans: Vec<RenderedSpan>,
     pub width: u32,
     pub align: TextAlign,
 }
@@ -112,6 +143,8 @@ pub struct TableBuildConfig<'a> {
     pub show_separator: bool,
     /// Message to show when rows are empty.
     pub empty_message: Option<&'a str>,
+    /// Column ID whose cell is extracted as a subtitle line below the row.
+    pub subtitle_column: Option<&'a str>,
 }
 
 impl RenderedTable {
@@ -162,6 +195,8 @@ impl RenderedTable {
             &[]
         };
 
+        let subtitle_column = cfg.subtitle_column;
+
         let body_rows: Vec<RenderedRow> = visible_slice
             .iter()
             .enumerate()
@@ -175,29 +210,41 @@ impl RenderedTable {
                     .zip(col_widths.iter())
                     .map(|(col, &w)| {
                         let cell = row.get(&col.id);
-                        let text = cell.map_or_else(String::new, |c| c.text.clone());
-                        let fg = cell
-                            .and_then(|c| c.color)
-                            .map_or(Color::Reset, |c| c.to_crossterm_color(depth));
-                        let weight = if cell.is_some_and(|c| c.bold) {
-                            Weight::Bold
-                        } else {
-                            Weight::Normal
-                        };
+                        let spans = cell.map_or_else(
+                            || {
+                                vec![RenderedSpan {
+                                    text: String::new(),
+                                    fg: Color::Reset,
+                                    weight: Weight::Normal,
+                                }]
+                            },
+                            |c| render_spans(&c.spans, depth),
+                        );
                         RenderedCell {
-                            text,
-                            fg,
-                            weight,
+                            spans,
                             width: u32::from(w),
                             align: col.align,
                         }
                     })
                     .collect();
 
+                // Extract subtitle cell if configured.
+                let subtitle = subtitle_column.and_then(|col_id| {
+                    row.get(col_id).map(|cell| {
+                        let spans = render_spans(&cell.spans, depth);
+                        RenderedCell {
+                            spans,
+                            width: u32::from(total_width),
+                            align: TextAlign::Left,
+                        }
+                    })
+                });
+
                 RenderedRow {
                     key: absolute_idx,
                     bg,
                     cells,
+                    subtitle,
                 }
             })
             .collect();
@@ -271,17 +318,43 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                 }
             }))
             #(table.body_rows.into_iter().map(|row| {
+                let subtitle_elem = row.subtitle.map(|sub| {
+                    let content: String = sub.spans.iter().map(|s| s.text.as_str()).collect();
+                    let fg = sub.spans.first().map_or(Color::Reset, |s| s.fg);
+                    let weight = sub.spans.first().map_or(Weight::Normal, |s| s.weight);
+                    (content, fg, weight, sub.width)
+                });
                 element! {
-                    View(key: row.key, background_color: row.bg) {
-                        #(row.cells.into_iter().enumerate().map(|(ci, cell)| {
+                    View(key: row.key, flex_direction: FlexDirection::Column, background_color: row.bg) {
+                        // Main cells line
+                        View(flex_direction: FlexDirection::Row) {
+                            #(row.cells.into_iter().enumerate().map(|(ci, cell)| {
+                                // For single-span cells, render directly; for multi-span, concatenate.
+                                let content: String = cell.spans.iter().map(|s| s.text.as_str()).collect();
+                                let fg = cell.spans.first().map_or(Color::Reset, |s| s.fg);
+                                let weight = cell.spans.first().map_or(Weight::Normal, |s| s.weight);
+                                element! {
+                                    View(key: ci, width: cell.width) {
+                                        Text(
+                                            content,
+                                            color: fg,
+                                            weight,
+                                            wrap: TextWrap::NoWrap,
+                                            align: cell.align,
+                                        )
+                                    }
+                                }
+                            }))
+                        }
+                        // Subtitle line (if present)
+                        #(subtitle_elem.into_iter().map(|(content, fg, weight, width)| {
                             element! {
-                                View(key: ci, width: cell.width) {
+                                View(width, padding_left: 4u32) {
                                     Text(
-                                        content: cell.text,
-                                        color: cell.fg,
-                                        weight: cell.weight,
+                                        content,
+                                        color: fg,
+                                        weight,
                                         wrap: TextWrap::NoWrap,
-                                        align: cell.align,
                                     )
                                 }
                             }
@@ -297,6 +370,18 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
 // ---------------------------------------------------------------------------
 // Column width computation
 // ---------------------------------------------------------------------------
+
+/// Convert `Span` values to `RenderedSpan` values.
+fn render_spans(spans: &[Span], depth: ColorDepth) -> Vec<RenderedSpan> {
+    spans
+        .iter()
+        .map(|s| RenderedSpan {
+            text: s.text.clone(),
+            fg: s.color.map_or(Color::Reset, |c| c.to_crossterm_color(depth)),
+            weight: if s.bold { Weight::Bold } else { Weight::Normal },
+        })
+        .collect()
+}
 
 fn compute_column_widths(
     columns: &[&Column],

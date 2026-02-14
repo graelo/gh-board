@@ -90,13 +90,17 @@ fn issue_to_row(issue: &Issue, theme: &ResolvedTheme, date_format: &str) -> Row 
     let mut row = HashMap::new();
 
     // State indicator
+    let icons = &theme.icons;
     let (state_icon, state_color) = match issue.state {
-        crate::github::types::IssueState::Open => ("\u{25cf}", theme.text_success), // ● open
+        crate::github::types::IssueState::Open => (&icons.issue_open, theme.text_success),
         crate::github::types::IssueState::Closed | crate::github::types::IssueState::Unknown => {
-            ("\u{2714}", theme.text_actor) // ✔ closed
+            (&icons.issue_closed, theme.text_actor)
         }
     };
-    row.insert("state".to_owned(), Cell::colored(state_icon, state_color));
+    row.insert(
+        "state".to_owned(),
+        Cell::colored(state_icon.clone(), state_color),
+    );
 
     // Title
     row.insert("title".to_owned(), Cell::plain(&issue.title));
@@ -532,6 +536,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         } else {
             Some("No issues match this filter")
         },
+        subtitle_column: None,
     });
 
     let rendered_sidebar = if is_preview_open {

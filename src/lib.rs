@@ -10,6 +10,7 @@ pub mod components;
 pub mod config;
 pub mod filter;
 pub mod github;
+pub mod icons;
 pub mod markdown;
 pub mod theme;
 pub mod util;

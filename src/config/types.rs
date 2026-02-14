@@ -351,26 +351,55 @@ pub struct SyntaxColors {
 // Icons
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct IconConfig {
-    pub newcontributor: String,
-    pub contributor: String,
-    pub collaborator: String,
-    pub member: String,
-    pub owner: String,
-    pub unknownrole: String,
-}
-
-impl Default for IconConfig {
-    fn default() -> Self {
-        Self {
-            newcontributor: "\u{2728}".to_owned(), // ✨
-            contributor: "\u{2713}".to_owned(),    // ✓
-            collaborator: "\u{25c6}".to_owned(),   // ◆
-            member: "\u{25cf}".to_owned(),         // ●
-            owner: "\u{2605}".to_owned(),          // ★
-            unknownrole: "?".to_owned(),
-        }
-    }
+    pub preset: Option<String>,
+    // PR state
+    pub pr_open: Option<String>,
+    pub pr_closed: Option<String>,
+    pub pr_merged: Option<String>,
+    pub pr_draft: Option<String>,
+    // PR column headers
+    pub header_state: Option<String>,
+    pub header_comments: Option<String>,
+    pub header_review: Option<String>,
+    pub header_ci: Option<String>,
+    pub header_lines: Option<String>,
+    pub header_time: Option<String>,
+    // Review decision
+    pub review_approved: Option<String>,
+    pub review_changes: Option<String>,
+    pub review_required: Option<String>,
+    pub review_none: Option<String>,
+    // CI status
+    pub ci_success: Option<String>,
+    pub ci_failure: Option<String>,
+    pub ci_pending: Option<String>,
+    pub ci_none: Option<String>,
+    // Issue state
+    pub issue_open: Option<String>,
+    pub issue_closed: Option<String>,
+    // Notifications
+    pub notif_unread: Option<String>,
+    pub notif_type_pr: Option<String>,
+    pub notif_type_issue: Option<String>,
+    pub notif_type_release: Option<String>,
+    pub notif_type_discussion: Option<String>,
+    // Branch
+    pub branch_ahead: Option<String>,
+    pub branch_behind: Option<String>,
+    // Sidebar checks
+    pub check_success: Option<String>,
+    pub check_failure: Option<String>,
+    pub check_pending: Option<String>,
+    // Sidebar decorative
+    pub branch_arrow: Option<String>,
+    // Author roles
+    pub role_newcontributor: Option<String>,
+    pub role_contributor: Option<String>,
+    pub role_collaborator: Option<String>,
+    pub role_member: Option<String>,
+    pub role_owner: Option<String>,
+    pub role_unknown: Option<String>,
 }

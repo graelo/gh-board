@@ -16,7 +16,7 @@ pub(crate) fn filter_rows(rows: &[Row], query: &str) -> Vec<usize> {
         .enumerate()
         .filter(|(_, row)| {
             row.values()
-                .any(|cell| cell.text.to_lowercase().contains(&lower))
+                .any(|cell| cell.text().to_lowercase().contains(&lower))
         })
         .map(|(i, _)| i)
         .collect()
@@ -136,7 +136,7 @@ pub(crate) fn filter_notifications(
                 let lower = parsed.text.to_lowercase();
                 let row_matches = rows.get(*i).is_some_and(|row| {
                     row.values()
-                        .any(|cell| cell.text.to_lowercase().contains(&lower))
+                        .any(|cell| cell.text().to_lowercase().contains(&lower))
                 });
                 if !row_matches {
                     return false;

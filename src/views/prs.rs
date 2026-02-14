@@ -12,7 +12,7 @@ use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarTab};
 use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
-    Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
+    Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::types::PrSection;
@@ -21,143 +21,123 @@ use crate::github::graphql::{self, PrDetail};
 use crate::github::rate_limit;
 use crate::github::types::PullRequest;
 use crate::markdown::renderer::{self, StyledLine};
+use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 
 // ---------------------------------------------------------------------------
 // PR-specific column definitions (FR-011)
 // ---------------------------------------------------------------------------
 
-fn pr_columns() -> Vec<Column> {
+fn pr_columns(icons: &ResolvedIcons) -> Vec<Column> {
     vec![
         Column {
             id: "state".to_owned(),
-            header: " ".to_owned(),
+            header: icons.header_state.clone(),
             default_width_pct: 0.03,
             align: TextAlign::Center,
         },
         Column {
-            id: "title".to_owned(),
+            id: "info".to_owned(),
             header: "Title".to_owned(),
-            default_width_pct: 0.30,
+            default_width_pct: 0.35,
             align: TextAlign::Left,
-        },
-        Column {
-            id: "repo".to_owned(),
-            header: "Repo".to_owned(),
-            default_width_pct: 0.14,
-            align: TextAlign::Left,
-        },
-        Column {
-            id: "author".to_owned(),
-            header: "Author".to_owned(),
-            default_width_pct: 0.10,
-            align: TextAlign::Left,
-        },
-        Column {
-            id: "base".to_owned(),
-            header: "Base".to_owned(),
-            default_width_pct: 0.08,
-            align: TextAlign::Left,
-        },
-        Column {
-            id: "review".to_owned(),
-            header: "Review".to_owned(),
-            default_width_pct: 0.08,
-            align: TextAlign::Center,
-        },
-        Column {
-            id: "ci".to_owned(),
-            header: "CI".to_owned(),
-            default_width_pct: 0.05,
-            align: TextAlign::Center,
-        },
-        Column {
-            id: "lines".to_owned(),
-            header: "+/-".to_owned(),
-            default_width_pct: 0.07,
-            align: TextAlign::Right,
         },
         Column {
             id: "comments".to_owned(),
-            header: "Cmt".to_owned(),
+            header: icons.header_comments.clone(),
             default_width_pct: 0.04,
             align: TextAlign::Right,
         },
         Column {
+            id: "review".to_owned(),
+            header: icons.header_review.clone(),
+            default_width_pct: 0.04,
+            align: TextAlign::Center,
+        },
+        Column {
+            id: "ci".to_owned(),
+            header: icons.header_ci.clone(),
+            default_width_pct: 0.04,
+            align: TextAlign::Center,
+        },
+        Column {
+            id: "lines".to_owned(),
+            header: icons.header_lines.clone(),
+            default_width_pct: 0.10,
+            align: TextAlign::Right,
+        },
+        Column {
             id: "updated".to_owned(),
-            header: "Updated".to_owned(),
-            default_width_pct: 0.11,
+            header: icons.header_time.clone(),
+            default_width_pct: 0.06,
+            align: TextAlign::Right,
+        },
+        Column {
+            id: "created".to_owned(),
+            header: icons.header_time.clone(),
+            default_width_pct: 0.06,
             align: TextAlign::Right,
         },
     ]
 }
 
 /// Convert a `PullRequest` into a table `Row`.
+#[allow(clippy::too_many_lines)]
 fn pr_to_row(pr: &PullRequest, theme: &ResolvedTheme, date_format: &str) -> Row {
     let mut row = HashMap::new();
 
     // State indicator
+    let icons = &theme.icons;
     let (state_icon, state_color) = if pr.is_draft {
-        ("\u{25cb}", theme.text_faint) // ○ draft
+        (&icons.pr_draft, theme.text_faint)
     } else {
         match pr.state {
-            crate::github::types::PrState::Open => ("\u{25cf}", theme.text_success), // ● open
-            crate::github::types::PrState::Closed => ("\u{2716}", theme.text_error), // ✖ closed
-            crate::github::types::PrState::Merged => ("\u{2714}", theme.text_actor), // ✔ merged
+            crate::github::types::PrState::Open => (&icons.pr_open, theme.text_success),
+            crate::github::types::PrState::Closed => (&icons.pr_closed, theme.text_error),
+            crate::github::types::PrState::Merged => (&icons.pr_merged, theme.text_actor),
         }
     };
-    row.insert("state".to_owned(), Cell::colored(state_icon, state_color));
+    row.insert(
+        "state".to_owned(),
+        Cell::colored(state_icon.clone(), state_color),
+    );
 
-    // Title
-    row.insert("title".to_owned(), Cell::plain(&pr.title));
-
-    // Repo
+    // Info line: repo/name #N by @author
     let repo_name = pr
         .repo
         .as_ref()
         .map_or_else(String::new, crate::github::types::RepoRef::full_name);
-    row.insert(
-        "repo".to_owned(),
-        Cell::colored(repo_name, theme.text_secondary),
-    );
-
-    // Author
     let author = pr.author.as_ref().map_or("unknown", |a| a.login.as_str());
-    row.insert("author".to_owned(), Cell::colored(author, theme.text_actor));
-
-    // Base branch
     row.insert(
-        "base".to_owned(),
-        Cell::colored(&pr.base_ref, theme.text_faint),
+        "info".to_owned(),
+        Cell::from_spans(vec![
+            Span {
+                text: repo_name,
+                color: Some(theme.text_secondary),
+                bold: false,
+            },
+            Span {
+                text: format!(" #{}", pr.number),
+                color: Some(theme.text_primary),
+                bold: false,
+            },
+            Span {
+                text: " by ".to_owned(),
+                color: Some(theme.text_faint),
+                bold: false,
+            },
+            Span {
+                text: format!("@{author}"),
+                color: Some(theme.text_actor),
+                bold: false,
+            },
+        ]),
     );
 
-    // Review status
-    let (review_text, review_color) = match pr.review_decision {
-        Some(crate::github::types::ReviewDecision::Approved) => {
-            ("\u{2714}", theme.text_success) // ✔
-        }
-        Some(crate::github::types::ReviewDecision::ChangesRequested) => {
-            ("\u{2716}", theme.text_warning) // ✖
-        }
-        Some(crate::github::types::ReviewDecision::ReviewRequired) => {
-            ("\u{25cb}", theme.text_faint) // ○
-        }
-        None => ("-", theme.text_faint),
-    };
+    // Subtitle: PR title (extracted by subtitle_column)
     row.insert(
-        "review".to_owned(),
-        Cell::colored(review_text, review_color),
-    );
-
-    // CI status (aggregate from check runs)
-    let (ci_text, ci_color) = aggregate_ci_status(&pr.check_runs, theme);
-    row.insert("ci".to_owned(), Cell::colored(ci_text, ci_color));
-
-    // Lines changed
-    let lines = format!("+{} -{}", pr.additions, pr.deletions);
-    row.insert(
-        "lines".to_owned(),
-        Cell::colored(lines, theme.text_secondary),
+        "subtitle".to_owned(),
+        Cell::colored(&pr.title, theme.text_primary),
     );
 
     // Comments
@@ -171,11 +151,62 @@ fn pr_to_row(pr: &PullRequest, theme: &ResolvedTheme, date_format: &str) -> Row 
         Cell::colored(comments, theme.text_secondary),
     );
 
+    // Review status
+    let (review_text, review_color) = match pr.review_decision {
+        Some(crate::github::types::ReviewDecision::Approved) => {
+            (&icons.review_approved, theme.text_success)
+        }
+        Some(crate::github::types::ReviewDecision::ChangesRequested) => {
+            (&icons.review_changes, theme.text_warning)
+        }
+        Some(crate::github::types::ReviewDecision::ReviewRequired) => {
+            (&icons.review_required, theme.text_faint)
+        }
+        None => (&icons.review_none, theme.text_faint),
+    };
+    row.insert(
+        "review".to_owned(),
+        Cell::colored(review_text.clone(), review_color),
+    );
+
+    // CI status (aggregate from check runs)
+    let (ci_text, ci_color) = aggregate_ci_status(&pr.check_runs, theme);
+    row.insert("ci".to_owned(), Cell::colored(ci_text, ci_color));
+
+    // Lines changed: green/red like gh-dash
+    row.insert(
+        "lines".to_owned(),
+        Cell::from_spans(vec![
+            Span {
+                text: format!("+{}", pr.additions),
+                color: Some(theme.text_success),
+                bold: false,
+            },
+            Span {
+                text: " ".to_owned(),
+                color: None,
+                bold: false,
+            },
+            Span {
+                text: format!("-{}", pr.deletions),
+                color: Some(theme.text_error),
+                bold: false,
+            },
+        ]),
+    );
+
     // Updated
     let updated = crate::util::format_date(&pr.updated_at, date_format);
     row.insert(
         "updated".to_owned(),
         Cell::colored(updated, theme.text_faint),
+    );
+
+    // Created
+    let created = crate::util::format_date(&pr.created_at, date_format);
+    row.insert(
+        "created".to_owned(),
+        Cell::colored(created, theme.text_faint),
     );
 
     row
@@ -185,11 +216,13 @@ fn pr_to_row(pr: &PullRequest, theme: &ResolvedTheme, date_format: &str) -> Row 
 fn aggregate_ci_status(
     checks: &[crate::github::types::CheckRun],
     theme: &ResolvedTheme,
-) -> (&'static str, AppColor) {
+) -> (String, AppColor) {
     use crate::github::types::{CheckConclusion, CheckStatus};
 
+    let icons = &theme.icons;
+
     if checks.is_empty() {
-        return ("-", theme.text_faint);
+        return (icons.ci_none.clone(), theme.text_faint);
     }
 
     let any_failing = checks.iter().any(|c| {
@@ -199,7 +232,7 @@ fn aggregate_ci_status(
         )
     });
     if any_failing {
-        return ("\u{2716}", theme.text_error); // ✖
+        return (icons.ci_failure.clone(), theme.text_error);
     }
 
     let any_pending = checks.iter().any(|c| {
@@ -209,10 +242,10 @@ fn aggregate_ci_status(
         ) || (matches!(c.status, Some(CheckStatus::Completed)) && c.conclusion.is_none())
     });
     if any_pending {
-        return ("\u{25cb}", theme.text_warning); // ○
+        return (icons.ci_pending.clone(), theme.text_warning);
     }
 
-    ("\u{2714}", theme.text_success) // ✔
+    (icons.ci_success.clone(), theme.text_success)
 }
 
 // ---------------------------------------------------------------------------
@@ -435,7 +468,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     };
 
     // Reserve space for tab bar (2 lines), footer (2 lines), header (1 line).
-    let visible_rows = props.height.saturating_sub(5) as usize;
+    // Each PR row occupies 2 terminal lines (info + subtitle).
+    let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
 
     // Clone octocrab for action closures.
     let octocrab_for_actions = props.octocrab.map(Arc::clone);
@@ -1002,7 +1036,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     // Current section data.
     let current_data = state_ref.sections.get(current_section_idx);
-    let columns = pr_columns();
+    let columns = pr_columns(&theme.icons);
 
     // Layout config for hidden/width overrides.
     let layout = sections_cfg
@@ -1069,6 +1103,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         } else {
             Some("No pull requests match this filter")
         },
+        subtitle_column: Some("subtitle"),
     });
 
     // Trigger detail fetch when sidebar is open and cursor changes.

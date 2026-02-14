@@ -1,5 +1,6 @@
 use crate::color::Color;
 use crate::config::types::Theme;
+use crate::icons::ResolvedIcons;
 
 /// Detected terminal background.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,6 +72,8 @@ pub struct ResolvedTheme {
     pub syn_punctuation: Color,
     pub syn_name: Color,
     pub syn_name_builtin: Color,
+    // Icons
+    pub icons: ResolvedIcons,
 }
 
 impl ResolvedTheme {
@@ -119,6 +122,7 @@ impl ResolvedTheme {
             syn_punctuation: syn.punctuation.unwrap_or(d.syn_punctuation),
             syn_name: syn.name.unwrap_or(d.text_primary),
             syn_name_builtin: syn.name_builtin.unwrap_or(d.syn_name_builtin),
+            icons: ResolvedIcons::resolve(&theme.icons),
         }
     }
 }

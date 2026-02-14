@@ -74,10 +74,11 @@ fn notification_to_row(
     let mut row = HashMap::new();
 
     // Unread indicator.
+    let icons = &theme.icons;
     let (unread_icon, unread_color) = if notification.unread {
-        ("\u{25cf}", theme.text_success) // ● unread
+        (icons.notif_unread.clone(), theme.text_success)
     } else {
-        (" ", theme.text_faint)
+        (" ".to_owned(), theme.text_faint)
     };
     row.insert(
         "unread".to_owned(),
@@ -86,11 +87,13 @@ fn notification_to_row(
 
     // Subject type icon.
     let (type_icon, type_color) = match notification.subject_type {
-        Some(SubjectType::PullRequest) => ("\u{21c4}", theme.text_success), // ⇄
-        Some(SubjectType::Issue) => ("\u{25cb}", theme.text_warning),       // ○
-        Some(SubjectType::Release) => ("\u{25b3}", theme.text_actor),       // △
-        Some(SubjectType::Discussion) => ("\u{25a1}", theme.text_secondary), // □
-        _ => ("?", theme.text_faint),
+        Some(SubjectType::PullRequest) => (icons.notif_type_pr.clone(), theme.text_success),
+        Some(SubjectType::Issue) => (icons.notif_type_issue.clone(), theme.text_warning),
+        Some(SubjectType::Release) => (icons.notif_type_release.clone(), theme.text_actor),
+        Some(SubjectType::Discussion) => {
+            (icons.notif_type_discussion.clone(), theme.text_secondary)
+        }
+        _ => ("?".to_owned(), theme.text_faint),
     };
     row.insert("type".to_owned(), Cell::colored(type_icon, type_color));
 
@@ -540,6 +543,7 @@ pub fn NotificationsView<'a>(
         } else {
             Some("No notifications match this filter")
         },
+        subtitle_column: None,
     });
 
     let rendered_tab_bar = RenderedTabBar::build(

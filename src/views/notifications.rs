@@ -204,6 +204,10 @@ pub struct NotificationsViewProps<'a> {
     pub switch_view: Option<State<bool>>,
     /// Date format string (from `config.defaults.date_format`).
     pub date_format: Option<&'a str>,
+    /// Whether this view is the currently active (visible) one.
+    pub is_active: bool,
+    /// Auto-refetch interval in minutes (0 = disabled).
+    pub refetch_interval_minutes: u32,
 }
 
 #[component]
@@ -218,6 +222,7 @@ pub fn NotificationsView<'a>(
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let section_count = sections_cfg.len();
+    let is_active = props.is_active;
 
     let mut active_section = hooks.use_state(|| 0usize);
     let mut cursor = hooks.use_state(|| 0usize);
@@ -237,8 +242,32 @@ pub fn NotificationsView<'a>(
     });
     let mut fetch_triggered = hooks.use_state(|| false);
 
-    // Trigger data fetch on first render.
+    // Timer tick for periodic re-renders (supports auto-refetch).
+    let mut tick = hooks.use_state(|| 0u64);
+    hooks.use_future(async move {
+        loop {
+            smol::Timer::after(std::time::Duration::from_secs(60)).await;
+            tick.set(tick.get() + 1);
+        }
+    });
+
+    // Auto-refetch if interval has elapsed (only for already-visited views).
+    let refetch_interval = props.refetch_interval_minutes;
+    if fetch_triggered.get()
+        && is_active
+        && refetch_interval > 0
+        && let Some(last) = last_fetch_time.get()
+        && last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
+    {
+        fetch_triggered.set(false);
+        notif_state.set(NotificationsState {
+            sections: vec![SectionData::default(); section_count],
+        });
+    }
+
+    // Trigger data fetch on first visit to this view.
     if !fetch_triggered.get()
+        && is_active
         && !sections_cfg.is_empty()
         && let Some(octocrab) = props.octocrab
     {
@@ -322,6 +351,10 @@ pub fn NotificationsView<'a>(
                 modifiers,
                 ..
             }) if kind != KeyEventKind::Release => {
+                // Only process events when this view is active.
+                if !is_active {
+                    return;
+                }
                 // Help overlay: intercept all keys when visible.
                 if help_visible.get() {
                     if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
@@ -516,6 +549,14 @@ pub fn NotificationsView<'a>(
         }
     });
 
+    // Skip heavy rendering for inactive views (all hooks above are unconditional).
+    if !is_active {
+        return element! {
+            View(flex_direction: FlexDirection::Column)
+        }
+        .into_any();
+    }
+
     // Build tabs.
     let tabs: Vec<Tab> = sections_cfg
         .iter()
@@ -644,6 +685,7 @@ pub fn NotificationsView<'a>(
             HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }
     }
+    .into_any()
 }
 
 fn get_current_notification(

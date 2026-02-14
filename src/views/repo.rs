@@ -297,6 +297,10 @@ pub struct RepoViewProps<'a> {
     pub switch_view: Option<State<bool>>,
     pub repo_path: Option<&'a std::path::Path>,
     pub date_format: Option<&'a str>,
+    /// Whether this view is the currently active (visible) one.
+    pub is_active: bool,
+    /// Auto-refetch interval in minutes (0 = disabled).
+    pub refetch_interval_minutes: u32,
 }
 
 #[component]
@@ -307,6 +311,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let date_format = props.date_format.unwrap_or("relative");
+    let is_active = props.is_active;
 
     let mut cursor = hooks.use_state(|| 0usize);
     let mut scroll_offset = hooks.use_state(|| 0usize);
@@ -322,7 +327,27 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut branches_state = hooks.use_state(Vec::<Branch>::new);
     let mut loaded = hooks.use_state(|| false);
 
-    if !loaded.get() {
+    // Timer tick for periodic re-renders (supports auto-refetch).
+    let mut tick = hooks.use_state(|| 0u64);
+    hooks.use_future(async move {
+        loop {
+            smol::Timer::after(std::time::Duration::from_secs(60)).await;
+            tick.set(tick.get() + 1);
+        }
+    });
+
+    // Auto-refetch if interval has elapsed (only for already-visited views).
+    let refetch_interval = props.refetch_interval_minutes;
+    if loaded.get()
+        && is_active
+        && refetch_interval > 0
+        && let Some(last) = last_fetch_time.get()
+        && last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
+    {
+        loaded.set(false);
+    }
+
+    if !loaded.get() && is_active {
         loaded.set(true);
         if let Some(repo_path) = props.repo_path {
             branches_state.set(list_branches(repo_path));
@@ -344,6 +369,10 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                 modifiers,
                 ..
             }) if kind != KeyEventKind::Release => {
+                // Only process events when this view is active.
+                if !is_active {
+                    return;
+                }
                 // Help overlay: intercept all keys when visible.
                 if help_visible.get() {
                     if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
@@ -511,6 +540,14 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         }
     });
 
+    // Skip heavy rendering for inactive views (all hooks above are unconditional).
+    if !is_active {
+        return element! {
+            View(flex_direction: FlexDirection::Column)
+        }
+        .into_any();
+    }
+
     // Build table.
     let columns = branch_columns(&theme.icons);
     let rows: Vec<Row> = branches
@@ -627,6 +664,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }
     }
+    .into_any()
 }
 
 fn default_theme() -> ResolvedTheme {

@@ -111,90 +111,100 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let repo_paths = config.map(|c| &c.repo_paths);
     let date_format = config.map(|c| c.defaults.date_format.as_str());
 
-    match active_view.get() {
-        ViewKind::Prs => {
-            let sections = config.map(|c| c.pr_sections.as_slice());
-            element! {
-                View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
-                    PrsView(
-                        sections,
-                        octocrab: props.octocrab,
-                        theme,
-                        keybindings,
-                        color_depth: depth,
-                        width,
-                        height,
-                        preview_width_pct,
-                        show_section_count: show_count,
-                        show_separator,
-                        should_exit,
-                        switch_view: switch_signal,
-                        repo_paths,
-                        date_format,
-                    )
-                }
+    // All sections/paths needed simultaneously (views are always in the tree).
+    let active = active_view.get();
+    let refetch_minutes = config.map_or(10, |c| c.defaults.refetch_interval_minutes);
+    let sections_pr = config.map(|c| c.pr_sections.as_slice());
+    let sections_issue = config.map(|c| c.issues_sections.as_slice());
+    let sections_notif = config.map(|c| c.notifications_sections.as_slice());
+    let repo_path = props.repo_path;
+
+    element! {
+        View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
+            View(
+                display: if active == ViewKind::Prs { Display::Flex } else { Display::None },
+                flex_grow: 1.0,
+            ) {
+                PrsView(
+                    sections: sections_pr,
+                    octocrab: props.octocrab,
+                    theme,
+                    keybindings,
+                    color_depth: depth,
+                    width,
+                    height,
+                    preview_width_pct,
+                    show_section_count: show_count,
+                    show_separator,
+                    should_exit,
+                    switch_view: switch_signal,
+                    repo_paths,
+                    date_format,
+                    is_active: active == ViewKind::Prs,
+                    refetch_interval_minutes: refetch_minutes,
+                )
             }
-        }
-        ViewKind::Issues => {
-            let sections = config.map(|c| c.issues_sections.as_slice());
-            element! {
-                View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
-                    IssuesView(
-                        sections,
-                        octocrab: props.octocrab,
-                        theme,
-                        keybindings,
-                        color_depth: depth,
-                        width,
-                        height,
-                        preview_width_pct,
-                        show_section_count: show_count,
-                        show_separator,
-                        should_exit,
-                        switch_view: switch_signal,
-                        date_format,
-                    )
-                }
+            View(
+                display: if active == ViewKind::Issues { Display::Flex } else { Display::None },
+                flex_grow: 1.0,
+            ) {
+                IssuesView(
+                    sections: sections_issue,
+                    octocrab: props.octocrab,
+                    theme,
+                    keybindings,
+                    color_depth: depth,
+                    width,
+                    height,
+                    preview_width_pct,
+                    show_section_count: show_count,
+                    show_separator,
+                    should_exit,
+                    switch_view: switch_signal,
+                    date_format,
+                    is_active: active == ViewKind::Issues,
+                    refetch_interval_minutes: refetch_minutes,
+                )
             }
-        }
-        ViewKind::Notifications => {
-            let sections = config.map(|c| c.notifications_sections.as_slice());
-            element! {
-                View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
-                    NotificationsView(
-                        sections,
-                        octocrab: props.octocrab,
-                        theme,
-                        keybindings,
-                        color_depth: depth,
-                        width,
-                        height,
-                        show_section_count: show_count,
-                        show_separator,
-                        should_exit,
-                        switch_view: switch_signal,
-                        date_format,
-                    )
-                }
+            View(
+                display: if active == ViewKind::Notifications { Display::Flex } else { Display::None },
+                flex_grow: 1.0,
+            ) {
+                NotificationsView(
+                    sections: sections_notif,
+                    octocrab: props.octocrab,
+                    theme,
+                    keybindings,
+                    color_depth: depth,
+                    width,
+                    height,
+                    show_section_count: show_count,
+                    show_separator,
+                    should_exit,
+                    switch_view: switch_signal,
+                    date_format,
+                    is_active: active == ViewKind::Notifications,
+                    refetch_interval_minutes: refetch_minutes,
+                )
             }
-        }
-        ViewKind::Repo => {
-            let repo_path = props.repo_path;
-            element! {
-                View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
-                    RepoView(
-                        theme,
-                        keybindings,
-                        color_depth: depth,
-                        width,
-                        height,
-                        show_separator,
-                        should_exit,
-                        switch_view: switch_signal,
-                        repo_path,
-                        date_format,
-                    )
-                }
+            View(
+                display: if active == ViewKind::Repo { Display::Flex } else { Display::None },
+                flex_grow: 1.0,
+            ) {
+                RepoView(
+                    theme,
+                    keybindings,
+                    color_depth: depth,
+                    width,
+                    height,
+                    show_separator,
+                    should_exit,
+                    switch_view: switch_signal,
+                    repo_path,
+                    date_format,
+                    is_active: active == ViewKind::Repo,
+                    refetch_interval_minutes: refetch_minutes,
+                )
             }
         }
     }

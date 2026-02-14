@@ -265,6 +265,10 @@ pub struct IssuesViewProps<'a> {
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
     pub date_format: Option<&'a str>,
+    /// Whether this view is the currently active (visible) one.
+    pub is_active: bool,
+    /// Auto-refetch interval in minutes (0 = disabled).
+    pub refetch_interval_minutes: u32,
 }
 
 #[component]
@@ -276,6 +280,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let section_count = sections_cfg.len();
+    let is_active = props.is_active;
     let preview_pct = if props.preview_width_pct > 0.0 {
         props.preview_width_pct
     } else {
@@ -309,11 +314,35 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     });
     let mut fetch_triggered = hooks.use_state(|| false);
 
+    // Timer tick for periodic re-renders (supports auto-refetch).
+    let mut tick = hooks.use_state(|| 0u64);
+    hooks.use_future(async move {
+        loop {
+            smol::Timer::after(std::time::Duration::from_secs(60)).await;
+            tick.set(tick.get() + 1);
+        }
+    });
+
+    // Auto-refetch if interval has elapsed (only for already-visited views).
+    let refetch_interval = props.refetch_interval_minutes;
+    if fetch_triggered.get()
+        && is_active
+        && refetch_interval > 0
+        && let Some(last) = last_fetch_time.get()
+        && last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
+    {
+        fetch_triggered.set(false);
+        issues_state.set(IssuesState {
+            sections: vec![SectionData::default(); section_count],
+        });
+    }
+
     // Clone octocrab for use in action closures.
     let octocrab_for_actions = props.octocrab.map(Arc::clone);
 
-    // Trigger data fetch on first render.
+    // Trigger data fetch on first visit to this view.
     if !fetch_triggered.get()
+        && is_active
         && !sections_cfg.is_empty()
         && let Some(octocrab) = props.octocrab
     {
@@ -399,6 +428,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 modifiers,
                 ..
             }) if kind != KeyEventKind::Release => {
+                // Only process events when this view is active.
+                if !is_active {
+                    return;
+                }
                 // Help overlay: intercept all keys when visible.
                 if help_visible.get() {
                     if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
@@ -491,6 +524,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             _ => {}
         }
     });
+
+    // Skip heavy rendering for inactive views (all hooks above are unconditional).
+    if !is_active {
+        return element! {
+            View(flex_direction: FlexDirection::Column)
+        }
+        .into_any();
+    }
 
     // Build tabs.
     let tabs: Vec<Tab> = sections_cfg
@@ -726,6 +767,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }
     }
+    .into_any()
 }
 
 // ---------------------------------------------------------------------------

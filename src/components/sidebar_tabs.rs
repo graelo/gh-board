@@ -11,27 +11,11 @@ use crate::theme::ResolvedTheme;
 // ---------------------------------------------------------------------------
 
 /// Render the Overview tab: metadata + PR body (body rendered elsewhere as markdown).
+///
+/// Author, State, and Branch are now shown in the `SidebarMeta` pill header,
+/// so this function only renders Labels, Assignees, Lines, and a separator.
 pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine> {
     let mut lines = Vec::new();
-
-    // Author
-    let author = pr.author.as_ref().map_or("unknown", |a| a.login.as_str());
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("Author: ", theme.text_secondary),
-        StyledSpan::text(author, theme.text_actor),
-    ]));
-
-    // State
-    let state_text = match pr.state {
-        crate::github::types::PrState::Open if pr.is_draft => "Draft",
-        crate::github::types::PrState::Open => "Open",
-        crate::github::types::PrState::Closed => "Closed",
-        crate::github::types::PrState::Merged => "Merged",
-    };
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("State:  ", theme.text_secondary),
-        StyledSpan::text(state_text, theme.text_primary),
-    ]));
 
     // Labels
     if !pr.labels.is_empty() {
@@ -60,14 +44,6 @@ pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<
             StyledSpan::text(assignee_text, theme.text_actor),
         ]));
     }
-
-    // Branches
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("Branch: ", theme.text_secondary),
-        StyledSpan::text(&pr.head_ref, theme.text_primary),
-        StyledSpan::text(format!(" {} ", theme.icons.branch_arrow), theme.text_faint),
-        StyledSpan::text(&pr.base_ref, theme.text_primary),
-    ]));
 
     // Changes
     lines.push(StyledLine::from_spans(vec![

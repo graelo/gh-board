@@ -6,9 +6,9 @@ use octocrab::Octocrab;
 use serde::{Deserialize, Serialize};
 
 use crate::github::types::{
-    Actor, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType, Issue, IssueState,
-    Label, MergeableState, PrState, PullRequest, ReactionGroups, RepoRef, Review, ReviewDecision,
-    ReviewState, ReviewThread, TimelineEvent,
+    Actor, AuthorAssociation, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType,
+    Issue, IssueState, Label, MergeableState, PrState, PullRequest, ReactionGroups, RepoRef,
+    Review, ReviewDecision, ReviewState, ReviewThread, TimelineEvent,
 };
 
 // ---------------------------------------------------------------------------
@@ -39,6 +39,7 @@ query SearchPullRequests($query: String!, $first: Int!, $after: String) {
         updatedAt
         createdAt
         author { login avatarUrl }
+        authorAssociation
         labels(first: 10) { nodes { name color } }
         assignees(first: 10) { nodes { login } }
         comments { totalCount }
@@ -371,6 +372,8 @@ struct RawPullRequest {
     #[serde(rename = "createdAt")]
     created_at: DateTime<Utc>,
     author: Option<RawActor>,
+    #[serde(rename = "authorAssociation")]
+    author_association: Option<AuthorAssociation>,
     labels: Option<Connection<RawLabel>>,
     assignees: Option<Connection<RawAssignee>>,
     comments: Option<TotalCount>,
@@ -654,6 +657,7 @@ impl RawPullRequest {
             url: self.url,
             repo,
             comment_count,
+            author_association: self.author_association,
         }
     }
 }

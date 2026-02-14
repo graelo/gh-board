@@ -8,11 +8,11 @@ use iocraft::prelude::*;
 use crate::app::ViewKind;
 use crate::color::ColorDepth;
 use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
-use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;

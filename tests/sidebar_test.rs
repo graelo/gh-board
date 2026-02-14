@@ -68,6 +68,7 @@ fn test_pr() -> PullRequest {
             name: "repo".to_owned(),
         }),
         comment_count: 3,
+        author_association: None,
     }
 }
 
@@ -174,32 +175,6 @@ fn sidebar_tab_all_has_five() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn overview_metadata_includes_author() {
-    let pr = test_pr();
-    let theme = test_theme();
-    let lines = sidebar_tabs::render_overview_metadata(&pr, &theme);
-    let text: String = lines
-        .iter()
-        .flat_map(|l| l.spans.iter())
-        .map(|s| s.text.as_str())
-        .collect();
-    assert!(text.contains("testuser"), "should contain author login");
-}
-
-#[test]
-fn overview_metadata_includes_state() {
-    let pr = test_pr();
-    let theme = test_theme();
-    let lines = sidebar_tabs::render_overview_metadata(&pr, &theme);
-    let text: String = lines
-        .iter()
-        .flat_map(|l| l.spans.iter())
-        .map(|s| s.text.as_str())
-        .collect();
-    assert!(text.contains("Open"), "should contain state");
-}
-
-#[test]
 fn overview_metadata_includes_labels() {
     let pr = test_pr();
     let theme = test_theme();
@@ -213,7 +188,7 @@ fn overview_metadata_includes_labels() {
 }
 
 #[test]
-fn overview_metadata_includes_branches() {
+fn overview_metadata_includes_lines() {
     let pr = test_pr();
     let theme = test_theme();
     let lines = sidebar_tabs::render_overview_metadata(&pr, &theme);
@@ -222,11 +197,24 @@ fn overview_metadata_includes_branches() {
         .flat_map(|l| l.spans.iter())
         .map(|s| s.text.as_str())
         .collect();
-    assert!(
-        text.contains("feature-branch"),
-        "should contain head branch"
-    );
-    assert!(text.contains("main"), "should contain base branch");
+    assert!(text.contains("+10"), "should contain additions");
+    assert!(text.contains("-5"), "should contain deletions");
+}
+
+#[test]
+fn overview_metadata_excludes_author_state_branch() {
+    // Author, State, and Branch are now in SidebarMeta, not in overview metadata.
+    let pr = test_pr();
+    let theme = test_theme();
+    let lines = sidebar_tabs::render_overview_metadata(&pr, &theme);
+    let text: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.text.as_str())
+        .collect();
+    assert!(!text.contains("Author:"), "Author moved to SidebarMeta");
+    assert!(!text.contains("State:"), "State moved to SidebarMeta");
+    assert!(!text.contains("Branch:"), "Branch moved to SidebarMeta");
 }
 
 // ---------------------------------------------------------------------------

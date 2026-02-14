@@ -190,6 +190,7 @@ pub struct ColorsTheme {
     pub background: BgColors,
     pub border: BorderColors,
     pub icon: IconColors,
+    pub pill: PillColors,
     pub markdown: MarkdownColors,
 }
 
@@ -247,6 +248,31 @@ pub struct IconColors {
     pub owner: Option<Color>,
     #[serde(default, deserialize_with = "color_de::deserialize")]
     pub unknownrole: Option<Color>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct PillColors {
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub draft_bg: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub open_bg: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub closed_bg: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub merged_bg: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub fg: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub branch: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub author: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub age: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub role: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub separator: Option<Color>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -414,4 +440,7 @@ pub struct IconConfig {
     pub section_issues: Option<String>,
     pub section_notifications: Option<String>,
     pub section_repo: Option<String>,
+    // Pill caps (rounded edges)
+    pub pill_left: Option<String>,
+    pub pill_right: Option<String>,
 }

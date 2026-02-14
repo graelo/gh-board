@@ -72,6 +72,17 @@ pub struct ResolvedTheme {
     pub syn_punctuation: Color,
     pub syn_name: Color,
     pub syn_name_builtin: Color,
+    // Sidebar pill / meta
+    pub pill_draft_bg: Color,
+    pub pill_open_bg: Color,
+    pub pill_closed_bg: Color,
+    pub pill_merged_bg: Color,
+    pub pill_fg: Color,
+    pub pill_branch: Color,
+    pub pill_author: Color,
+    pub pill_age: Color,
+    pub pill_role: Color,
+    pub pill_separator: Color,
     // Icons
     pub icons: ResolvedIcons,
 }
@@ -82,16 +93,25 @@ impl ResolvedTheme {
         let d = Defaults::for_background(bg);
         let md = &theme.colors.markdown;
         let syn = &md.syntax;
+        let pill = &theme.colors.pill;
+
+        // Resolve base text colors first so pills can fall back to them.
+        let text_primary = theme.colors.text.primary.unwrap_or(d.text_primary);
+        let text_secondary = theme.colors.text.secondary.unwrap_or(d.text_secondary);
+        let text_faint = theme.colors.text.faint.unwrap_or(d.text_faint);
+        let text_success = theme.colors.text.success.unwrap_or(d.text_success);
+        let text_error = theme.colors.text.error.unwrap_or(d.text_error);
+        let text_actor = theme.colors.text.actor.unwrap_or(d.text_actor);
 
         Self {
-            text_primary: theme.colors.text.primary.unwrap_or(d.text_primary),
-            text_secondary: theme.colors.text.secondary.unwrap_or(d.text_secondary),
+            text_primary,
+            text_secondary,
             text_inverted: theme.colors.text.inverted.unwrap_or(d.text_inverted),
-            text_faint: theme.colors.text.faint.unwrap_or(d.text_faint),
+            text_faint,
             text_warning: theme.colors.text.warning.unwrap_or(d.text_warning),
-            text_success: theme.colors.text.success.unwrap_or(d.text_success),
-            text_error: theme.colors.text.error.unwrap_or(d.text_error),
-            text_actor: theme.colors.text.actor.unwrap_or(d.text_actor),
+            text_success,
+            text_error,
+            text_actor,
             bg_selected: theme.colors.background.selected.unwrap_or(d.bg_selected),
             border_primary: theme.colors.border.primary.unwrap_or(d.border_primary),
             border_secondary: theme.colors.border.secondary.unwrap_or(d.border_secondary),
@@ -122,6 +142,17 @@ impl ResolvedTheme {
             syn_punctuation: syn.punctuation.unwrap_or(d.syn_punctuation),
             syn_name: syn.name.unwrap_or(d.text_primary),
             syn_name_builtin: syn.name_builtin.unwrap_or(d.syn_name_builtin),
+            // Sidebar pill / meta (fall back to base text colors)
+            pill_draft_bg: pill.draft_bg.unwrap_or(text_faint),
+            pill_open_bg: pill.open_bg.unwrap_or(text_success),
+            pill_closed_bg: pill.closed_bg.unwrap_or(text_error),
+            pill_merged_bg: pill.merged_bg.unwrap_or(text_actor),
+            pill_fg: pill.fg.unwrap_or(d.pill_fg),
+            pill_branch: pill.branch.unwrap_or(text_primary),
+            pill_author: pill.author.unwrap_or(text_actor),
+            pill_age: pill.age.unwrap_or(text_faint),
+            pill_role: pill.role.unwrap_or(text_secondary),
+            pill_separator: pill.separator.unwrap_or(text_faint),
             icons: ResolvedIcons::resolve(&theme.icons),
         }
     }
@@ -147,6 +178,8 @@ struct Defaults {
     md_code_block: Color,
     md_link: Color,
     md_link_text: Color,
+    // Pill
+    pill_fg: Color,
     // Syntax
     syn_keyword: Color,
     syn_string: Color,
@@ -175,6 +208,8 @@ impl Defaults {
                 border_primary: Color::Ansi256(244),
                 border_secondary: Color::Ansi256(243),
                 border_faint: Color::Ansi256(241),
+                // Pill
+                pill_fg: Color::Ansi256(15), // white
                 // Markdown
                 md_heading: Color::Ansi256(12), // bright blue
                 md_code: Color::Ansi256(180),   // sand/gold
@@ -205,6 +240,8 @@ impl Defaults {
                 border_primary: Color::Ansi256(240),
                 border_secondary: Color::Ansi256(248),
                 border_faint: Color::Ansi256(252),
+                // Pill
+                pill_fg: Color::Ansi256(15), // white
                 // Markdown
                 md_heading: Color::Ansi256(4), // blue
                 md_code: Color::Ansi256(130),  // brown

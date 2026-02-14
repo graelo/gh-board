@@ -32,7 +32,7 @@ document maps each configuration field to the exact UI elements it affects.
 | Notification list | Repo name                                                       |
 | All list views    | Table column header icons                                       |
 | Tab bar           | Inactive tab labels                                             |
-| Sidebar           | Bold label prefixes (`Author:`, `State:`, `Labels:`, `Branch:`) |
+| Sidebar           | Bold label prefixes (`Labels:`, `Assign:`, `Lines:`)            |
 | Sidebar Activity  | Action descriptions (`commented`, `reviewed`, `assigned`)       |
 | Help overlay      | Key description text                                            |
 | Footer            | Context/status text                                             |
@@ -163,6 +163,33 @@ Reduces row height for denser display.
 
 ---
 
+## Pill Colors — `[theme.colors.pill]`
+
+These control the sidebar header that appears on the Overview tab: the colored
+state pill, branch info, and the `by @author · age · role` line.
+
+### Pill Background
+
+| Field       | Default fallback | Element                         |
+| ----------- | ---------------- | ------------------------------- |
+| `draft_bg`  | `text.faint`     | Background of the "Draft" pill  |
+| `open_bg`   | `text.success`   | Background of the "Open" pill   |
+| `closed_bg` | `text.error`     | Background of the "Closed" pill |
+| `merged_bg` | `text.actor`     | Background of the "Merged" pill |
+| `fg`        | white (`15`)     | Text inside the pill badge      |
+
+### Meta Line
+
+| Field       | Default fallback | Element                                 |
+| ----------- | ---------------- | --------------------------------------- |
+| `branch`    | `text.primary`   | Branch text (`main ← feature`)          |
+| `author`    | `text.actor`     | Author text (`by @graelo`)              |
+| `age`       | `text.faint`     | Age text (`1w`)                         |
+| `role`      | `text.secondary` | Role label (`owner`, `member`, etc.)    |
+| `separator` | `text.faint`     | Middle-dot separators (`·`) on the line |
+
+---
+
 ## Icon Colors — `[theme.colors.icon]`
 
 These color the author-role badge shown next to usernames in the sidebar.
@@ -251,6 +278,18 @@ comes from the text color fields listed above. Here is the full mapping:
 | Added       | `text.success` |
 | Deleted     | `text.error`   |
 | Modified    | `text.warning` |
+
+### Pill Cap Glyphs (Sidebar)
+
+| Icon field   | Preset defaults                                            | Colored by  |
+| ------------ | ---------------------------------------------------------- | ----------- |
+| `pill_left`  | nerdfont: U+E0B6 (left half-circle), unicode/ascii: empty | `pill.*_bg` |
+| `pill_right` | nerdfont: U+E0B4 (right half-circle), unicode/ascii: empty | `pill.*_bg` |
+
+The left/right cap glyphs are rendered with `fg = pill background color` (no
+background), creating the rounded-edge illusion via Powerline half-circle
+characters. When the strings are empty (unicode / ascii presets), the pill
+renders with square edges.
 
 ---
 

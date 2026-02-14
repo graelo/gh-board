@@ -10,7 +10,7 @@ use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::footer::{self, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarTab};
+use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
 use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
@@ -22,7 +22,7 @@ use crate::config::types::PrSection;
 use crate::filter;
 use crate::github::graphql::{self, PrDetail};
 use crate::github::rate_limit;
-use crate::github::types::PullRequest;
+use crate::github::types::{AuthorAssociation, PullRequest};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine};
 use crate::theme::ResolvedTheme;
@@ -177,7 +177,11 @@ fn pr_to_row(pr: &PullRequest, theme: &ResolvedTheme, date_format: &str) -> Row 
             // Infer from latestReviews when reviewDecision is null
             // (repos without required review branch protection).
             use crate::github::types::ReviewState;
-            if pr.reviews.iter().any(|r| r.state == ReviewState::ChangesRequested) {
+            if pr
+                .reviews
+                .iter()
+                .any(|r| r.state == ReviewState::ChangesRequested)
+            {
                 (&icons.review_changes, theme.text_warning)
             } else if pr.reviews.iter().any(|r| r.state == ReviewState::Approved) {
                 (&icons.review_approved, theme.text_success)
@@ -1280,8 +1284,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             }
         };
 
-        // Account for tab bar (2 extra lines) in sidebar height.
-        let sidebar_visible_lines = props.height.saturating_sub(9) as usize;
+        // Build meta header for Overview tab.
+        let sidebar_meta = if current_tab == SidebarTab::Overview {
+            current_pr.map(|pr| build_sidebar_meta(pr, &theme, depth))
+        } else {
+            None
+        };
+
+        // Account for tab bar (2 extra lines) + meta (3 lines) in sidebar height.
+        let meta_lines = if sidebar_meta.is_some() { 4 } else { 0 };
+        let sidebar_visible_lines = props.height.saturating_sub(9 + meta_lines) as usize;
 
         Some(RenderedSidebar::build_tabbed(
             title,
@@ -1295,6 +1307,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(theme.text_faint),
             Some(current_tab),
             Some(&theme.icons),
+            sidebar_meta,
         ))
     } else {
         None
@@ -1426,6 +1439,80 @@ fn get_current_pr_info(
     let pr = section.prs.get(cursor)?;
     let repo_ref = pr.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), pr.number))
+}
+
+/// Build the `SidebarMeta` header from a pull request.
+fn build_sidebar_meta(pr: &PullRequest, theme: &ResolvedTheme, depth: ColorDepth) -> SidebarMeta {
+    let icons = &theme.icons;
+
+    // Pill: state + draft
+    let (pill_icon, pill_text, pill_bg_app) = if pr.is_draft {
+        (icons.pr_draft.clone(), "Draft".to_owned(), theme.pill_draft_bg)
+    } else {
+        match pr.state {
+            crate::github::types::PrState::Open => {
+                (icons.pr_open.clone(), "Open".to_owned(), theme.pill_open_bg)
+            }
+            crate::github::types::PrState::Closed => (
+                icons.pr_closed.clone(),
+                "Closed".to_owned(),
+                theme.pill_closed_bg,
+            ),
+            crate::github::types::PrState::Merged => (
+                icons.pr_merged.clone(),
+                "Merged".to_owned(),
+                theme.pill_merged_bg,
+            ),
+        }
+    };
+
+    // Branch: base ← head
+    let branch_text = format!("{} {} {}", pr.base_ref, icons.branch_arrow, pr.head_ref);
+
+    // Author
+    let author = pr.author.as_ref().map_or("unknown", |a| a.login.as_str());
+    let author_text = format!("by @{author}");
+
+    // Age
+    let age_text = crate::util::format_date(&pr.created_at, "relative");
+
+    // Role
+    let (role_icon, role_text) = match pr.author_association {
+        Some(AuthorAssociation::Owner) => (icons.role_owner.clone(), "owner".to_owned()),
+        Some(AuthorAssociation::Member) => (icons.role_member.clone(), "member".to_owned()),
+        Some(AuthorAssociation::Collaborator) => {
+            (icons.role_collaborator.clone(), "collaborator".to_owned())
+        }
+        Some(AuthorAssociation::Contributor) => {
+            (icons.role_contributor.clone(), "contributor".to_owned())
+        }
+        Some(AuthorAssociation::FirstTimer | AuthorAssociation::FirstTimeContributor) => (
+            icons.role_newcontributor.clone(),
+            "new contributor".to_owned(),
+        ),
+        Some(AuthorAssociation::None | AuthorAssociation::Mannequin) | None => {
+            (icons.role_unknown.clone(), "none".to_owned())
+        }
+    };
+
+    SidebarMeta {
+        pill_icon,
+        pill_text,
+        pill_bg: pill_bg_app.to_crossterm_color(depth),
+        pill_fg: theme.pill_fg.to_crossterm_color(depth),
+        pill_left: icons.pill_left.clone(),
+        pill_right: icons.pill_right.clone(),
+        branch_text,
+        branch_fg: theme.pill_branch.to_crossterm_color(depth),
+        author_text,
+        author_fg: theme.pill_author.to_crossterm_color(depth),
+        separator_fg: theme.pill_separator.to_crossterm_color(depth),
+        age_text,
+        age_fg: theme.pill_age.to_crossterm_color(depth),
+        role_icon,
+        role_text,
+        role_fg: theme.pill_role.to_crossterm_color(depth),
+    }
 }
 
 /// Fallback theme when none is provided.

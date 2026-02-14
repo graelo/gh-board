@@ -71,6 +71,33 @@ impl SidebarTab {
 }
 
 // ---------------------------------------------------------------------------
+// Sidebar meta header (gh-dash style pill + author line)
+// ---------------------------------------------------------------------------
+
+pub struct SidebarMeta {
+    // Pill badge
+    pub pill_icon: String,
+    pub pill_text: String,
+    pub pill_bg: Color,
+    pub pill_fg: Color,
+    // Pill caps (rounded edges via Powerline glyphs)
+    pub pill_left: String,
+    pub pill_right: String,
+    // Branch (same line, after pill)
+    pub branch_text: String,
+    pub branch_fg: Color,
+    // Author line
+    pub author_text: String,
+    pub author_fg: Color,
+    pub separator_fg: Color,
+    pub age_text: String,
+    pub age_fg: Color,
+    pub role_icon: String,
+    pub role_text: String,
+    pub role_fg: Color,
+}
+
+// ---------------------------------------------------------------------------
 // Pre-rendered sidebar (all owned)
 // ---------------------------------------------------------------------------
 
@@ -88,6 +115,8 @@ pub struct RenderedSidebar {
     pub tab_active_fg: Color,
     /// Foreground color for inactive tabs.
     pub tab_inactive_fg: Color,
+    /// Optional meta header (pill badge + author line) for Overview tab.
+    pub meta: Option<SidebarMeta>,
 }
 
 impl RenderedSidebar {
@@ -116,6 +145,7 @@ impl RenderedSidebar {
             indicator_color,
             None,
             None,
+            None,
         )
     }
 
@@ -133,6 +163,7 @@ impl RenderedSidebar {
         indicator_color: Option<AppColor>,
         active_tab: Option<SidebarTab>,
         icons: Option<&ResolvedIcons>,
+        meta: Option<SidebarMeta>,
     ) -> Self {
         let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
@@ -179,6 +210,7 @@ impl RenderedSidebar {
             tab_labels,
             tab_active_fg: title_fg,
             tab_inactive_fg: indicator_fg,
+            meta,
         }
     }
 }
@@ -200,6 +232,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
 
     let has_indicator = !sb.scroll_indicator.is_empty();
     let has_tabs = !sb.tab_labels.is_empty();
+    let meta = sb.meta;
 
     element! {
         View(
@@ -248,6 +281,61 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                     }
                 }))
             }
+
+            // Meta section (pill badge + author line, Overview tab only)
+            #(meta.map(|m| {
+                let pill_label = format!(" {} {} ", m.pill_icon, m.pill_text);
+                let branch_label = format!("  {}", m.branch_text);
+                let author_line = format!(
+                    "{} {} {} {} {} {}",
+                    m.author_text, "\u{b7}", m.age_text, "\u{b7}", m.role_icon, m.role_text
+                );
+                let has_caps = !m.pill_left.is_empty();
+                element! {
+                    View(margin_top: 1, margin_bottom: 1, flex_direction: FlexDirection::Column) {
+                        // Line 1: pill + branch
+                        View(flex_direction: FlexDirection::Row) {
+                            // Left cap (Powerline glyph, fg = pill color, no bg)
+                            #(if has_caps {
+                                Some(element! {
+                                    Text(
+                                        content: m.pill_left,
+                                        color: m.pill_bg,
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                })
+                            } else {
+                                None
+                            })
+                            View(background_color: m.pill_bg) {
+                                Text(
+                                    content: pill_label,
+                                    color: m.pill_fg,
+                                    weight: Weight::Bold,
+                                    wrap: TextWrap::NoWrap,
+                                )
+                            }
+                            // Right cap (Powerline glyph, fg = pill color, no bg)
+                            #(if has_caps {
+                                Some(element! {
+                                    Text(
+                                        content: m.pill_right,
+                                        color: m.pill_bg,
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                })
+                            } else {
+                                None
+                            })
+                            Text(content: branch_label, color: m.branch_fg, wrap: TextWrap::NoWrap)
+                        }
+                        // Line 2: by @author · age · role
+                        View(margin_top: 1) {
+                            Text(content: author_line, color: m.author_fg, wrap: TextWrap::NoWrap)
+                        }
+                    }
+                }
+            }))
 
             // Content area
             View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {

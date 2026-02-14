@@ -135,6 +135,22 @@ owner = "9"             # orange
 unknownrole = "14"      # base1
 
 # ------------------------------------------------------------------------------
+# Colors: Pill (sidebar state badge + author meta line)
+# ------------------------------------------------------------------------------
+
+[theme.colors.pill]
+draft_bg  = "12"       # base0  – subtle
+open_bg   = "2"        # green
+closed_bg = "1"        # red
+merged_bg = "4"        # blue
+fg        = "15"       # base3  – light text on colored pill
+branch    = "11"       # base00 – body text
+author    = "4"        # blue
+age       = "14"       # base1  – de-emphasized
+role      = "14"       # base1
+separator = "14"       # base1
+
+# ------------------------------------------------------------------------------
 # Colors: Markdown Rendering
 # ------------------------------------------------------------------------------
 
@@ -200,3 +216,5 @@ preset = "ascii"
 # Override individual icons if desired:
 # role_owner = "!"
 # role_member = "@"
+# pill_left = ""    # requires nerdfont preset for rounded pill edges
+# pill_right = ""

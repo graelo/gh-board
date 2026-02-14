@@ -63,6 +63,9 @@ pub struct ResolvedIcons {
     pub section_issues: String,
     pub section_notifications: String,
     pub section_repo: String,
+    // Pill caps (rounded edges, 2)
+    pub pill_left: String,
+    pub pill_right: String,
 }
 
 impl ResolvedIcons {
@@ -124,10 +127,13 @@ impl ResolvedIcons {
             role_owner: "\u{2605}".to_owned(),          // ★
             role_unknown: "?".to_owned(),
             // Status bar sections
-            section_prs: "\u{2195}".to_owned(),           // ↕
-            section_issues: "\u{2299}".to_owned(),        // ⊙
+            section_prs: "\u{2195}".to_owned(),            // ↕
+            section_issues: "\u{2299}".to_owned(),         // ⊙
             section_notifications: "\u{1f514}".to_owned(), // 🔔
-            section_repo: "\u{2387}".to_owned(),          // ⎇
+            section_repo: "\u{2387}".to_owned(),           // ⎇
+            // Pill caps (no rounded edges in unicode preset)
+            pill_left: String::new(),
+            pill_right: String::new(),
         }
     }
 
@@ -136,44 +142,44 @@ impl ResolvedIcons {
     fn nerdfont() -> Self {
         Self {
             // PR state (matching gh-dash constants.go)
-            pr_open: "\u{f407}".to_owned(),    // nf-oct-git_pull_request
-            pr_closed: "\u{f4dc}".to_owned(),  // nf-oct-git_pull_request_closed
-            pr_merged: "\u{f4c9}".to_owned(),  // nf-oct-git_merge
-            pr_draft: "\u{ebdb}".to_owned(),   // nf-cod-git_pull_request_draft
+            pr_open: "\u{f407}".to_owned(), // nf-oct-git_pull_request
+            pr_closed: "\u{f4dc}".to_owned(), // nf-oct-git_pull_request_closed
+            pr_merged: "\u{f4c9}".to_owned(), // nf-oct-git_merge
+            pr_draft: "\u{ebdb}".to_owned(), // nf-cod-git_pull_request_draft
             // PR column headers (matching gh-dash section headers)
-            header_state: "\u{f407}".to_owned(),     // nf-oct-git_pull_request
-            header_comments: "\u{f27b}".to_owned(),  // nf-fa-comment_o
-            header_review: "\u{f0be2}".to_owned(),   // nf-md-account_supervisor
-            header_ci: "\u{f45e}".to_owned(),        // nf-oct-checklist
-            header_lines: "\u{f440}".to_owned(),     // nf-oct-diff
-            header_time: "\u{f19bb}".to_owned(),     // nf-md-clock_edit_outline
+            header_state: "\u{f407}".to_owned(), // nf-oct-git_pull_request
+            header_comments: "\u{f27b}".to_owned(), // nf-fa-comment_o
+            header_review: "\u{f0be2}".to_owned(), // nf-md-account_supervisor
+            header_ci: "\u{f45e}".to_owned(),    // nf-oct-checklist
+            header_lines: "\u{f440}".to_owned(), // nf-oct-diff
+            header_time: "\u{f19bb}".to_owned(), // nf-md-clock_edit_outline
             // Review decision (matching gh-dash)
-            review_approved: "\u{f012c}".to_owned(),  // nf-md-check
-            review_changes: "\u{eb43}".to_owned(),    // nf-cod-request_changes
-            review_required: "\u{e641}".to_owned(),   // nf-seti-clock (waiting)
-            review_none: "\u{eabd}".to_owned(),       // nf-cod-dash
-            review_commented: "\u{f27b}".to_owned(),  // nf-fa-comment_o
+            review_approved: "\u{f012c}".to_owned(), // nf-md-check
+            review_changes: "\u{eb43}".to_owned(),   // nf-cod-request_changes
+            review_required: "\u{e641}".to_owned(),  // nf-seti-clock (waiting)
+            review_none: "\u{eabd}".to_owned(),      // nf-cod-dash
+            review_commented: "\u{f27b}".to_owned(), // nf-fa-comment_o
             // CI status (matching gh-dash)
-            ci_success: "\u{f058}".to_owned(),   // nf-fa-check_circle
-            ci_failure: "\u{f0159}".to_owned(),  // nf-md-close_circle
-            ci_pending: "\u{e641}".to_owned(),   // nf-seti-clock (waiting)
-            ci_none: "\u{eabd}".to_owned(),      // nf-cod-dash
+            ci_success: "\u{f058}".to_owned(), // nf-fa-check_circle
+            ci_failure: "\u{f0159}".to_owned(), // nf-md-close_circle
+            ci_pending: "\u{e641}".to_owned(), // nf-seti-clock (waiting)
+            ci_none: "\u{eabd}".to_owned(),    // nf-cod-dash
             // Issue state (matching gh-dash)
-            issue_open: "\u{f41b}".to_owned(),   // nf-oct-issue_opened
+            issue_open: "\u{f41b}".to_owned(), // nf-oct-issue_opened
             issue_closed: "\u{f41d}".to_owned(), // nf-oct-issue_closed
             // Notifications (matching gh-dash)
-            notif_unread: "\u{f444}".to_owned(),          // nf-oct-dot_fill
-            notif_type_pr: "\u{f407}".to_owned(),         // nf-oct-git_pull_request
-            notif_type_issue: "\u{f41b}".to_owned(),      // nf-oct-issue_opened
-            notif_type_release: "\u{f412}".to_owned(),    // nf-oct-tag
+            notif_unread: "\u{f444}".to_owned(), // nf-oct-dot_fill
+            notif_type_pr: "\u{f407}".to_owned(), // nf-oct-git_pull_request
+            notif_type_issue: "\u{f41b}".to_owned(), // nf-oct-issue_opened
+            notif_type_release: "\u{f412}".to_owned(), // nf-oct-tag
             notif_type_discussion: "\u{f442}".to_owned(), // nf-oct-comment_discussion
             // Branch
-            branch_ahead: "\u{f062}".to_owned(),  // nf-fa-arrow_up
+            branch_ahead: "\u{f062}".to_owned(), // nf-fa-arrow_up
             branch_behind: "\u{f063}".to_owned(), // nf-fa-arrow_down
             // Sidebar checks
-            check_success: "\u{f058}".to_owned(),  // nf-fa-check_circle
+            check_success: "\u{f058}".to_owned(), // nf-fa-check_circle
             check_failure: "\u{f0159}".to_owned(), // nf-md-close_circle
-            check_pending: "\u{e641}".to_owned(),  // nf-seti-clock
+            check_pending: "\u{e641}".to_owned(), // nf-seti-clock
             // Sidebar decorative
             branch_arrow: "\u{e344}".to_owned(), // nf-pl-left_hard_divider
             // Sidebar tabs (Codicons + Octicons)
@@ -190,10 +196,13 @@ impl ResolvedIcons {
             role_owner: "\u{f511}".to_owned(),           // nf-oct-shield_lock
             role_unknown: "\u{f0b59}".to_owned(),        // nf-md-account_question
             // Status bar sections
-            section_prs: "\u{f407}".to_owned(),         // nf-oct-git_pull_request
-            section_issues: "\u{f41b}".to_owned(),      // nf-oct-issue_opened
+            section_prs: "\u{f407}".to_owned(), // nf-oct-git_pull_request
+            section_issues: "\u{f41b}".to_owned(), // nf-oct-issue_opened
             section_notifications: "\u{eaa2}".to_owned(), // nf-cod-bell
-            section_repo: "\u{e727}".to_owned(),        // nf-dev-git_branch
+            section_repo: "\u{e727}".to_owned(), // nf-dev-git_branch
+            // Pill caps (Powerline half-circles for rounded edges)
+            pill_left: "\u{e0b6}".to_owned(),  //
+            pill_right: "\u{e0b4}".to_owned(), //
         }
     }
 
@@ -259,6 +268,9 @@ impl ResolvedIcons {
             section_issues: "I".to_owned(),
             section_notifications: "N".to_owned(),
             section_repo: "R".to_owned(),
+            // Pill caps (no rounded edges in ascii preset)
+            pill_left: String::new(),
+            pill_right: String::new(),
         }
     }
 
@@ -346,15 +358,14 @@ impl ResolvedIcons {
             role_owner: config.role_owner.clone().unwrap_or(base.role_owner),
             role_unknown: config.role_unknown.clone().unwrap_or(base.role_unknown),
             section_prs: config.section_prs.clone().unwrap_or(base.section_prs),
-            section_issues: config
-                .section_issues
-                .clone()
-                .unwrap_or(base.section_issues),
+            section_issues: config.section_issues.clone().unwrap_or(base.section_issues),
             section_notifications: config
                 .section_notifications
                 .clone()
                 .unwrap_or(base.section_notifications),
             section_repo: config.section_repo.clone().unwrap_or(base.section_repo),
+            pill_left: config.pill_left.clone().unwrap_or(base.pill_left),
+            pill_right: config.pill_right.clone().unwrap_or(base.pill_right),
         }
     }
 }

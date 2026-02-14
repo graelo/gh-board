@@ -86,6 +86,19 @@ pub enum SubjectType {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum AuthorAssociation {
+    Collaborator,
+    Contributor,
+    FirstTimer,
+    FirstTimeContributor,
+    Mannequin,
+    Member,
+    None,
+    Owner,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CheckStatus {
     Queued,
     InProgress,
@@ -333,6 +346,7 @@ pub struct PullRequest {
     /// Total comment count (from GraphQL `comments { totalCount }`).
     #[serde(default)]
     pub comment_count: u32,
+    pub author_association: Option<AuthorAssociation>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

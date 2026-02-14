@@ -181,6 +181,25 @@ owner = "#fab387"           # Peach
 unknownrole = "#6c7086"     # Gray
 
 # ------------------------------------------------------------------------------
+# Colors: Pill (sidebar state badge + author meta line)
+# ------------------------------------------------------------------------------
+
+[theme.colors.pill]
+# Pill background per PR state (falls back to the matching text.* color)
+draft_bg  = "#6c7086"  # Catppuccin overlay0
+open_bg   = "#a6e3a1"  # Catppuccin green
+closed_bg = "#f38ba8"  # Catppuccin red
+merged_bg = "#89b4fa"  # Catppuccin blue
+fg        = "#1e1e2e"  # Catppuccin base (dark text on colored pill)
+
+# Meta line colors (falls back to text.* colors)
+branch    = "#cdd6f4"  # Catppuccin text
+author    = "#89b4fa"  # Catppuccin blue
+age       = "#6c7086"  # Catppuccin overlay0
+role      = "#a6adc8"  # Catppuccin subtext0
+separator = "#6c7086"  # Catppuccin overlay0
+
+# ------------------------------------------------------------------------------
 # Colors: Markdown Rendering
 # ------------------------------------------------------------------------------
 
@@ -348,6 +367,10 @@ preset = "unicode"
 # tab_commits = "○"
 # tab_checks = "☑"
 # tab_files = "▤"
+
+# --- Pill caps (rounded edges) ---
+# pill_left = ""       # nerdfont default (U+E0B6)
+# pill_right = ""       # nerdfont default (U+E0B4)
 
 # --- Author roles ---
 # role_newcontributor = "✨"

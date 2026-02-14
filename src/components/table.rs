@@ -105,6 +105,9 @@ pub struct RenderedTable {
     pub border_fg: Color,
     /// Message to display when there are no rows.
     pub empty_message: Option<String>,
+    /// Left padding for the subtitle line (width of columns before the
+    /// subtitle column).
+    pub subtitle_padding: u32,
 }
 
 pub struct HeaderCell {
@@ -158,6 +161,7 @@ pub struct TableBuildConfig<'a> {
 
 impl RenderedTable {
     /// Build a `RenderedTable` from a configuration.
+    #[allow(clippy::too_many_lines)]
     pub fn build(cfg: &TableBuildConfig<'_>) -> Self {
         let columns = cfg.columns;
         let rows = cfg.rows;
@@ -264,6 +268,14 @@ impl RenderedTable {
             None
         };
 
+        // Subtitle left padding: width of the first column so the subtitle
+        // aligns with the second column (the main content column).
+        let subtitle_padding = if subtitle_column.is_some() {
+            col_widths.first().map_or(0, |&w| u32::from(w))
+        } else {
+            0
+        };
+
         Self {
             header_cells,
             body_rows,
@@ -273,6 +285,7 @@ impl RenderedTable {
             header_fg,
             border_fg,
             empty_message,
+            subtitle_padding,
         }
     }
 }
@@ -331,6 +344,7 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                 let row_count = table.body_rows.len();
                 let row_sep = table.row_separator;
                 let sep_color = table.border_fg;
+                let sub_pad = table.subtitle_padding;
                 table.body_rows.into_iter().enumerate().map(move |(ri, row)| {
                 let is_last = ri + 1 >= row_count;
                 let subtitle_elem = row.subtitle.map(|sub| {
@@ -372,7 +386,7 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                         // Subtitle line (if present)
                         #(subtitle_elem.into_iter().map(|(content, fg, weight, width)| {
                             element! {
-                                View(width, padding_left: 4u32) {
+                                View(width, padding_left: sub_pad) {
                                     Text(
                                         content,
                                         color: fg,

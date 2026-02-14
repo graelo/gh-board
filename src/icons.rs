@@ -130,66 +130,67 @@ impl ResolvedIcons {
     }
 
     /// Nerdfont glyphs — requires a patched font.
+    /// Codepoints match gh-dash for visual parity.
     fn nerdfont() -> Self {
         Self {
-            // PR state
-            pr_open: "\u{e728}".to_owned(),   //
-            pr_closed: "\u{f00d}".to_owned(), //
-            pr_merged: "\u{f00c}".to_owned(), //
-            pr_draft: "\u{f10c}".to_owned(),  //
-            // PR column headers
-            header_state: "\u{e728}".to_owned(),    //
-            header_comments: "\u{f075}".to_owned(), //
-            header_review: "\u{f007}".to_owned(),   //
-            header_ci: "\u{f0e0}".to_owned(),       //  (clipboard-like)
-            header_lines: "\u{f043}".to_owned(),    //  (diff)
-            header_time: "\u{f017}".to_owned(),     //
-            // Review decision
-            review_approved: "\u{f00c}".to_owned(), //
-            review_changes: "\u{f00d}".to_owned(),  //
-            review_required: "\u{f10c}".to_owned(), //
-            review_none: "-".to_owned(),
-            // CI status
-            ci_success: "\u{f00c}".to_owned(), //
-            ci_failure: "\u{f00d}".to_owned(), //
-            ci_pending: "\u{f110}".to_owned(), //  (spinner)
-            ci_none: "-".to_owned(),
-            // Issue state
-            issue_open: "\u{f06a}".to_owned(),   //
-            issue_closed: "\u{f00c}".to_owned(), //
-            // Notifications
-            notif_unread: "\u{f111}".to_owned(),          //
-            notif_type_pr: "\u{e728}".to_owned(),         //
-            notif_type_issue: "\u{f06a}".to_owned(),      //
-            notif_type_release: "\u{f412}".to_owned(),    //
-            notif_type_discussion: "\u{f086}".to_owned(), //
+            // PR state (matching gh-dash constants.go)
+            pr_open: "\u{f407}".to_owned(),    // nf-oct-git_pull_request
+            pr_closed: "\u{f4dc}".to_owned(),  // nf-oct-git_pull_request_closed
+            pr_merged: "\u{f4c9}".to_owned(),  // nf-oct-git_merge
+            pr_draft: "\u{ebdb}".to_owned(),   // nf-cod-git_pull_request_draft
+            // PR column headers (matching gh-dash section headers)
+            header_state: "\u{f407}".to_owned(),     // nf-oct-git_pull_request
+            header_comments: "\u{f27b}".to_owned(),  // nf-fa-comment_o
+            header_review: "\u{f0be2}".to_owned(),   // nf-md-account_supervisor
+            header_ci: "\u{f45e}".to_owned(),        // nf-oct-checklist
+            header_lines: "\u{f440}".to_owned(),     // nf-oct-diff
+            header_time: "\u{f19bb}".to_owned(),     // nf-md-clock_edit_outline
+            // Review decision (matching gh-dash)
+            review_approved: "\u{f012c}".to_owned(),  // nf-md-check
+            review_changes: "\u{eb43}".to_owned(),    // nf-cod-request_changes
+            review_required: "\u{e641}".to_owned(),   // nf-seti-clock (waiting)
+            review_none: "\u{eabd}".to_owned(),       // nf-cod-dash
+            // CI status (matching gh-dash)
+            ci_success: "\u{f058}".to_owned(),   // nf-fa-check_circle
+            ci_failure: "\u{f0159}".to_owned(),  // nf-md-close_circle
+            ci_pending: "\u{e641}".to_owned(),   // nf-seti-clock (waiting)
+            ci_none: "\u{eabd}".to_owned(),      // nf-cod-dash
+            // Issue state (matching gh-dash)
+            issue_open: "\u{f41b}".to_owned(),   // nf-oct-issue_opened
+            issue_closed: "\u{f41d}".to_owned(), // nf-oct-issue_closed
+            // Notifications (matching gh-dash)
+            notif_unread: "\u{f444}".to_owned(),          // nf-oct-dot_fill
+            notif_type_pr: "\u{f407}".to_owned(),         // nf-oct-git_pull_request
+            notif_type_issue: "\u{f41b}".to_owned(),      // nf-oct-issue_opened
+            notif_type_release: "\u{f412}".to_owned(),    // nf-oct-tag
+            notif_type_discussion: "\u{f442}".to_owned(), // nf-oct-comment_discussion
             // Branch
-            branch_ahead: "\u{f062}".to_owned(),  //
-            branch_behind: "\u{f063}".to_owned(), //
+            branch_ahead: "\u{f062}".to_owned(),  // nf-fa-arrow_up
+            branch_behind: "\u{f063}".to_owned(), // nf-fa-arrow_down
             // Sidebar checks
-            check_success: "\u{f00c}".to_owned(), //
-            check_failure: "\u{f00d}".to_owned(), //
-            check_pending: "\u{f110}".to_owned(), //
+            check_success: "\u{f058}".to_owned(),  // nf-fa-check_circle
+            check_failure: "\u{f0159}".to_owned(), // nf-md-close_circle
+            check_pending: "\u{e641}".to_owned(),  // nf-seti-clock
             // Sidebar decorative
-            branch_arrow: "\u{f061}".to_owned(), //
-            // Sidebar tabs (matching gh-dash: Codicons + Octicons)
-            tab_overview: "\u{eb2f}".to_owned(), // cod-preview
-            tab_activity: "\u{f442}".to_owned(), // oct-comment_discussion
-            tab_commits: "\u{f4b6}".to_owned(),  // oct-commit
-            tab_checks: "\u{f45e}".to_owned(),   // oct-checklist
-            tab_files: "\u{f4d2}".to_owned(),    // oct-file_diff
-            // Author roles
-            role_newcontributor: "\u{f005}".to_owned(), //  (star)
-            role_contributor: "\u{f00c}".to_owned(),    //
-            role_collaborator: "\u{f0c0}".to_owned(),   //  (users)
-            role_member: "\u{f007}".to_owned(),         //
-            role_owner: "\u{f19c}".to_owned(),          //  (building)
-            role_unknown: "?".to_owned(),
+            branch_arrow: "\u{e344}".to_owned(), // nf-pl-left_hard_divider
+            // Sidebar tabs (Codicons + Octicons)
+            tab_overview: "\u{eb2f}".to_owned(), // nf-cod-preview
+            tab_activity: "\u{f442}".to_owned(), // nf-oct-comment_discussion
+            tab_commits: "\u{f4b6}".to_owned(),  // nf-oct-git_commit
+            tab_checks: "\u{f52e}".to_owned(),   // nf-oct-checklist
+            tab_files: "\u{f4d2}".to_owned(),    // nf-oct-diff
+            // Author roles (matching gh-dash)
+            role_newcontributor: "\u{f0394}".to_owned(), // nf-md-new_box
+            role_contributor: "\u{edc6}".to_owned(),     // nf-fa-user_check
+            role_collaborator: "\u{edcf}".to_owned(),    // nf-fa-user_shield
+            role_member: "\u{f42b}".to_owned(),          // nf-oct-organization
+            role_owner: "\u{f511}".to_owned(),           // nf-oct-shield_lock
+            role_unknown: "\u{f0b59}".to_owned(),        // nf-md-account_question
             // Status bar sections
-            section_prs: "\u{e728}".to_owned(),    // git-merge
-            section_issues: "\u{f06a}".to_owned(),  // exclamation-circle
-            section_notifications: "\u{f0f3}".to_owned(), // bell
-            section_repo: "\u{e725}".to_owned(),    // git-branch
+            section_prs: "\u{f407}".to_owned(),         // nf-oct-git_pull_request
+            section_issues: "\u{f41b}".to_owned(),      // nf-oct-issue_opened
+            section_notifications: "\u{eaa2}".to_owned(), // nf-cod-bell
+            section_repo: "\u{e727}".to_owned(),        // nf-dev-git_branch
         }
     }
 
@@ -369,7 +370,7 @@ mod tests {
             ..Default::default()
         };
         let icons = ResolvedIcons::resolve(&config);
-        assert_eq!(icons.pr_open, "\u{e728}");
+        assert_eq!(icons.pr_open, "\u{f407}");
     }
 
     #[test]

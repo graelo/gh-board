@@ -5,12 +5,15 @@ use std::process::Command;
 use chrono::{DateTime, Utc};
 use iocraft::prelude::*;
 
+use crate::app::ViewKind;
 use crate::color::ColorDepth;
-use crate::components::footer::{Footer, RenderedFooter};
+use crate::components::footer::{self, Footer, RenderedFooter};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
+use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
+use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 
@@ -279,6 +282,8 @@ enum InputMode {
 #[derive(Default, Props)]
 pub struct RepoViewProps<'a> {
     pub theme: Option<&'a ResolvedTheme>,
+    /// Merged keybindings for help overlay.
+    pub keybindings: Option<&'a MergedBindings>,
     pub color_depth: ColorDepth,
     pub width: u16,
     pub height: u16,
@@ -303,6 +308,10 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut input_buffer = hooks.use_state(String::new);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut help_visible = hooks.use_state(|| false);
+
+    // State: last fetch time (for status bar).
+    let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
 
     // Load branches.
     let mut branches_state = hooks.use_state(Vec::<Branch>::new);
@@ -312,6 +321,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         loaded.set(true);
         if let Some(repo_path) = props.repo_path {
             branches_state.set(list_branches(repo_path));
+            last_fetch_time.set(Some(std::time::Instant::now()));
         }
     }
 
@@ -329,6 +339,13 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                 modifiers,
                 ..
             }) if kind != KeyEventKind::Release => {
+                // Help overlay: intercept all keys when visible.
+                if help_visible.get() {
+                    if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
+                        help_visible.set(false);
+                    }
+                    return;
+                }
                 let current_mode = input_mode.read().clone();
                 match current_mode {
                     InputMode::ConfirmDelete => match code {
@@ -478,6 +495,9 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 scroll_offset.set(total_rows.saturating_sub(visible_rows));
                             }
                         }
+                        KeyCode::Char('?') => {
+                            help_visible.set(true);
+                        }
                         _ => {}
                     },
                 }
@@ -492,13 +512,6 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         .iter()
         .map(|b| branch_to_row(b, &theme, date_format))
         .collect();
-
-    let status = if let Some(msg) = action_status.read().as_ref() {
-        msg.clone()
-    } else {
-        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
-        format!("{cursor_pos}/{total_rows}")
-    };
 
     let rendered_table = RenderedTable::build(&TableBuildConfig {
         columns: &columns,
@@ -534,13 +547,6 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     );
 
     let current_mode = input_mode.read().clone();
-    let help_text = match &current_mode {
-        InputMode::Normal => {
-            "[j/k] Nav  [Space] Checkout  [n] New  [D] Delete  [s] Switch  [q] Quit"
-        }
-        InputMode::ConfirmDelete => "[y] Confirm  [n/Esc] Cancel",
-        InputMode::CreateBranch => "[Enter] Create  [Esc] Cancel",
-    };
 
     let rendered_text_input = match &current_mode {
         InputMode::CreateBranch => Some(crate::components::text_input::RenderedTextInput::build(
@@ -566,13 +572,41 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         InputMode::Normal => None,
     };
 
+    let context_text = if let Some(msg) = action_status.read().as_ref() {
+        msg.clone()
+    } else {
+        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
+        format!("Branch {cursor_pos}/{total_rows}")
+    };
+    let updated_text = footer::format_updated_ago(last_fetch_time.get());
+
     let rendered_footer = RenderedFooter::build(
-        help_text.to_owned(),
-        status,
+        ViewKind::Repo,
+        &theme.icons,
+        context_text,
+        updated_text,
         depth,
+        Some(theme.border_primary),
+        Some(theme.text_faint),
         Some(theme.text_faint),
         Some(theme.border_faint),
     );
+
+    let rendered_help = if help_visible.get() {
+        props.keybindings.map(|kb| {
+            RenderedHelpOverlay::build(&HelpOverlayBuildConfig {
+                bindings: kb,
+                context: ViewContext::Branches,
+                depth,
+                title_color: Some(theme.text_primary),
+                key_color: Some(theme.text_success),
+                desc_color: Some(theme.text_secondary),
+                border_color: Some(theme.border_primary),
+            })
+        })
+    } else {
+        None
+    };
 
     let width = u32::from(props.width);
     let height = u32::from(props.height);
@@ -585,6 +619,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             }
             crate::components::text_input::TextInput(input: rendered_text_input)
             Footer(footer: rendered_footer)
+            HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }
     }
 }

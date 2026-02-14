@@ -6,6 +6,7 @@ use iocraft::prelude::*;
 
 use gh_board::app::App;
 use gh_board::color::ColorDepth;
+use gh_board::config::keybindings::MergedBindings;
 use gh_board::config::loader;
 use gh_board::github::client::GitHubClient;
 use gh_board::theme::{Background, ResolvedTheme};
@@ -53,6 +54,7 @@ fn main() -> Result<()> {
     let color_depth = ColorDepth::detect();
     let background = Background::detect();
     let theme = ResolvedTheme::resolve(&config.theme, background);
+    let keybindings = MergedBindings::from_config(&config.keybindings);
 
     // Build a Tokio runtime. Octocrab (via tower's BufferLayer) requires a
     // Tokio reactor to be active when constructing its HTTP service, so we
@@ -78,6 +80,7 @@ fn main() -> Result<()> {
                 config: &config,
                 octocrab: &octocrab,
                 theme: &theme,
+                keybindings: &keybindings,
                 color_depth,
                 repo_path: cwd.as_deref(),
             )

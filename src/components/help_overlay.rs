@@ -8,14 +8,12 @@ use crate::config::keybindings::{Keybinding, MergedBindings, ViewContext};
 // ---------------------------------------------------------------------------
 
 /// A single row in the help overlay.
-#[allow(dead_code)]
 struct HelpRow {
     key: String,
     description: String,
 }
 
 /// A group of keybindings under a section header.
-#[allow(dead_code)]
 struct HelpGroup {
     title: String,
     rows: Vec<HelpRow>,
@@ -28,7 +26,8 @@ pub struct RenderedHelpOverlay {
     pub key_fg: Color,
     pub desc_fg: Color,
     pub border_fg: Color,
-    pub bg: Color,
+    /// Width of the widest key string (for column alignment).
+    pub key_col_width: u32,
 }
 
 pub struct RenderedHelpGroup {
@@ -50,10 +49,8 @@ pub struct HelpOverlayBuildConfig<'a> {
     pub key_color: Option<AppColor>,
     pub desc_color: Option<AppColor>,
     pub border_color: Option<AppColor>,
-    pub bg_color: Option<AppColor>,
 }
 
-#[allow(dead_code)]
 impl RenderedHelpOverlay {
     /// Build the help overlay for a given view context.
     pub fn build(cfg: &HelpOverlayBuildConfig<'_>) -> Self {
@@ -71,9 +68,15 @@ impl RenderedHelpOverlay {
         let border_fg = cfg
             .border_color
             .map_or(Color::DarkGrey, |c| c.to_crossterm_color(cfg.depth));
-        let bg = cfg
-            .bg_color
-            .map_or(Color::Black, |c| c.to_crossterm_color(cfg.depth));
+
+        // Compute max key width for column alignment.
+        #[allow(clippy::cast_possible_truncation)]
+        let key_col_width = groups
+            .iter()
+            .flat_map(|g| g.rows.iter())
+            .map(|r| r.key.chars().count())
+            .max()
+            .unwrap_or(10) as u32;
 
         let rendered_groups = groups
             .into_iter()
@@ -96,12 +99,11 @@ impl RenderedHelpOverlay {
             key_fg,
             desc_fg,
             border_fg,
-            bg,
+            key_col_width,
         }
     }
 }
 
-#[allow(dead_code)]
 fn build_help_groups(bindings: &MergedBindings, context: ViewContext) -> Vec<HelpGroup> {
     let sections = bindings.all_for_context(context);
     let mut groups = Vec::new();
@@ -144,7 +146,6 @@ fn build_help_groups(bindings: &MergedBindings, context: ViewContext) -> Vec<Hel
 }
 
 /// Format a key string for display (capitalize special keys).
-#[allow(dead_code)]
 fn format_key_display(key: &str) -> String {
     match key {
         "space" => "Space".to_owned(),
@@ -167,7 +168,6 @@ fn format_key_display(key: &str) -> String {
     }
 }
 
-#[allow(dead_code)]
 fn description_for_keybinding(kb: &Keybinding) -> String {
     if let Some(ref builtin) = kb.builtin {
         use crate::config::keybindings::BuiltinAction;
@@ -201,36 +201,25 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
     let width = u32::from(props.width);
     let height = u32::from(props.height);
 
-    // Calculate overlay dimensions: centered, ~60% width, up to 80% height.
+    // Overlay dimensions: centered, ~60% width, up to 80% height.
     let overlay_width = (width * 3 / 5).max(40).min(width.saturating_sub(4));
     let overlay_height = (height * 4 / 5).max(10).min(height.saturating_sub(2));
     let pad_left = (width.saturating_sub(overlay_width)) / 2;
     let pad_top = (height.saturating_sub(overlay_height)) / 2;
 
-    // Build content lines as a flat list of elements.
-    // We flatten the groups into a single column of Text elements.
-    let mut lines: Vec<(String, Color, Weight)> = Vec::new();
-    lines.push(("Keybindings".to_owned(), overlay.title_fg, Weight::Bold));
-    lines.push((String::new(), overlay.desc_fg, Weight::Normal));
+    // Key column width + right padding.
+    let key_width = overlay.key_col_width + 2;
 
-    for group in &overlay.groups {
-        lines.push((format!("  {}", group.title), overlay.title_fg, Weight::Bold));
-        for row in &group.rows {
-            let line = format!("    {:>14}  {}", row.key, row.description);
-            lines.push((line, overlay.desc_fg, Weight::Normal));
-        }
-        lines.push((String::new(), overlay.desc_fg, Weight::Normal));
-    }
+    // Pre-count total content lines to know if we need truncation.
+    let total_lines: usize = overlay
+        .groups
+        .iter()
+        .map(|g| 1 + g.rows.len() + 1) // title + rows + blank
+        .sum::<usize>()
+        + 1; // hint line
 
-    lines.push((
-        "  Press ? to close".to_owned(),
-        overlay.key_fg,
-        Weight::Normal,
-    ));
-
-    // Truncate if too many lines.
-    let max_lines = overlay_height.saturating_sub(2) as usize;
-    lines.truncate(max_lines);
+    let max_lines = overlay_height.saturating_sub(4) as usize; // border + title + padding
+    let mut lines_remaining = max_lines.min(total_lines);
 
     element! {
         View(
@@ -244,18 +233,105 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                 width: overlay_width,
                 height: overlay_height,
                 flex_direction: FlexDirection::Column,
-                border_style: BorderStyle::Double,
+                border_style: BorderStyle::Round,
                 border_color: overlay.border_fg,
-                background_color: overlay.bg,
-                padding_left: 1,
-                padding_right: 1,
+                background_color: Color::Reset,
                 overflow: Overflow::Hidden,
             ) {
-                #(lines.into_iter().map(|(text, color, weight)| {
-                    element! {
-                        Text(content: text, color, weight, wrap: TextWrap::NoWrap)
-                    }
-                }))
+                // Title row (like sidebar title: bold, padded, with a bottom separator)
+                View(
+                    border_style: BorderStyle::Single,
+                    border_edges: Edges::Bottom,
+                    border_color: overlay.border_fg,
+                    padding_left: 1,
+                    padding_right: 1,
+                ) {
+                    Text(
+                        content: "Keybindings",
+                        color: overlay.title_fg,
+                        weight: Weight::Bold,
+                        wrap: TextWrap::NoWrap,
+                    )
+                    View(flex_grow: 1.0)
+                    Text(
+                        content: "? / Esc to close",
+                        color: overlay.desc_fg,
+                        wrap: TextWrap::NoWrap,
+                    )
+                }
+
+                // Scrollable content area
+                View(
+                    flex_grow: 1.0,
+                    flex_direction: FlexDirection::Column,
+                    padding_left: 1,
+                    padding_right: 1,
+                    overflow: Overflow::Hidden,
+                ) {
+                    #(overlay.groups.into_iter().enumerate().map(|(gi, group)| {
+                        if lines_remaining == 0 {
+                            return element! { View }.into_any();
+                        }
+
+                        // Group header
+                        lines_remaining = lines_remaining.saturating_sub(1);
+                        let group_title = group.title.clone();
+                        let title_color = overlay.title_fg;
+                        let key_color = overlay.key_fg;
+                        let desc_color = overlay.desc_fg;
+
+                        // Determine how many rows we can show.
+                        let rows_to_show = group.rows.len().min(lines_remaining);
+                        lines_remaining = lines_remaining.saturating_sub(rows_to_show + 1); // rows + blank
+
+                        let visible_rows: Vec<_> = group.rows.into_iter().take(rows_to_show).collect();
+
+                        element! {
+                            View(key: gi, flex_direction: FlexDirection::Column) {
+                                // Group title (bold, like tab bar labels)
+                                View(margin_top: u32::from(gi != 0)) {
+                                    Text(
+                                        content: group_title,
+                                        color: title_color,
+                                        weight: Weight::Bold,
+                                        decoration: TextDecoration::Underline,
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
+
+                                // Key-description rows: two-column layout
+                                #(visible_rows.into_iter().enumerate().map(|(ri, row)| {
+                                    element! {
+                                        View(key: ri) {
+                                            // Key column: right-aligned, fixed width
+                                            View(width: key_width, justify_content: JustifyContent::End) {
+                                                Text(
+                                                    content: row.key,
+                                                    color: key_color,
+                                                    weight: Weight::Bold,
+                                                    wrap: TextWrap::NoWrap,
+                                                )
+                                            }
+                                            // Separator
+                                            Text(
+                                                content: "  ",
+                                                wrap: TextWrap::NoWrap,
+                                            )
+                                            // Description column
+                                            View(flex_grow: 1.0) {
+                                                Text(
+                                                    content: row.description,
+                                                    color: desc_color,
+                                                    wrap: TextWrap::NoWrap,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }))
+                            }
+                        }.into_any()
+                    }))
+                }
             }
         }
     }

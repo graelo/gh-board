@@ -6,13 +6,16 @@ use iocraft::prelude::*;
 use octocrab::Octocrab;
 
 use crate::actions::clipboard;
+use crate::app::ViewKind;
 use crate::color::ColorDepth;
-use crate::components::footer::{Footer, RenderedFooter};
+use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
+use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::NotificationSection;
 use crate::filter;
 use crate::github::notifications::{self, NotificationFilter};
@@ -184,6 +187,8 @@ pub struct NotificationsViewProps<'a> {
     pub sections: Option<&'a [NotificationSection]>,
     pub octocrab: Option<&'a Arc<Octocrab>>,
     pub theme: Option<&'a ResolvedTheme>,
+    /// Merged keybindings for help overlay.
+    pub keybindings: Option<&'a MergedBindings>,
     pub color_depth: ColorDepth,
     pub width: u16,
     pub height: u16,
@@ -215,6 +220,10 @@ pub fn NotificationsView<'a>(
     // State: input mode and search (T087, T089).
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut search_query = hooks.use_state(String::new);
+    let mut help_visible = hooks.use_state(|| false);
+
+    // State: last fetch time (for status bar).
+    let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
 
     let initial_sections = vec![SectionData::default(); section_count];
     let mut notif_state = hooks.use_state(move || NotificationsState {
@@ -273,6 +282,7 @@ pub fn NotificationsView<'a>(
             notif_state.set(NotificationsState {
                 sections: new_sections,
             });
+            last_fetch_time.set(Some(std::time::Instant::now()));
         }))
         .detach();
     }
@@ -306,6 +316,14 @@ pub fn NotificationsView<'a>(
                 modifiers,
                 ..
             }) if kind != KeyEventKind::Release => {
+                // Help overlay: intercept all keys when visible.
+                if help_visible.get() {
+                    if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
+                        help_visible.set(false);
+                    }
+                    return;
+                }
+
                 if *input_mode.read() == InputMode::Search {
                     // Search mode handling.
                     match code {
@@ -481,6 +499,9 @@ pub fn NotificationsView<'a>(
                                 scroll_offset.set(0);
                             }
                         }
+                        KeyCode::Char('?') => {
+                            help_visible.set(true);
+                        }
                         _ => {}
                     }
                 }
@@ -501,20 +522,6 @@ pub fn NotificationsView<'a>(
 
     let current_data = state_ref.sections.get(current_section_idx);
     let columns = notification_columns();
-
-    let status = if current_data.is_some_and(|d| d.loading) {
-        "Fetching notifications...".to_owned()
-    } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
-        format!("Error: {err}")
-    } else {
-        let total = current_data.map_or(0, |d| d.notification_count);
-        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
-        if search_q.is_empty() {
-            format!("{cursor_pos}/{total}")
-        } else {
-            format!("{cursor_pos}/{total_rows} (filtered from {total})")
-        }
-    };
 
     let all_rows: &[Row] = current_data.map_or(&[], |d| d.rows.as_slice());
     let all_notifs: &[Notification] = current_data.map_or(&[], |d| d.notifications.as_slice());
@@ -572,19 +579,48 @@ pub fn NotificationsView<'a>(
         None
     };
 
-    let help_text = if is_searching {
-        "[Enter] Confirm  [Esc] Clear & Cancel  (repo:, reason:, is:unread/read/all)"
+    let context_text = if current_data.is_some_and(|d| d.loading) {
+        "Fetching notifications...".to_owned()
+    } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
+        format!("Error: {err}")
     } else {
-        "[j/k] Navigate  [h/l] Sections  [/] Search  [s] Switch  [r] Refresh  [y] Copy  [o] Open  [q] Quit"
+        let total = current_data.map_or(0, |d| d.notification_count);
+        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
+        if search_q.is_empty() {
+            format!("Notif {cursor_pos}/{total}")
+        } else {
+            format!("Notif {cursor_pos}/{total_rows} (filtered from {total})")
+        }
     };
+    let updated_text = footer::format_updated_ago(last_fetch_time.get());
 
     let rendered_footer = RenderedFooter::build(
-        help_text.to_owned(),
-        status,
+        ViewKind::Notifications,
+        &theme.icons,
+        context_text,
+        updated_text,
         depth,
+        Some(theme.border_primary),
+        Some(theme.text_faint),
         Some(theme.text_faint),
         Some(theme.border_faint),
     );
+
+    let rendered_help = if help_visible.get() {
+        props.keybindings.map(|kb| {
+            RenderedHelpOverlay::build(&HelpOverlayBuildConfig {
+                bindings: kb,
+                context: ViewContext::Notifications,
+                depth,
+                title_color: Some(theme.text_primary),
+                key_color: Some(theme.text_success),
+                desc_color: Some(theme.text_secondary),
+                border_color: Some(theme.border_primary),
+            })
+        })
+    } else {
+        None
+    };
 
     let width = u32::from(props.width);
     let height = u32::from(props.height);
@@ -599,6 +635,7 @@ pub fn NotificationsView<'a>(
 
             TextInput(input: rendered_text_input)
             Footer(footer: rendered_footer)
+            HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }
     }
 }

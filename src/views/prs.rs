@@ -6,8 +6,10 @@ use iocraft::prelude::*;
 use octocrab::Octocrab;
 
 use crate::actions::{clipboard, pr_actions};
+use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{Footer, RenderedFooter};
+use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarTab};
 use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
@@ -15,6 +17,7 @@ use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
+use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::PrSection;
 use crate::filter;
 use crate::github::graphql::{self, PrDetail};
@@ -323,6 +326,8 @@ pub struct PrsViewProps<'a> {
     pub octocrab: Option<&'a Arc<Octocrab>>,
     /// Resolved theme.
     pub theme: Option<&'a ResolvedTheme>,
+    /// Merged keybindings for help overlay.
+    pub keybindings: Option<&'a MergedBindings>,
     /// Color depth.
     pub color_depth: ColorDepth,
     /// Available width.
@@ -384,6 +389,11 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: search query (T087).
     let mut search_query = hooks.use_state(String::new);
 
+    let mut help_visible = hooks.use_state(|| false);
+
+    // State: last fetch time (for status bar).
+    let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
+
     // State: loaded section data (non-Copy, use .read()/.set()).
     let initial_sections = vec![SectionData::default(); section_count];
     let mut prs_state = hooks.use_state(move || PrsState {
@@ -444,6 +454,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             prs_state.set(PrsState {
                 sections: new_sections,
             });
+            last_fetch_time.set(Some(std::time::Instant::now()));
         }))
         .detach();
     }
@@ -484,6 +495,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 modifiers,
                 ..
             }) if kind != KeyEventKind::Release => {
+                // Help overlay: intercept all keys when visible.
+                if help_visible.get() {
+                    if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
+                        help_visible.set(false);
+                    }
+                    return;
+                }
+
                 // Read input mode into a local to avoid borrow conflict.
                 let current_mode = input_mode.read().clone();
                 match current_mode {
@@ -994,6 +1013,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             sidebar_tab.set(sidebar_tab.get().prev());
                             preview_scroll.set(0);
                         }
+                        // Help overlay
+                        KeyCode::Char('?') => {
+                            help_visible.set(true);
+                        }
                         // Section switching
                         KeyCode::Char('h') | KeyCode::Left => {
                             if section_count > 0 {
@@ -1046,23 +1069,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .map(|l| l.hidden.iter().cloned().collect())
         .unwrap_or_default();
     let width_map: HashMap<String, u16> = layout.map(|l| l.widths.clone()).unwrap_or_default();
-
-    // Status text.
-    let status = if let Some(msg) = action_status.read().as_ref() {
-        msg.clone()
-    } else if current_data.is_some_and(|d| d.loading) {
-        "Fetching PRs...".to_owned()
-    } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
-        format!("Error: {err}")
-    } else {
-        let total = current_data.map_or(0, |d| d.pr_count);
-        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
-        if search_q.is_empty() {
-            format!("{cursor_pos}/{total}")
-        } else {
-            format!("{cursor_pos}/{total_rows} (filtered from {total})")
-        }
-    };
 
     // Compute widths for table vs sidebar.
     let is_preview_open = preview_open.get();
@@ -1271,22 +1277,50 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         InputMode::Normal => None,
     };
 
-    let help_text = match &current_mode {
-        InputMode::Normal => {
-            "[j/k] Nav  [h/l] Sections  [/] Search  [s] Switch  [p] Preview  [r] Refresh  [v] Approve  [c] Comment  [m] Merge  [x] Close  [y] Copy#  [o] Open  [q] Quit"
+    let context_text = if let Some(msg) = action_status.read().as_ref() {
+        msg.clone()
+    } else if current_data.is_some_and(|d| d.loading) {
+        "Fetching PRs...".to_owned()
+    } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
+        format!("Error: {err}")
+    } else {
+        let total = current_data.map_or(0, |d| d.pr_count);
+        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
+        if search_q.is_empty() {
+            format!("PR {cursor_pos}/{total}")
+        } else {
+            format!("PR {cursor_pos}/{total_rows} (filtered from {total})")
         }
-        InputMode::Comment => "[Ctrl+D] Submit  [Esc] Cancel",
-        InputMode::Confirm(_) => "[y] Confirm  [n/Esc] Cancel",
-        InputMode::Search => "[Enter] Confirm  [Esc] Clear & Cancel",
     };
+    let updated_text = footer::format_updated_ago(last_fetch_time.get());
 
     let rendered_footer = RenderedFooter::build(
-        help_text.to_owned(),
-        status,
+        ViewKind::Prs,
+        &theme.icons,
+        context_text,
+        updated_text,
         depth,
+        Some(theme.border_primary),
+        Some(theme.text_faint),
         Some(theme.text_faint),
         Some(theme.border_faint),
     );
+
+    let rendered_help = if help_visible.get() {
+        props.keybindings.map(|kb| {
+            RenderedHelpOverlay::build(&HelpOverlayBuildConfig {
+                bindings: kb,
+                context: ViewContext::Prs,
+                depth,
+                title_color: Some(theme.text_primary),
+                key_color: Some(theme.text_success),
+                desc_color: Some(theme.text_secondary),
+                border_color: Some(theme.border_primary),
+            })
+        })
+    } else {
+        None
+    };
 
     let width = u32::from(props.width);
     let height = u32::from(props.height);
@@ -1304,6 +1338,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
             TextInput(input: rendered_text_input)
             Footer(footer: rendered_footer)
+            HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }
     }
 }

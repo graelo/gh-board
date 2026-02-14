@@ -408,4 +408,9 @@ pub struct IconConfig {
     pub role_member: Option<String>,
     pub role_owner: Option<String>,
     pub role_unknown: Option<String>,
+    // Status bar sections
+    pub section_prs: Option<String>,
+    pub section_issues: Option<String>,
+    pub section_notifications: Option<String>,
+    pub section_repo: Option<String>,
 }

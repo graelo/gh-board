@@ -6,14 +6,17 @@ use iocraft::prelude::*;
 use octocrab::Octocrab;
 
 use crate::actions::{clipboard, issue_actions};
+use crate::app::ViewKind;
 use crate::color::ColorDepth;
-use crate::components::footer::{Footer, RenderedFooter};
+use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{RenderedSidebar, Sidebar};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
+use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::IssueSection;
 use crate::filter;
 use crate::github::graphql;
@@ -242,6 +245,8 @@ pub struct IssuesViewProps<'a> {
     pub sections: Option<&'a [IssueSection]>,
     pub octocrab: Option<&'a Arc<Octocrab>>,
     pub theme: Option<&'a ResolvedTheme>,
+    /// Merged keybindings for help overlay.
+    pub keybindings: Option<&'a MergedBindings>,
     pub color_depth: ColorDepth,
     pub width: u16,
     pub height: u16,
@@ -283,6 +288,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     // State: search query (T087).
     let search_query = hooks.use_state(String::new);
+
+    let mut help_visible = hooks.use_state(|| false);
+
+    // State: last fetch time (for status bar).
+    let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
 
     let initial_sections = vec![SectionData::default(); section_count];
     let mut issues_state = hooks.use_state(move || IssuesState {
@@ -346,6 +356,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             issues_state.set(IssuesState {
                 sections: new_sections,
             });
+            last_fetch_time.set(Some(std::time::Instant::now()));
         }))
         .detach();
     }
@@ -379,6 +390,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 modifiers,
                 ..
             }) if kind != KeyEventKind::Release => {
+                // Help overlay: intercept all keys when visible.
+                if help_visible.get() {
+                    if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
+                        help_visible.set(false);
+                    }
+                    return;
+                }
+
                 let current_mode = input_mode.read().clone();
                 match current_mode {
                     InputMode::Comment | InputMode::Assign => {
@@ -455,6 +474,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             current_section_idx,
                             octocrab_for_actions.as_ref(),
                             fetch_triggered,
+                            help_visible,
                         );
                     }
                 }
@@ -483,22 +503,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         .map(|l| l.hidden.iter().cloned().collect())
         .unwrap_or_default();
     let width_map: HashMap<String, u16> = layout.map(|l| l.widths.clone()).unwrap_or_default();
-
-    let status = if let Some(msg) = action_status.read().as_ref() {
-        msg.clone()
-    } else if current_data.is_some_and(|d| d.loading) {
-        "Fetching issues...".to_owned()
-    } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
-        format!("Error: {err}")
-    } else {
-        let total = current_data.map_or(0, |d| d.issue_count);
-        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
-        if search_q.is_empty() {
-            format!("{cursor_pos}/{total}")
-        } else {
-            format!("{cursor_pos}/{total_rows} (filtered from {total})")
-        }
-    };
 
     let is_preview_open = preview_open.get();
     let (table_width, sidebar_width) = if is_preview_open {
@@ -649,23 +653,50 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         InputMode::Normal => None,
     };
 
-    let help_text = match &current_mode {
-        InputMode::Normal => {
-            "[j/k] Nav  [h/l] Sections  [/] Search  [s] Switch  [p] Preview  [r] Refresh  [c] Comment  [L] Label  [a/A] Assign  [x/X] Close/Reopen  [y] Copy#  [o] Open  [q] Quit"
+    let context_text = if let Some(msg) = action_status.read().as_ref() {
+        msg.clone()
+    } else if current_data.is_some_and(|d| d.loading) {
+        "Fetching issues...".to_owned()
+    } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
+        format!("Error: {err}")
+    } else {
+        let total = current_data.map_or(0, |d| d.issue_count);
+        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
+        if search_q.is_empty() {
+            format!("Issue {cursor_pos}/{total}")
+        } else {
+            format!("Issue {cursor_pos}/{total_rows} (filtered from {total})")
         }
-        InputMode::Comment | InputMode::Assign => "[Ctrl+D] Submit  [Esc] Cancel",
-        InputMode::Label => "[Tab/Enter] Select  [Esc] Cancel",
-        InputMode::Confirm(_) => "[y] Confirm  [n/Esc] Cancel",
-        InputMode::Search => "[Enter] Confirm  [Esc] Clear & Cancel",
     };
+    let updated_text = footer::format_updated_ago(last_fetch_time.get());
 
     let rendered_footer = RenderedFooter::build(
-        help_text.to_owned(),
-        status,
+        ViewKind::Issues,
+        &theme.icons,
+        context_text,
+        updated_text,
         depth,
+        Some(theme.border_primary),
+        Some(theme.text_faint),
         Some(theme.text_faint),
         Some(theme.border_faint),
     );
+
+    let rendered_help = if help_visible.get() {
+        props.keybindings.map(|kb| {
+            RenderedHelpOverlay::build(&HelpOverlayBuildConfig {
+                bindings: kb,
+                context: ViewContext::Issues,
+                depth,
+                title_color: Some(theme.text_primary),
+                key_color: Some(theme.text_success),
+                desc_color: Some(theme.text_secondary),
+                border_color: Some(theme.border_primary),
+            })
+        })
+    } else {
+        None
+    };
 
     let width = u32::from(props.width);
     let height = u32::from(props.height);
@@ -683,6 +714,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
             TextInput(input: rendered_text_input)
             Footer(footer: rendered_footer)
+            HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }
     }
 }
@@ -966,6 +998,7 @@ fn handle_normal_input(
     current_section_idx: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
     mut fetch_triggered: State<bool>,
+    mut help_visible: State<bool>,
 ) {
     match code {
         KeyCode::Char('q') => {
@@ -1198,6 +1231,9 @@ fn handle_normal_input(
                 scroll_offset.set(0);
                 preview_scroll.set(0);
             }
+        }
+        KeyCode::Char('?') => {
+            help_visible.set(true);
         }
         _ => {}
     }

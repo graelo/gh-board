@@ -5,7 +5,9 @@ use iocraft::prelude::*;
 use octocrab::Octocrab;
 
 use crate::color::ColorDepth;
+use crate::config::keybindings::MergedBindings;
 use crate::config::types::AppConfig;
+use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 use crate::views::issues::IssuesView;
 use crate::views::notifications::NotificationsView;
@@ -13,15 +15,42 @@ use crate::views::prs::PrsView;
 use crate::views::repo::RepoView;
 
 // ---------------------------------------------------------------------------
-// Active view enum
+// View kind enum (public for status bar)
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ActiveView {
+pub enum ViewKind {
     Prs,
     Issues,
     Notifications,
     Repo,
+}
+
+impl ViewKind {
+    pub const ALL: [ViewKind; 4] = [
+        ViewKind::Prs,
+        ViewKind::Issues,
+        ViewKind::Notifications,
+        ViewKind::Repo,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Prs => "PRs",
+            Self::Issues => "Issues",
+            Self::Notifications => "Notifs",
+            Self::Repo => "Repo",
+        }
+    }
+
+    pub fn icon_label(self, icons: &ResolvedIcons) -> String {
+        match self {
+            Self::Prs => format!("{} {}", icons.section_prs, self.label()),
+            Self::Issues => format!("{} {}", icons.section_issues, self.label()),
+            Self::Notifications => format!("{} {}", icons.section_notifications, self.label()),
+            Self::Repo => format!("{} {}", icons.section_repo, self.label()),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -33,6 +62,7 @@ pub struct AppProps<'a> {
     pub config: Option<&'a AppConfig>,
     pub octocrab: Option<&'a Arc<Octocrab>>,
     pub theme: Option<&'a ResolvedTheme>,
+    pub keybindings: Option<&'a MergedBindings>,
     pub color_depth: ColorDepth,
     pub repo_path: Option<&'a Path>,
 }
@@ -45,14 +75,15 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
 
     let config = props.config;
     let theme = props.theme;
+    let keybindings = props.keybindings;
     let depth = props.color_depth;
 
     // View switching state.
-    let initial_view = config.map_or(ActiveView::Prs, |c| match c.defaults.view {
-        crate::config::types::View::Issues => ActiveView::Issues,
-        crate::config::types::View::Notifications => ActiveView::Notifications,
-        crate::config::types::View::Repo => ActiveView::Repo,
-        crate::config::types::View::Prs => ActiveView::Prs,
+    let initial_view = config.map_or(ViewKind::Prs, |c| match c.defaults.view {
+        crate::config::types::View::Issues => ViewKind::Issues,
+        crate::config::types::View::Notifications => ViewKind::Notifications,
+        crate::config::types::View::Repo => ViewKind::Repo,
+        crate::config::types::View::Prs => ViewKind::Prs,
     });
     let mut active_view = hooks.use_state(move || initial_view);
 
@@ -61,10 +92,10 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     if switch_signal.get() {
         switch_signal.set(false);
         let next = match active_view.get() {
-            ActiveView::Prs => ActiveView::Issues,
-            ActiveView::Issues => ActiveView::Notifications,
-            ActiveView::Notifications => ActiveView::Repo,
-            ActiveView::Repo => ActiveView::Prs,
+            ViewKind::Prs => ViewKind::Issues,
+            ViewKind::Issues => ViewKind::Notifications,
+            ViewKind::Notifications => ViewKind::Repo,
+            ViewKind::Repo => ViewKind::Prs,
         };
         active_view.set(next);
     }
@@ -81,7 +112,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let date_format = config.map(|c| c.defaults.date_format.as_str());
 
     match active_view.get() {
-        ActiveView::Prs => {
+        ViewKind::Prs => {
             let sections = config.map(|c| c.pr_sections.as_slice());
             element! {
                 View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
@@ -89,6 +120,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                         sections,
                         octocrab: props.octocrab,
                         theme,
+                        keybindings,
                         color_depth: depth,
                         width,
                         height,
@@ -103,7 +135,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 }
             }
         }
-        ActiveView::Issues => {
+        ViewKind::Issues => {
             let sections = config.map(|c| c.issues_sections.as_slice());
             element! {
                 View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
@@ -111,6 +143,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                         sections,
                         octocrab: props.octocrab,
                         theme,
+                        keybindings,
                         color_depth: depth,
                         width,
                         height,
@@ -124,7 +157,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 }
             }
         }
-        ActiveView::Notifications => {
+        ViewKind::Notifications => {
             let sections = config.map(|c| c.notifications_sections.as_slice());
             element! {
                 View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
@@ -132,6 +165,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                         sections,
                         octocrab: props.octocrab,
                         theme,
+                        keybindings,
                         color_depth: depth,
                         width,
                         height,
@@ -144,12 +178,13 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 }
             }
         }
-        ActiveView::Repo => {
+        ViewKind::Repo => {
             let repo_path = props.repo_path;
             element! {
                 View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
                     RepoView(
                         theme,
+                        keybindings,
                         color_depth: depth,
                         width,
                         height,

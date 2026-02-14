@@ -57,6 +57,11 @@ pub struct ResolvedIcons {
     pub role_member: String,
     pub role_owner: String,
     pub role_unknown: String,
+    // Status bar sections (4)
+    pub section_prs: String,
+    pub section_issues: String,
+    pub section_notifications: String,
+    pub section_repo: String,
 }
 
 impl ResolvedIcons {
@@ -116,6 +121,11 @@ impl ResolvedIcons {
             role_member: "\u{25cf}".to_owned(),         // ●
             role_owner: "\u{2605}".to_owned(),          // ★
             role_unknown: "?".to_owned(),
+            // Status bar sections
+            section_prs: "\u{2195}".to_owned(),           // ↕
+            section_issues: "\u{2299}".to_owned(),        // ⊙
+            section_notifications: "\u{1f514}".to_owned(), // 🔔
+            section_repo: "\u{2387}".to_owned(),          // ⎇
         }
     }
 
@@ -175,6 +185,11 @@ impl ResolvedIcons {
             role_member: "\u{f007}".to_owned(),         //
             role_owner: "\u{f19c}".to_owned(),          //  (building)
             role_unknown: "?".to_owned(),
+            // Status bar sections
+            section_prs: "\u{e728}".to_owned(),    // git-merge
+            section_issues: "\u{f06a}".to_owned(),  // exclamation-circle
+            section_notifications: "\u{f0f3}".to_owned(), // bell
+            section_repo: "\u{e725}".to_owned(),    // git-branch
         }
     }
 
@@ -234,6 +249,11 @@ impl ResolvedIcons {
             role_member: "@".to_owned(),
             role_owner: "!".to_owned(),
             role_unknown: "?".to_owned(),
+            // Status bar sections
+            section_prs: "PR".to_owned(),
+            section_issues: "I".to_owned(),
+            section_notifications: "N".to_owned(),
+            section_repo: "R".to_owned(),
         }
     }
 
@@ -316,6 +336,16 @@ impl ResolvedIcons {
             role_member: config.role_member.clone().unwrap_or(base.role_member),
             role_owner: config.role_owner.clone().unwrap_or(base.role_owner),
             role_unknown: config.role_unknown.clone().unwrap_or(base.role_unknown),
+            section_prs: config.section_prs.clone().unwrap_or(base.section_prs),
+            section_issues: config
+                .section_issues
+                .clone()
+                .unwrap_or(base.section_issues),
+            section_notifications: config
+                .section_notifications
+                .clone()
+                .unwrap_or(base.section_notifications),
+            section_repo: config.section_repo.clone().unwrap_or(base.section_repo),
         }
     }
 }

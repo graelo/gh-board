@@ -162,12 +162,12 @@ impl ResolvedIcons {
             check_pending: "\u{f110}".to_owned(), //
             // Sidebar decorative
             branch_arrow: "\u{f061}".to_owned(), //
-            // Sidebar tabs
-            tab_overview: "\u{f0ca}".to_owned(), //  (list)
-            tab_activity: "\u{f4a6}".to_owned(), //  (comment-dots)
-            tab_commits: "\u{f417}".to_owned(),  //  (git-commit)
-            tab_checks: "\u{f46c}".to_owned(),   //  (clipboard-check)
-            tab_files: "\u{f15c}".to_owned(),    //  (file-alt)
+            // Sidebar tabs (matching gh-dash: Codicons + Octicons)
+            tab_overview: "\u{eb2f}".to_owned(), // cod-preview
+            tab_activity: "\u{f442}".to_owned(), // oct-comment_discussion
+            tab_commits: "\u{f4b6}".to_owned(),  // oct-commit
+            tab_checks: "\u{f45e}".to_owned(),   // oct-checklist
+            tab_files: "\u{f4d2}".to_owned(),    // oct-file_diff
             // Author roles
             role_newcontributor: "\u{f005}".to_owned(), //  (star)
             role_contributor: "\u{f00c}".to_owned(),    //

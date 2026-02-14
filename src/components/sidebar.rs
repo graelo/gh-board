@@ -46,7 +46,7 @@ impl SidebarTab {
             Self::Checks => &icons.tab_checks,
             Self::Files => &icons.tab_files,
         };
-        format!("{icon}{}", self.label())
+        format!("{icon} {}", self.label())
     }
 
     pub fn index(self) -> usize {
@@ -237,28 +237,21 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                 })
             }
 
-            // Tab bar (if tabs are present)
-            #(if has_tabs {
-                Some(element! {
-                    View(
-                        border_style: BorderStyle::Single,
-                        border_edges: Edges::Bottom,
-                        border_color: sb.border_fg,
-                    ) {
-                        #(sb.tab_labels.into_iter().map(|(label, active)| {
-                            let color = if active { sb.tab_active_fg } else { sb.tab_inactive_fg };
-                            let weight = if active { Weight::Bold } else { Weight::Normal };
-                            let decoration = if active { TextDecoration::Underline } else { TextDecoration::None };
-                            let text = format!(" {label} ");
-                            element! {
-                                Text(content: text, color, weight, decoration, wrap: TextWrap::NoWrap)
-                            }
-                        }))
+            // Tab labels (with bottom border separator when tabs are present)
+            View(
+                border_style: if has_tabs { BorderStyle::Single } else { BorderStyle::None },
+                border_edges: Edges::Bottom,
+                border_color: sb.border_fg,
+            ) {
+                #(sb.tab_labels.into_iter().map(|(label, active)| {
+                    let color = if active { sb.tab_active_fg } else { sb.tab_inactive_fg };
+                    let weight = if active { Weight::Bold } else { Weight::Normal };
+                    let text = format!(" {label} ");
+                    element! {
+                        Text(content: text, color, weight, wrap: TextWrap::NoWrap)
                     }
-                })
-            } else {
-                None
-            })
+                }))
+            }
 
             // Content area
             View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {

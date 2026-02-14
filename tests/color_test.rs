@@ -2,6 +2,32 @@ use gh_board::color::{Color, ColorDepth};
 use gh_board::config::types::AppConfig;
 use gh_board::theme::{Background, ResolvedTheme};
 
+/// Extract the 16-color index from a crossterm color.  Works for both named
+/// color variants (e.g. `Color::Red` → 9) and `AnsiValue(0..15)`.
+fn to_ansi16_index(c: crossterm::style::Color) -> Option<u8> {
+    use crossterm::style::Color as C;
+    match c {
+        C::Black => Some(0),
+        C::DarkRed => Some(1),
+        C::DarkGreen => Some(2),
+        C::DarkYellow => Some(3),
+        C::DarkBlue => Some(4),
+        C::DarkMagenta => Some(5),
+        C::DarkCyan => Some(6),
+        C::Grey => Some(7),
+        C::DarkGrey => Some(8),
+        C::Red => Some(9),
+        C::Green => Some(10),
+        C::Yellow => Some(11),
+        C::Blue => Some(12),
+        C::Magenta => Some(13),
+        C::Cyan => Some(14),
+        C::White => Some(15),
+        C::AnsiValue(n) if n < 16 => Some(n),
+        _ => None,
+    }
+}
+
 #[test]
 fn parse_hex_6_digit() {
     let c = Color::parse("#c0caf5", "test_field").unwrap();
@@ -130,12 +156,9 @@ fn to_crossterm_256_hex_approximated() {
 fn to_crossterm_16_color() {
     let c = Color::Ansi256(196); // bright red in 256 palette
     let ct = c.to_crossterm_color(ColorDepth::Color16);
-    // Should map to one of the 16 standard colors.
-    if let crossterm::style::Color::AnsiValue(n) = ct {
-        assert!(n < 16, "expected 16-color index, got {n}");
-    } else {
-        panic!("expected AnsiValue");
-    }
+    // Should map to one of the 16 standard colors (named or AnsiValue).
+    let n = to_ansi16_index(ct).expect("expected a 16-color value");
+    assert!(n < 16, "expected 16-color index, got {n}");
 }
 
 #[test]
@@ -323,11 +346,8 @@ fn mixed_theme_resolves_at_all_depths() {
                 assert!(matches!(ct, crossterm::style::Color::AnsiValue(_)));
             }
             ColorDepth::Color16 => {
-                if let crossterm::style::Color::AnsiValue(n) = ct {
-                    assert!(n < 16, "16-color: got {n}");
-                } else {
-                    panic!("expected AnsiValue for Color16");
-                }
+                let n = to_ansi16_index(ct).expect("expected 16-color");
+                assert!(n < 16, "16-color: got {n}");
             }
         }
 
@@ -338,11 +358,8 @@ fn mixed_theme_resolves_at_all_depths() {
                 assert_eq!(ct_ansi, crossterm::style::Color::AnsiValue(245));
             }
             ColorDepth::Color16 => {
-                if let crossterm::style::Color::AnsiValue(n) = ct_ansi {
-                    assert!(n < 16, "16-color degradation: got {n}");
-                } else {
-                    panic!("expected AnsiValue for Color16");
-                }
+                let n = to_ansi16_index(ct_ansi).expect("expected 16-color");
+                assert!(n < 16, "16-color degradation: got {n}");
             }
         }
     }
@@ -413,36 +430,27 @@ primary = "#xyz"
 fn hex_degrades_to_16_color_reasonably() {
     // Pure red hex → should degrade to red (ANSI 1 or 9)
     let red = Color::Hex { r: 255, g: 0, b: 0 };
-    if let crossterm::style::Color::AnsiValue(n) = red.to_crossterm_color(ColorDepth::Color16) {
-        assert!(n < 16, "should be 16-color index, got {n}");
-        assert!(n == 1 || n == 9, "red should map to ANSI 1 or 9, got {n}");
-    } else {
-        panic!("expected AnsiValue");
-    }
+    let n =
+        to_ansi16_index(red.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    assert!(n == 1 || n == 9, "red should map to ANSI 1 or 9, got {n}");
 
     // Pure green hex → should degrade to green (ANSI 2 or 10)
     let green = Color::Hex { r: 0, g: 255, b: 0 };
-    if let crossterm::style::Color::AnsiValue(n) = green.to_crossterm_color(ColorDepth::Color16) {
-        assert!(n < 16);
-        assert!(
-            n == 2 || n == 10,
-            "green should map to ANSI 2 or 10, got {n}"
-        );
-    } else {
-        panic!("expected AnsiValue");
-    }
+    let n =
+        to_ansi16_index(green.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    assert!(
+        n == 2 || n == 10,
+        "green should map to ANSI 2 or 10, got {n}"
+    );
 
     // Pure blue hex → should degrade to blue (ANSI 4 or 12)
     let blue = Color::Hex { r: 0, g: 0, b: 255 };
-    if let crossterm::style::Color::AnsiValue(n) = blue.to_crossterm_color(ColorDepth::Color16) {
-        assert!(n < 16);
-        assert!(
-            n == 4 || n == 12,
-            "blue should map to ANSI 4 or 12, got {n}"
-        );
-    } else {
-        panic!("expected AnsiValue");
-    }
+    let n =
+        to_ansi16_index(blue.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    assert!(
+        n == 4 || n == 12,
+        "blue should map to ANSI 4 or 12, got {n}"
+    );
 
     // White hex → should degrade to white (ANSI 7 or 15)
     let white = Color::Hex {
@@ -450,37 +458,25 @@ fn hex_degrades_to_16_color_reasonably() {
         g: 255,
         b: 255,
     };
-    if let crossterm::style::Color::AnsiValue(n) = white.to_crossterm_color(ColorDepth::Color16) {
-        assert!(n < 16);
-        assert!(
-            n == 7 || n == 15,
-            "white should map to ANSI 7 or 15, got {n}"
-        );
-    } else {
-        panic!("expected AnsiValue");
-    }
+    let n =
+        to_ansi16_index(white.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    assert!(
+        n == 7 || n == 15,
+        "white should map to ANSI 7 or 15, got {n}"
+    );
 }
 
 #[test]
 fn ansi256_degrades_to_16_color() {
     // ANSI 196 (bright red) → should degrade to a red-ish 16-color
     let c = Color::Ansi256(196);
-    if let crossterm::style::Color::AnsiValue(n) = c.to_crossterm_color(ColorDepth::Color16) {
-        assert!(n < 16, "should be 16-color index, got {n}");
-        // 196 = pure bright red → expect 1 or 9
-        assert!(n == 1 || n == 9, "bright red ANSI 196 → got {n}");
-    } else {
-        panic!("expected AnsiValue");
-    }
+    let n = to_ansi16_index(c.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    assert!(n == 1 || n == 9, "bright red ANSI 196 → got {n}");
 
     // ANSI 46 (bright green) → should degrade to green-ish
     let c = Color::Ansi256(46);
-    if let crossterm::style::Color::AnsiValue(n) = c.to_crossterm_color(ColorDepth::Color16) {
-        assert!(n < 16, "should be 16-color index, got {n}");
-        assert!(n == 2 || n == 10, "bright green ANSI 46 → got {n}");
-    } else {
-        panic!("expected AnsiValue");
-    }
+    let n = to_ansi16_index(c.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    assert!(n == 2 || n == 10, "bright green ANSI 46 → got {n}");
 }
 
 #[test]
@@ -511,11 +507,8 @@ fn full_ansi_theme_degrades_to_16_without_panic() {
     ];
 
     for color in all_colors {
-        if let crossterm::style::Color::AnsiValue(n) = color.to_crossterm_color(ColorDepth::Color16)
-        {
-            assert!(n < 16, "all colors should degrade to 16-color: got {n}");
-        } else {
-            panic!("expected AnsiValue for Color16 degradation");
-        }
+        let ct = color.to_crossterm_color(ColorDepth::Color16);
+        let n = to_ansi16_index(ct).expect("expected 16-color for Color16 degradation");
+        assert!(n < 16, "all colors should degrade to 16-color: got {n}");
     }
 }

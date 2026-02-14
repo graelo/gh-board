@@ -71,23 +71,28 @@ impl Color {
     }
 
     /// Convert to a `crossterm::style::Color` at the given terminal color depth.
+    ///
+    /// For ANSI indices 0–15, we use crossterm's named color variants so that
+    /// the terminal renders them through its user-configured 16-color palette
+    /// (SGR 30–37 / 90–97) rather than the 256-color palette (`38;5;N`), which
+    /// some terminals do **not** map to the customised palette.
     pub fn to_crossterm_color(self, depth: ColorDepth) -> crossterm::style::Color {
         match depth {
             ColorDepth::TrueColor => match self {
                 Color::Hex { r, g, b } => crossterm::style::Color::Rgb { r, g, b },
-                Color::Ansi256(n) => crossterm::style::Color::AnsiValue(n),
+                Color::Ansi256(n) => ansi_to_crossterm(n),
             },
             ColorDepth::Color256 => match self {
                 Color::Hex { r, g, b } => {
                     let idx = approximate_ansi256(r, g, b);
                     crossterm::style::Color::AnsiValue(idx)
                 }
-                Color::Ansi256(n) => crossterm::style::Color::AnsiValue(n),
+                Color::Ansi256(n) => ansi_to_crossterm(n),
             },
             ColorDepth::Color16 => {
                 let (r, g, b) = self.to_rgb();
                 let idx = approximate_ansi16(r, g, b);
-                crossterm::style::Color::AnsiValue(idx)
+                ansi_to_crossterm(idx)
             }
         }
     }
@@ -139,6 +144,38 @@ impl ColorDepth {
             return ColorDepth::Color256;
         }
         ColorDepth::Color16
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ANSI index → crossterm Color
+// ---------------------------------------------------------------------------
+
+/// Map an ANSI index to a crossterm `Color`.
+///
+/// Indices 0–15 are mapped to crossterm's named 16-color variants so the
+/// terminal uses its configured palette (SGR 30–37 / 90–97).  Indices 16–255
+/// pass through as `AnsiValue`.
+fn ansi_to_crossterm(n: u8) -> crossterm::style::Color {
+    use crossterm::style::Color;
+    match n {
+        0 => Color::Black,
+        1 => Color::DarkRed,
+        2 => Color::DarkGreen,
+        3 => Color::DarkYellow,
+        4 => Color::DarkBlue,
+        5 => Color::DarkMagenta,
+        6 => Color::DarkCyan,
+        7 => Color::Grey,
+        8 => Color::DarkGrey,
+        9 => Color::Red,
+        10 => Color::Green,
+        11 => Color::Yellow,
+        12 => Color::Blue,
+        13 => Color::Magenta,
+        14 => Color::Cyan,
+        15 => Color::White,
+        _ => Color::AnsiValue(n),
     }
 }
 

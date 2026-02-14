@@ -107,10 +107,15 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
         ) {
             // Left: section indicators
             #(f.sections.iter().map(|s| {
-                let color = if s.is_active { f.active_fg } else { f.inactive_fg };
-                let weight = if s.is_active { Weight::Bold } else { Weight::Normal };
+                let (fg, bg, weight) = if s.is_active {
+                    (Color::White, Some(f.active_fg), Weight::Bold)
+                } else {
+                    (f.inactive_fg, None, Weight::Normal)
+                };
                 element! {
-                    Text(content: format!("{}  ", s.label), color, weight, wrap: TextWrap::NoWrap)
+                    View(background_color: bg.unwrap_or(Color::Reset)) {
+                        Text(content: format!(" {} ", s.label), color: fg, weight, wrap: TextWrap::NoWrap)
+                    }
                 }
             }))
             // Pipe separator

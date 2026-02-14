@@ -64,10 +64,10 @@ impl ResolvedIcons {
     fn unicode() -> Self {
         Self {
             // PR state
-            pr_open: "\u{25cf}".to_owned(),     // ●
-            pr_closed: "\u{2716}".to_owned(),    // ✖
-            pr_merged: "\u{2714}".to_owned(),    // ✔
-            pr_draft: "\u{25cb}".to_owned(),     // ○
+            pr_open: "\u{25cf}".to_owned(),   // ●
+            pr_closed: "\u{2716}".to_owned(), // ✖
+            pr_merged: "\u{2714}".to_owned(), // ✔
+            pr_draft: "\u{25cb}".to_owned(),  // ○
             // PR column headers
             header_state: "\u{1f500}".to_owned(),    // 🔀
             header_comments: "\u{1f4ac}".to_owned(), // 💬
@@ -76,9 +76,9 @@ impl ResolvedIcons {
             header_lines: "\u{00b1}".to_owned(),     // ±
             header_time: "\u{1f550}".to_owned(),     // 🕐
             // Review decision
-            review_approved: "\u{2714}".to_owned(),  // ✔
-            review_changes: "\u{2716}".to_owned(),   // ✖
-            review_required: "\u{25cb}".to_owned(),  // ○
+            review_approved: "\u{2714}".to_owned(), // ✔
+            review_changes: "\u{2716}".to_owned(),  // ✖
+            review_required: "\u{25cb}".to_owned(), // ○
             review_none: "-".to_owned(),
             // CI status
             ci_success: "\u{2714}".to_owned(), // ✔
@@ -89,10 +89,10 @@ impl ResolvedIcons {
             issue_open: "\u{25cf}".to_owned(),   // ●
             issue_closed: "\u{2714}".to_owned(), // ✔
             // Notifications
-            notif_unread: "\u{25cf}".to_owned(),        // ●
-            notif_type_pr: "\u{21c4}".to_owned(),       // ⇄
-            notif_type_issue: "\u{25cb}".to_owned(),    // ○
-            notif_type_release: "\u{25b3}".to_owned(),  // △
+            notif_unread: "\u{25cf}".to_owned(),          // ●
+            notif_type_pr: "\u{21c4}".to_owned(),         // ⇄
+            notif_type_issue: "\u{25cb}".to_owned(),      // ○
+            notif_type_release: "\u{25b3}".to_owned(),    // △
             notif_type_discussion: "\u{25a1}".to_owned(), // □
             // Branch
             branch_ahead: "\u{2191}".to_owned(),  // ↑
@@ -104,11 +104,11 @@ impl ResolvedIcons {
             // Sidebar decorative
             branch_arrow: "\u{2192}".to_owned(), // →
             // Sidebar tabs
-            tab_overview: "\u{2630}".to_owned(),  // ☰
-            tab_activity: "\u{25b7}".to_owned(),  // ▷
-            tab_commits: "\u{25cb}".to_owned(),   // ○
-            tab_checks: "\u{2611}".to_owned(),    // ☑
-            tab_files: "\u{25a4}".to_owned(),     // ▤
+            tab_overview: "\u{2630}".to_owned(), // ☰
+            tab_activity: "\u{25b7}".to_owned(), // ▷
+            tab_commits: "\u{25cb}".to_owned(),  // ○
+            tab_checks: "\u{2611}".to_owned(),   // ☑
+            tab_files: "\u{25a4}".to_owned(),    // ▤
             // Author roles
             role_newcontributor: "\u{2728}".to_owned(), // ✨
             role_contributor: "\u{2713}".to_owned(),    // ✓
@@ -123,7 +123,7 @@ impl ResolvedIcons {
     fn nerdfont() -> Self {
         Self {
             // PR state
-            pr_open: "\u{e728}".to_owned(),  //
+            pr_open: "\u{e728}".to_owned(),   //
             pr_closed: "\u{f00d}".to_owned(), //
             pr_merged: "\u{f00c}".to_owned(), //
             pr_draft: "\u{f10c}".to_owned(),  //
@@ -135,9 +135,9 @@ impl ResolvedIcons {
             header_lines: "\u{f043}".to_owned(),    //  (diff)
             header_time: "\u{f017}".to_owned(),     //
             // Review decision
-            review_approved: "\u{f00c}".to_owned(),  //
-            review_changes: "\u{f00d}".to_owned(),   //
-            review_required: "\u{f10c}".to_owned(),  //
+            review_approved: "\u{f00c}".to_owned(), //
+            review_changes: "\u{f00d}".to_owned(),  //
+            review_required: "\u{f10c}".to_owned(), //
             review_none: "-".to_owned(),
             // CI status
             ci_success: "\u{f00c}".to_owned(), //
@@ -145,13 +145,13 @@ impl ResolvedIcons {
             ci_pending: "\u{f110}".to_owned(), //  (spinner)
             ci_none: "-".to_owned(),
             // Issue state
-            issue_open: "\u{f06a}".to_owned(),  //
+            issue_open: "\u{f06a}".to_owned(),   //
             issue_closed: "\u{f00c}".to_owned(), //
             // Notifications
-            notif_unread: "\u{f111}".to_owned(),       //
-            notif_type_pr: "\u{e728}".to_owned(),      //
-            notif_type_issue: "\u{f06a}".to_owned(),   //
-            notif_type_release: "\u{f412}".to_owned(), //
+            notif_unread: "\u{f111}".to_owned(),          //
+            notif_type_pr: "\u{e728}".to_owned(),         //
+            notif_type_issue: "\u{f06a}".to_owned(),      //
+            notif_type_release: "\u{f412}".to_owned(),    //
             notif_type_discussion: "\u{f086}".to_owned(), //
             // Branch
             branch_ahead: "\u{f062}".to_owned(),  //
@@ -163,11 +163,11 @@ impl ResolvedIcons {
             // Sidebar decorative
             branch_arrow: "\u{f061}".to_owned(), //
             // Sidebar tabs
-            tab_overview: "\u{f0ca}".to_owned(),  //  (list)
-            tab_activity: "\u{f4a6}".to_owned(),  //  (comment-dots)
-            tab_commits: "\u{f417}".to_owned(),   //  (git-commit)
-            tab_checks: "\u{f46c}".to_owned(),    //  (clipboard-check)
-            tab_files: "\u{f15c}".to_owned(),     //  (file-alt)
+            tab_overview: "\u{f0ca}".to_owned(), //  (list)
+            tab_activity: "\u{f4a6}".to_owned(), //  (comment-dots)
+            tab_commits: "\u{f417}".to_owned(),  //  (git-commit)
+            tab_checks: "\u{f46c}".to_owned(),   //  (clipboard-check)
+            tab_files: "\u{f15c}".to_owned(),    //  (file-alt)
             // Author roles
             role_newcontributor: "\u{f005}".to_owned(), //  (star)
             role_contributor: "\u{f00c}".to_owned(),    //
@@ -252,14 +252,23 @@ impl ResolvedIcons {
             pr_merged: config.pr_merged.clone().unwrap_or(base.pr_merged),
             pr_draft: config.pr_draft.clone().unwrap_or(base.pr_draft),
             header_state: config.header_state.clone().unwrap_or(base.header_state),
-            header_comments: config.header_comments.clone().unwrap_or(base.header_comments),
+            header_comments: config
+                .header_comments
+                .clone()
+                .unwrap_or(base.header_comments),
             header_review: config.header_review.clone().unwrap_or(base.header_review),
             header_ci: config.header_ci.clone().unwrap_or(base.header_ci),
             header_lines: config.header_lines.clone().unwrap_or(base.header_lines),
             header_time: config.header_time.clone().unwrap_or(base.header_time),
-            review_approved: config.review_approved.clone().unwrap_or(base.review_approved),
+            review_approved: config
+                .review_approved
+                .clone()
+                .unwrap_or(base.review_approved),
             review_changes: config.review_changes.clone().unwrap_or(base.review_changes),
-            review_required: config.review_required.clone().unwrap_or(base.review_required),
+            review_required: config
+                .review_required
+                .clone()
+                .unwrap_or(base.review_required),
             review_none: config.review_none.clone().unwrap_or(base.review_none),
             ci_success: config.ci_success.clone().unwrap_or(base.ci_success),
             ci_failure: config.ci_failure.clone().unwrap_or(base.ci_failure),
@@ -269,9 +278,18 @@ impl ResolvedIcons {
             issue_closed: config.issue_closed.clone().unwrap_or(base.issue_closed),
             notif_unread: config.notif_unread.clone().unwrap_or(base.notif_unread),
             notif_type_pr: config.notif_type_pr.clone().unwrap_or(base.notif_type_pr),
-            notif_type_issue: config.notif_type_issue.clone().unwrap_or(base.notif_type_issue),
-            notif_type_release: config.notif_type_release.clone().unwrap_or(base.notif_type_release),
-            notif_type_discussion: config.notif_type_discussion.clone().unwrap_or(base.notif_type_discussion),
+            notif_type_issue: config
+                .notif_type_issue
+                .clone()
+                .unwrap_or(base.notif_type_issue),
+            notif_type_release: config
+                .notif_type_release
+                .clone()
+                .unwrap_or(base.notif_type_release),
+            notif_type_discussion: config
+                .notif_type_discussion
+                .clone()
+                .unwrap_or(base.notif_type_discussion),
             branch_ahead: config.branch_ahead.clone().unwrap_or(base.branch_ahead),
             branch_behind: config.branch_behind.clone().unwrap_or(base.branch_behind),
             check_success: config.check_success.clone().unwrap_or(base.check_success),
@@ -283,9 +301,18 @@ impl ResolvedIcons {
             tab_commits: config.tab_commits.clone().unwrap_or(base.tab_commits),
             tab_checks: config.tab_checks.clone().unwrap_or(base.tab_checks),
             tab_files: config.tab_files.clone().unwrap_or(base.tab_files),
-            role_newcontributor: config.role_newcontributor.clone().unwrap_or(base.role_newcontributor),
-            role_contributor: config.role_contributor.clone().unwrap_or(base.role_contributor),
-            role_collaborator: config.role_collaborator.clone().unwrap_or(base.role_collaborator),
+            role_newcontributor: config
+                .role_newcontributor
+                .clone()
+                .unwrap_or(base.role_newcontributor),
+            role_contributor: config
+                .role_contributor
+                .clone()
+                .unwrap_or(base.role_contributor),
+            role_collaborator: config
+                .role_collaborator
+                .clone()
+                .unwrap_or(base.role_collaborator),
             role_member: config.role_member.clone().unwrap_or(base.role_member),
             role_owner: config.role_owner.clone().unwrap_or(base.role_owner),
             role_unknown: config.role_unknown.clone().unwrap_or(base.role_unknown),

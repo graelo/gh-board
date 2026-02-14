@@ -377,7 +377,9 @@ fn render_spans(spans: &[Span], depth: ColorDepth) -> Vec<RenderedSpan> {
         .iter()
         .map(|s| RenderedSpan {
             text: s.text.clone(),
-            fg: s.color.map_or(Color::Reset, |c| c.to_crossterm_color(depth)),
+            fg: s
+                .color
+                .map_or(Color::Reset, |c| c.to_crossterm_color(depth)),
             weight: if s.bold { Weight::Bold } else { Weight::Normal },
         })
         .collect()

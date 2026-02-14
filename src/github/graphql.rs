@@ -147,7 +147,10 @@ query SearchIssues($query: String!, $first: Int!, $after: String) {
 /// the expected node type and avoids deserialization failures from mixed results.
 fn ensure_type_qualifier(query: &str, qualifier: &str) -> String {
     let tag = format!("is:{qualifier}");
-    if query.split_whitespace().any(|token| token.eq_ignore_ascii_case(&tag)) {
+    if query
+        .split_whitespace()
+        .any(|token| token.eq_ignore_ascii_case(&tag))
+    {
         query.to_owned()
     } else {
         format!("{tag} {query}")

@@ -20,8 +20,8 @@ use crate::filter;
 use crate::github::graphql::{self, PrDetail};
 use crate::github::rate_limit;
 use crate::github::types::PullRequest;
-use crate::markdown::renderer::{self, StyledLine};
 use crate::icons::ResolvedIcons;
+use crate::markdown::renderer::{self, StyledLine};
 use crate::theme::ResolvedTheme;
 
 // ---------------------------------------------------------------------------

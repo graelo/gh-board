@@ -14,15 +14,7 @@ pub struct RenderedMarkdown {
 
 pub struct RenderedMdLine {
     pub key: usize,
-    pub spans: Vec<RenderedMdSpan>,
-}
-
-pub struct RenderedMdSpan {
-    pub text: String,
-    pub fg: Color,
-    pub weight: Weight,
-    pub italic: bool,
-    pub decoration: TextDecoration,
+    pub contents: Vec<MixedTextContent>,
 }
 
 impl RenderedMarkdown {
@@ -46,33 +38,39 @@ impl RenderedMarkdown {
             .iter()
             .enumerate()
             .map(|(i, line)| {
-                let spans = line
-                    .spans
-                    .iter()
-                    .map(|span| {
-                        let fg = span.color.to_crossterm_color(depth);
-                        let weight = if span.bold {
-                            Weight::Bold
-                        } else {
-                            Weight::Normal
-                        };
-                        let decoration = if span.underline {
-                            TextDecoration::Underline
-                        } else {
-                            TextDecoration::None
-                        };
-                        RenderedMdSpan {
-                            text: span.text.clone(),
-                            fg,
-                            weight,
-                            italic: span.italic,
-                            decoration,
-                        }
-                    })
-                    .collect();
+                // Empty lines (blank separators) need a single space so the
+                // element has non-zero height in the layout.
+                let contents = if line.spans.is_empty() {
+                    vec![MixedTextContent::new(" ")]
+                } else {
+                    line.spans
+                        .iter()
+                        .map(|span| {
+                            let fg = span.color.to_crossterm_color(depth);
+                            let weight = if span.bold {
+                                Weight::Bold
+                            } else {
+                                Weight::Normal
+                            };
+                            let decoration = if span.underline {
+                                TextDecoration::Underline
+                            } else {
+                                TextDecoration::None
+                            };
+                            let mut c = MixedTextContent::new(&span.text)
+                                .color(fg)
+                                .weight(weight)
+                                .decoration(decoration);
+                            if span.italic {
+                                c = c.italic();
+                            }
+                            c
+                        })
+                        .collect()
+                };
                 RenderedMdLine {
                     key: scroll_offset + i,
-                    spans,
+                    contents,
                 }
             })
             .collect();
@@ -103,21 +101,11 @@ pub fn MarkdownView(props: &mut MarkdownViewProps) -> impl Into<AnyElement<'stat
         View(flex_direction: FlexDirection::Column) {
             #(md.lines.into_iter().map(|line| {
                 element! {
-                    View(key: line.key) {
-                        #(line.spans.into_iter().enumerate().map(|(si, span)| {
-                            element! {
-                                Text(
-                                    key: si,
-                                    content: span.text,
-                                    color: span.fg,
-                                    weight: span.weight,
-                                    italic: span.italic,
-                                    decoration: span.decoration,
-                                    wrap: TextWrap::Wrap,
-                                )
-                            }
-                        }))
-                    }
+                    MixedText(
+                        key: line.key,
+                        contents: line.contents,
+                        wrap: TextWrap::Wrap,
+                    )
                 }
             }))
         }

@@ -1216,6 +1216,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(theme.border_faint),
             Some(theme.text_faint),
             Some(current_tab),
+            Some(&theme.icons),
         ))
     } else {
         None

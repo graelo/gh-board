@@ -395,6 +395,12 @@ pub struct IconConfig {
     pub check_pending: Option<String>,
     // Sidebar decorative
     pub branch_arrow: Option<String>,
+    // Sidebar tabs
+    pub tab_overview: Option<String>,
+    pub tab_activity: Option<String>,
+    pub tab_commits: Option<String>,
+    pub tab_checks: Option<String>,
+    pub tab_files: Option<String>,
     // Author roles
     pub role_newcontributor: Option<String>,
     pub role_contributor: Option<String>,

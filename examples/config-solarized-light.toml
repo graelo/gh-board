@@ -194,9 +194,9 @@ subheading = "9"           # orange
 # ==============================================================================
 
 [theme.icons]
-newcontributor = "+"
-contributor = "~"
-collaborator = "*"
-member = "o"
-owner = "#"
-unknownrole = "?"
+# Use ASCII preset for maximum terminal compatibility with Solarized
+preset = "ascii"
+
+# Override individual icons if desired:
+# role_owner = "!"
+# role_member = "@"

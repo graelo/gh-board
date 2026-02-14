@@ -44,6 +44,12 @@ pub struct ResolvedIcons {
     pub check_pending: String,
     // Sidebar decorative (1)
     pub branch_arrow: String,
+    // Sidebar tabs (5)
+    pub tab_overview: String,
+    pub tab_activity: String,
+    pub tab_commits: String,
+    pub tab_checks: String,
+    pub tab_files: String,
     // Author roles (6)
     pub role_newcontributor: String,
     pub role_contributor: String,
@@ -97,6 +103,12 @@ impl ResolvedIcons {
             check_pending: "\u{25cb}".to_owned(), // ○
             // Sidebar decorative
             branch_arrow: "\u{2192}".to_owned(), // →
+            // Sidebar tabs
+            tab_overview: "\u{2630}".to_owned(),  // ☰
+            tab_activity: "\u{25b7}".to_owned(),  // ▷
+            tab_commits: "\u{25cb}".to_owned(),   // ○
+            tab_checks: "\u{2611}".to_owned(),    // ☑
+            tab_files: "\u{25a4}".to_owned(),     // ▤
             // Author roles
             role_newcontributor: "\u{2728}".to_owned(), // ✨
             role_contributor: "\u{2713}".to_owned(),    // ✓
@@ -150,6 +162,12 @@ impl ResolvedIcons {
             check_pending: "\u{f110}".to_owned(), //
             // Sidebar decorative
             branch_arrow: "\u{f061}".to_owned(), //
+            // Sidebar tabs
+            tab_overview: "\u{f0ca}".to_owned(),  //  (list)
+            tab_activity: "\u{f4a6}".to_owned(),  //  (comment-dots)
+            tab_commits: "\u{f417}".to_owned(),   //  (git-commit)
+            tab_checks: "\u{f46c}".to_owned(),    //  (clipboard-check)
+            tab_files: "\u{f15c}".to_owned(),     //  (file-alt)
             // Author roles
             role_newcontributor: "\u{f005}".to_owned(), //  (star)
             role_contributor: "\u{f00c}".to_owned(),    //
@@ -203,6 +221,12 @@ impl ResolvedIcons {
             check_pending: "~".to_owned(),
             // Sidebar decorative
             branch_arrow: "->".to_owned(),
+            // Sidebar tabs
+            tab_overview: "=".to_owned(),
+            tab_activity: ">".to_owned(),
+            tab_commits: "o".to_owned(),
+            tab_checks: "+".to_owned(),
+            tab_files: "#".to_owned(),
             // Author roles
             role_newcontributor: "*".to_owned(),
             role_contributor: "+".to_owned(),
@@ -254,6 +278,11 @@ impl ResolvedIcons {
             check_failure: config.check_failure.clone().unwrap_or(base.check_failure),
             check_pending: config.check_pending.clone().unwrap_or(base.check_pending),
             branch_arrow: config.branch_arrow.clone().unwrap_or(base.branch_arrow),
+            tab_overview: config.tab_overview.clone().unwrap_or(base.tab_overview),
+            tab_activity: config.tab_activity.clone().unwrap_or(base.tab_activity),
+            tab_commits: config.tab_commits.clone().unwrap_or(base.tab_commits),
+            tab_checks: config.tab_checks.clone().unwrap_or(base.tab_checks),
+            tab_files: config.tab_files.clone().unwrap_or(base.tab_files),
             role_newcontributor: config.role_newcontributor.clone().unwrap_or(base.role_newcontributor),
             role_contributor: config.role_contributor.clone().unwrap_or(base.role_contributor),
             role_collaborator: config.role_collaborator.clone().unwrap_or(base.role_collaborator),

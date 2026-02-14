@@ -283,15 +283,79 @@ subheading = "#fab387"  # Peach (## headings in markdown)
 # ==============================================================================
 # ICONS
 # ==============================================================================
+#
+# Three built-in presets: "unicode" (default), "nerdfont", "ascii"
+# Set `preset` to choose one, then override individual icons as needed.
+# Omitted fields fall back to the preset's default.
 
 [theme.icons]
-# Author role icons (appear next to usernames if author_icon column is visible)
-newcontributor = "✨"
-contributor = "✓"
-collaborator = "◆"
-member = "●"
-owner = "★"
-unknownrole = "?"
+# Preset: "unicode" (default – safe on most terminals), "nerdfont" (requires a
+# Nerd Font patched font), or "ascii" (plain ASCII, works everywhere)
+preset = "unicode"
+
+# --- PR state ---
+# pr_open = "●"
+# pr_closed = "✖"
+# pr_merged = "✔"
+# pr_draft = "○"
+
+# --- Column headers ---
+# header_state = "🔀"
+# header_comments = "💬"
+# header_review = "👤"
+# header_ci = "📋"
+# header_lines = "±"
+# header_time = "🕐"
+
+# --- Review decision ---
+# review_approved = "✔"
+# review_changes = "✖"
+# review_required = "○"
+# review_none = "-"
+
+# --- CI status ---
+# ci_success = "✔"
+# ci_failure = "✖"
+# ci_pending = "○"
+# ci_none = "-"
+
+# --- Issue state ---
+# issue_open = "●"
+# issue_closed = "✔"
+
+# --- Notifications ---
+# notif_unread = "●"
+# notif_type_pr = "⇄"
+# notif_type_issue = "○"
+# notif_type_release = "△"
+# notif_type_discussion = "□"
+
+# --- Branch ---
+# branch_ahead = "↑"
+# branch_behind = "↓"
+
+# --- Sidebar checks ---
+# check_success = "✔"
+# check_failure = "✖"
+# check_pending = "○"
+
+# --- Sidebar decorative ---
+# branch_arrow = "→"
+
+# --- Sidebar tabs ---
+# tab_overview = "☰"
+# tab_activity = "▷"
+# tab_commits = "○"
+# tab_checks = "☑"
+# tab_files = "▤"
+
+# --- Author roles ---
+# role_newcontributor = "✨"
+# role_contributor = "✓"
+# role_collaborator = "◆"
+# role_member = "●"
+# role_owner = "★"
+# role_unknown = "?"
 
 # ==============================================================================
 # KEYBINDINGS

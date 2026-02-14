@@ -20,6 +20,8 @@ model for perfect terminal theme integration.
 - **GitHub Enterprise Support**: Configure custom hosts per section
 - **Customizable Keybindings**: Rebind any action or define custom shell
   commands
+- **Configurable Icons**: Ship with `unicode`, `nerdfont`, and `ascii` presets,
+  with per-icon overrides
 - **Smart Caching**: In-memory LRU cache with configurable TTL
 - **Fast Startup**: Under 500ms to first render on cold cache
 
@@ -162,9 +164,9 @@ string = "2"
 # ... (30+ token types)
 
 [theme.icons]
-owner = "★"
-member = "●"
-# ...
+preset = "unicode"                  # "unicode" (default), "nerdfont", or "ascii"
+pr_open = "●"                       # Override individual icons
+# ... (see examples/config.toml for all icon fields)
 
 [[keybindings.universal]]
 key = "q"

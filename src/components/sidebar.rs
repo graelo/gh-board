@@ -2,6 +2,7 @@ use iocraft::prelude::*;
 
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::markdown_view::{MarkdownView, RenderedMarkdown};
+use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::StyledLine;
 
 // ---------------------------------------------------------------------------
@@ -34,6 +35,18 @@ impl SidebarTab {
             Self::Checks => "Checks",
             Self::Files => "Files",
         }
+    }
+
+    /// Label prefixed with the matching icon from the resolved icon set.
+    pub fn icon_label(self, icons: &ResolvedIcons) -> String {
+        let icon = match self {
+            Self::Overview => &icons.tab_overview,
+            Self::Activity => &icons.tab_activity,
+            Self::Commits => &icons.tab_commits,
+            Self::Checks => &icons.tab_checks,
+            Self::Files => &icons.tab_files,
+        };
+        format!("{icon}{}", self.label())
     }
 
     pub fn index(self) -> usize {
@@ -102,6 +115,7 @@ impl RenderedSidebar {
             border_color,
             indicator_color,
             None,
+            None,
         )
     }
 
@@ -118,6 +132,7 @@ impl RenderedSidebar {
         border_color: Option<AppColor>,
         indicator_color: Option<AppColor>,
         active_tab: Option<SidebarTab>,
+        icons: Option<&ResolvedIcons>,
     ) -> Self {
         let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
@@ -140,7 +155,14 @@ impl RenderedSidebar {
         let tab_labels = if let Some(current) = active_tab {
             SidebarTab::ALL
                 .iter()
-                .map(|&t| (t.label().to_owned(), t == current))
+                .map(|&t| {
+                    let label = if let Some(ic) = icons {
+                        t.icon_label(ic)
+                    } else {
+                        t.label().to_owned()
+                    };
+                    (label, t == current)
+                })
                 .collect()
         } else {
             Vec::new()

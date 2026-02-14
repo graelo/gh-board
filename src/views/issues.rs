@@ -537,6 +537,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some("No issues match this filter")
         },
         subtitle_column: None,
+        row_separator: true,
     });
 
     let rendered_sidebar = if is_preview_open {

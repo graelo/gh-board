@@ -544,6 +544,7 @@ pub fn NotificationsView<'a>(
             Some("No notifications match this filter")
         },
         subtitle_column: None,
+        row_separator: true,
     });
 
     let rendered_tab_bar = RenderedTabBar::build(

@@ -94,6 +94,8 @@ pub struct RenderedTable {
     pub body_rows: Vec<RenderedRow>,
     pub total_width: u32,
     pub show_separator: bool,
+    /// Show a horizontal line between body rows (not after the last row).
+    pub row_separator: bool,
     pub header_fg: Color,
     pub border_fg: Color,
     /// Message to display when there are no rows.
@@ -145,6 +147,8 @@ pub struct TableBuildConfig<'a> {
     pub empty_message: Option<&'a str>,
     /// Column ID whose cell is extracted as a subtitle line below the row.
     pub subtitle_column: Option<&'a str>,
+    /// Show a horizontal line between body rows (not after the last row).
+    pub row_separator: bool,
 }
 
 impl RenderedTable {
@@ -260,6 +264,7 @@ impl RenderedTable {
             body_rows,
             total_width: u32::from(total_width),
             show_separator,
+            row_separator: cfg.row_separator,
             header_fg,
             border_fg,
             empty_message,
@@ -317,7 +322,12 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                     }
                 }
             }))
-            #(table.body_rows.into_iter().map(|row| {
+            #({
+                let row_count = table.body_rows.len();
+                let row_sep = table.row_separator;
+                let sep_color = table.border_fg;
+                table.body_rows.into_iter().enumerate().map(move |(ri, row)| {
+                let is_last = ri + 1 >= row_count;
                 let subtitle_elem = row.subtitle.map(|sub| {
                     let content: String = sub.spans.iter().map(|s| s.text.as_str()).collect();
                     let fg = sub.spans.first().map_or(Color::Reset, |s| s.fg);
@@ -325,7 +335,15 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                     (content, fg, weight, sub.width)
                 });
                 element! {
-                    View(key: row.key, flex_direction: FlexDirection::Column, background_color: row.bg) {
+                    View(
+                        key: row.key,
+                        flex_direction: FlexDirection::Column,
+                        border_style: if row_sep && !is_last { BorderStyle::Single } else { BorderStyle::None },
+                        border_edges: Edges::Bottom,
+                        border_color: sep_color,
+                    ) {
+                        // Row content (background only on this inner View)
+                        View(flex_direction: FlexDirection::Column, background_color: row.bg) {
                         // Main cells line
                         View(flex_direction: FlexDirection::Row) {
                             #(row.cells.into_iter().enumerate().map(|(ci, cell)| {
@@ -359,9 +377,11 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                                 }
                             }
                         }))
+                        }
                     }
                 }
-            }))
+            })
+            })
         }
     }
     .into_any()

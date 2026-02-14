@@ -1104,6 +1104,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some("No pull requests match this filter")
         },
         subtitle_column: Some("subtitle"),
+        row_separator: true,
     });
 
     // Trigger detail fetch when sidebar is open and cursor changes.

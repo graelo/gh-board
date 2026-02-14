@@ -372,6 +372,7 @@ pub struct IconConfig {
     pub review_changes: Option<String>,
     pub review_required: Option<String>,
     pub review_none: Option<String>,
+    pub review_commented: Option<String>,
     // CI status
     pub ci_success: Option<String>,
     pub ci_failure: Option<String>,

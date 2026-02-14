@@ -42,6 +42,12 @@ query SearchPullRequests($query: String!, $first: Int!, $after: String) {
         labels(first: 10) { nodes { name color } }
         assignees(first: 10) { nodes { login } }
         comments { totalCount }
+        latestReviews(first: 10) {
+          nodes {
+            state
+            author { login }
+          }
+        }
         reviewRequests(first: 10) {
           nodes {
             requestedReviewer {
@@ -368,6 +374,8 @@ struct RawPullRequest {
     labels: Option<Connection<RawLabel>>,
     assignees: Option<Connection<RawAssignee>>,
     comments: Option<TotalCount>,
+    #[serde(rename = "latestReviews")]
+    latest_reviews: Option<Connection<RawLatestReview>>,
     #[serde(rename = "reviewRequests")]
     review_requests: Option<Connection<RawReviewRequest>>,
     commits: Option<Connection<RawCommitNode>>,
@@ -403,6 +411,12 @@ struct RawAssignee {
 struct TotalCount {
     #[serde(rename = "totalCount", default)]
     total_count: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawLatestReview {
+    state: Option<ReviewState>,
+    author: Option<RawActor>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -614,7 +628,24 @@ impl RawPullRequest {
             comments: Vec::new(),
             review_threads: Vec::new(),
             review_requests,
-            reviews: Vec::new(),
+            reviews: self
+                .latest_reviews
+                .map(|c| {
+                    c.nodes
+                        .into_iter()
+                        .flatten()
+                        .map(|r| Review {
+                            author: r.author.map(|a| Actor {
+                                login: a.login,
+                                avatar_url: a.avatar_url,
+                            }),
+                            state: r.state.unwrap_or(ReviewState::Unknown),
+                            body: String::new(),
+                            submitted_at: None,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
             timeline_events: Vec::new(),
             files: Vec::new(),
             check_runs,

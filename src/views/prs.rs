@@ -162,7 +162,7 @@ fn pr_to_row(pr: &PullRequest, theme: &ResolvedTheme, date_format: &str) -> Row 
         Cell::colored(comments, theme.text_secondary),
     );
 
-    // Review status
+    // Review status: prefer reviewDecision, fall back to latestReviews.
     let (review_text, review_color) = match pr.review_decision {
         Some(crate::github::types::ReviewDecision::Approved) => {
             (&icons.review_approved, theme.text_success)
@@ -173,7 +173,20 @@ fn pr_to_row(pr: &PullRequest, theme: &ResolvedTheme, date_format: &str) -> Row 
         Some(crate::github::types::ReviewDecision::ReviewRequired) => {
             (&icons.review_required, theme.text_faint)
         }
-        None => (&icons.review_none, theme.text_faint),
+        None => {
+            // Infer from latestReviews when reviewDecision is null
+            // (repos without required review branch protection).
+            use crate::github::types::ReviewState;
+            if pr.reviews.iter().any(|r| r.state == ReviewState::ChangesRequested) {
+                (&icons.review_changes, theme.text_warning)
+            } else if pr.reviews.iter().any(|r| r.state == ReviewState::Approved) {
+                (&icons.review_approved, theme.text_success)
+            } else if pr.reviews.iter().any(|r| r.state == ReviewState::Commented) {
+                (&icons.review_commented, theme.text_secondary)
+            } else {
+                (&icons.review_none, theme.text_faint)
+            }
+        }
     };
     row.insert(
         "review".to_owned(),

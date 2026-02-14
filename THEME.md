@@ -201,12 +201,13 @@ comes from the text color fields listed above. Here is the full mapping:
 
 ### Review Decision Icons
 
-| Icon field        | Colored by     |
-| ----------------- | -------------- |
-| `review_approved` | `text.success` |
-| `review_changes`  | `text.warning` |
-| `review_required` | `text.faint`   |
-| `review_none`     | `text.faint`   |
+| Icon field          | Colored by       |
+| ------------------- | ---------------- |
+| `review_approved`   | `text.success`   |
+| `review_changes`    | `text.warning`   |
+| `review_commented`  | `text.secondary` |
+| `review_required`   | `text.faint`     |
+| `review_none`       | `text.faint`     |
 
 ### CI Status Icons
 

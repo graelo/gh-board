@@ -193,6 +193,21 @@ name = "Open in browser"
 - `{{.HeadBranch}}`: PR head branch
 - `{{.BaseBranch}}`: PR base branch
 
+## PR List Columns
+
+The PR view displays the following columns:
+
+| Column   | Header | Description                                                                                                                                                     |
+| -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State    | (icon) | PR state: open, closed, merged, or draft                                                                                                                        |
+| Title    | Title  | Two-line cell: repo + number + author on the first line, PR title on the second                                                                                 |
+| Comments | (icon) | Comment count (blank when zero)                                                                                                                                 |
+| Review   | (icon) | Review status derived from `reviewDecision` when available, otherwise inferred from the latest reviews: approved, changes requested, commented, pending, or none |
+| CI       | (icon) | Aggregate CI status from check runs: success, failure, pending, or none                                                                                         |
+| Lines    | (icon) | Lines changed (`+N -M`)                                                                                                                                         |
+| Updated  | (icon) | Last updated date                                                                                                                                               |
+| Created  | (icon) | Creation date                                                                                                                                                   |
+
 ## Keybindings
 
 ### Universal (All Views)

@@ -16,11 +16,12 @@ pub struct ResolvedIcons {
     pub header_ci: String,
     pub header_lines: String,
     pub header_time: String,
-    // Review decision (4)
+    // Review decision (5)
     pub review_approved: String,
     pub review_changes: String,
     pub review_required: String,
     pub review_none: String,
+    pub review_commented: String,
     // CI status (4)
     pub ci_success: String,
     pub ci_failure: String,
@@ -85,6 +86,7 @@ impl ResolvedIcons {
             review_changes: "\u{2716}".to_owned(),  // ✖
             review_required: "\u{25cb}".to_owned(), // ○
             review_none: "-".to_owned(),
+            review_commented: "\u{1f4ac}".to_owned(), // 💬
             // CI status
             ci_success: "\u{2714}".to_owned(), // ✔
             ci_failure: "\u{2716}".to_owned(), // ✖
@@ -150,6 +152,7 @@ impl ResolvedIcons {
             review_changes: "\u{eb43}".to_owned(),    // nf-cod-request_changes
             review_required: "\u{e641}".to_owned(),   // nf-seti-clock (waiting)
             review_none: "\u{eabd}".to_owned(),       // nf-cod-dash
+            review_commented: "\u{f27b}".to_owned(),  // nf-fa-comment_o
             // CI status (matching gh-dash)
             ci_success: "\u{f058}".to_owned(),   // nf-fa-check_circle
             ci_failure: "\u{f0159}".to_owned(),  // nf-md-close_circle
@@ -214,6 +217,7 @@ impl ResolvedIcons {
             review_changes: "x".to_owned(),
             review_required: "o".to_owned(),
             review_none: "-".to_owned(),
+            review_commented: "c".to_owned(),
             // CI status
             ci_success: "v".to_owned(),
             ci_failure: "x".to_owned(),
@@ -291,6 +295,10 @@ impl ResolvedIcons {
                 .clone()
                 .unwrap_or(base.review_required),
             review_none: config.review_none.clone().unwrap_or(base.review_none),
+            review_commented: config
+                .review_commented
+                .clone()
+                .unwrap_or(base.review_commented),
             ci_success: config.ci_success.clone().unwrap_or(base.ci_success),
             ci_failure: config.ci_failure.clone().unwrap_or(base.ci_failure),
             ci_pending: config.ci_pending.clone().unwrap_or(base.ci_pending),

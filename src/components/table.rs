@@ -307,7 +307,7 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
     };
 
     element! {
-        View(flex_direction: FlexDirection::Column, width: table.total_width) {
+        View(flex_direction: FlexDirection::Column, width: table.total_width, padding_left: 1u32) {
             // Header row
             View(
                 border_style: if table.show_separator { BorderStyle::Single } else { BorderStyle::None },

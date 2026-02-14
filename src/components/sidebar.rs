@@ -212,11 +212,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
             padding_right: 1,
         ) {
             // Title bar
-            View(
-                border_style: BorderStyle::Single,
-                border_edges: Edges::Bottom,
-                border_color: sb.border_fg,
-            ) {
+            View(margin_bottom: 1) {
                 View(flex_grow: 1.0) {
                     Text(
                         content: sb.title,

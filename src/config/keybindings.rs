@@ -73,6 +73,7 @@ pub enum BuiltinAction {
     ViewPrsForBranch,
     // View switching
     SwitchView,
+    SwitchViewBack,
 }
 
 impl BuiltinAction {
@@ -118,6 +119,7 @@ impl BuiltinAction {
             "create_pr_from_branch" => Self::CreatePrFromBranch,
             "view_prs_for_branch" => Self::ViewPrsForBranch,
             "switch_view" => Self::SwitchView,
+            "switch_view_back" => Self::SwitchViewBack,
             _ => return None,
         })
     }
@@ -164,6 +166,7 @@ impl BuiltinAction {
             Self::CreatePrFromBranch => "Create PR from branch",
             Self::ViewPrsForBranch => "View PRs for branch",
             Self::SwitchView => "Switch view",
+            Self::SwitchViewBack => "Switch view back",
         }
     }
 }
@@ -294,6 +297,7 @@ pub fn default_prs() -> Vec<Keybinding> {
         kb("m", "merge", "Merge PR"),
         kb("u", "update_from_base", "Update from base"),
         kb("s", "switch_view", "Switch view"),
+        kb("S", "switch_view_back", "Switch view back"),
     ]
 }
 
@@ -307,6 +311,7 @@ pub(crate) fn default_issues() -> Vec<Keybinding> {
         kb("x", "close", "Close issue"),
         kb("X", "reopen", "Reopen issue"),
         kb("s", "switch_view", "Switch view"),
+        kb("S", "switch_view_back", "Switch view back"),
     ]
 }
 
@@ -319,6 +324,7 @@ pub(crate) fn default_notifications() -> Vec<Keybinding> {
         kb("M", "mark_all_read", "Mark all as read"),
         kb("u", "unsubscribe", "Unsubscribe"),
         kb("s", "switch_view", "Switch view"),
+        kb("S", "switch_view_back", "Switch view back"),
     ]
 }
 
@@ -329,6 +335,8 @@ pub(crate) fn default_branches() -> Vec<Keybinding> {
         kb("n", "new_branch", "Create new branch"),
         kb("p", "create_pr_from_branch", "Create PR from branch"),
         kb("v", "view_prs_for_branch", "View PRs for branch"),
+        kb("s", "switch_view", "Switch view"),
+        kb("S", "switch_view_back", "Switch view back"),
     ]
 }
 

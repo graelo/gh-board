@@ -295,6 +295,8 @@ pub struct RepoViewProps<'a> {
     pub show_separator: bool,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
+    /// Signal to switch to the previous view.
+    pub switch_view_back: Option<State<bool>>,
     pub repo_path: Option<&'a std::path::Path>,
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
@@ -310,6 +312,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let depth = props.color_depth;
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
+    let switch_view_back = props.switch_view_back;
     let date_format = props.date_format.unwrap_or("relative");
     let is_active = props.is_active;
 
@@ -466,6 +469,12 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                         }
                         KeyCode::Char('s') => {
                             if let Some(mut sv) = switch_view {
+                                sv.set(true);
+                            }
+                        }
+                        // Switch view back
+                        KeyCode::Char('S') => {
+                            if let Some(mut sv) = switch_view_back {
                                 sv.set(true);
                             }
                         }

@@ -87,7 +87,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     });
     let mut active_view = hooks.use_state(move || initial_view);
 
-    // Switch-view signal: when a child view sets this to true, we cycle.
+    // Switch-view signal: when a child view sets this to true, we cycle forward.
     let mut switch_signal = hooks.use_state(|| false);
     if switch_signal.get() {
         switch_signal.set(false);
@@ -98,6 +98,19 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             ViewKind::Repo => ViewKind::Prs,
         };
         active_view.set(next);
+    }
+
+    // Switch-view-back signal: cycle views in reverse order.
+    let mut switch_back_signal = hooks.use_state(|| false);
+    if switch_back_signal.get() {
+        switch_back_signal.set(false);
+        let prev = match active_view.get() {
+            ViewKind::Prs => ViewKind::Repo,
+            ViewKind::Issues => ViewKind::Prs,
+            ViewKind::Notifications => ViewKind::Issues,
+            ViewKind::Repo => ViewKind::Notifications,
+        };
+        active_view.set(prev);
     }
 
     // Exit handling.
@@ -138,6 +151,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,
+                    switch_view_back: switch_back_signal,
                     repo_paths,
                     date_format,
                     is_active: active == ViewKind::Prs,
@@ -161,6 +175,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,
+                    switch_view_back: switch_back_signal,
                     date_format,
                     is_active: active == ViewKind::Issues,
                     refetch_interval_minutes: refetch_minutes,
@@ -182,6 +197,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,
+                    switch_view_back: switch_back_signal,
                     date_format,
                     is_active: active == ViewKind::Notifications,
                     refetch_interval_minutes: refetch_minutes,
@@ -200,6 +216,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,
+                    switch_view_back: switch_back_signal,
                     repo_path,
                     date_format,
                     is_active: active == ViewKind::Repo,

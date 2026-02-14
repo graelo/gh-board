@@ -264,6 +264,8 @@ pub struct IssuesViewProps<'a> {
     pub show_separator: bool,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
+    /// Signal to switch to the previous view.
+    pub switch_view_back: Option<State<bool>>,
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
     pub is_active: bool,
@@ -279,6 +281,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let depth = props.color_depth;
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
+    let switch_view_back = props.switch_view_back;
     let section_count = sections_cfg.len();
     let is_active = props.is_active;
     let preview_pct = if props.preview_width_pct > 0.0 {
@@ -499,6 +502,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             modifiers,
                             should_exit,
                             switch_view,
+                            switch_view_back,
                             preview_open,
                             preview_scroll,
                             cursor,
@@ -1032,6 +1036,7 @@ fn handle_normal_input(
     modifiers: KeyModifiers,
     should_exit: Option<State<bool>>,
     switch_view: Option<State<bool>>,
+    switch_view_back: Option<State<bool>>,
     mut preview_open: State<bool>,
     mut preview_scroll: State<usize>,
     mut cursor: State<usize>,
@@ -1064,6 +1069,11 @@ fn handle_normal_input(
         }
         KeyCode::Char('s') => {
             if let Some(mut sv) = switch_view {
+                sv.set(true);
+            }
+        }
+        KeyCode::Char('S') => {
+            if let Some(mut sv) = switch_view_back {
                 sv.set(true);
             }
         }

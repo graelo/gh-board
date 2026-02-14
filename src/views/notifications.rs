@@ -202,6 +202,8 @@ pub struct NotificationsViewProps<'a> {
     pub show_separator: bool,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
+    /// Signal to switch to the previous view.
+    pub switch_view_back: Option<State<bool>>,
     /// Date format string (from `config.defaults.date_format`).
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
@@ -221,6 +223,7 @@ pub fn NotificationsView<'a>(
     let depth = props.color_depth;
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
+    let switch_view_back = props.switch_view_back;
     let section_count = sections_cfg.len();
     let is_active = props.is_active;
 
@@ -405,6 +408,12 @@ pub fn NotificationsView<'a>(
                         // Switch view
                         KeyCode::Char('s') => {
                             if let Some(mut sv) = switch_view {
+                                sv.set(true);
+                            }
+                        }
+                        // Switch view back
+                        KeyCode::Char('S') => {
+                            if let Some(mut sv) = switch_view_back {
                                 sv.set(true);
                             }
                         }

@@ -352,6 +352,8 @@ pub struct PrsViewProps<'a> {
     pub should_exit: Option<State<bool>>,
     /// Signal to switch to another view.
     pub switch_view: Option<State<bool>>,
+    /// Signal to switch to the previous view.
+    pub switch_view_back: Option<State<bool>>,
     /// Repo paths for checkout (from `config.repo_paths`).
     pub repo_paths: Option<&'a HashMap<String, std::path::PathBuf>>,
     /// Date format string (from `config.defaults.date_format`).
@@ -370,6 +372,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let depth = props.color_depth;
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
+    let switch_view_back = props.switch_view_back;
     let section_count = sections_cfg.len();
     let is_active = props.is_active;
     let preview_pct = if props.preview_width_pct > 0.0 {
@@ -695,6 +698,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Switch view
                         KeyCode::Char('s') => {
                             if let Some(mut sv) = switch_view {
+                                sv.set(true);
+                            }
+                        }
+                        // Switch view back
+                        KeyCode::Char('S') => {
+                            if let Some(mut sv) = switch_view_back {
                                 sv.set(true);
                             }
                         }

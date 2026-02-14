@@ -1,0 +1,18 @@
+# Repo-local config that overrides the global config.
+
+[[pr_sections]]
+title = "Local PRs"
+filters = "author:@me is:open repo:org/local"
+limit = 50
+
+[defaults]
+view = "issues"
+refetch_interval_minutes = 5
+date_format = "relative"
+
+[defaults.preview]
+width = 0.3
+
+[repo_paths]
+"org/local-repo" = "/tmp/local-repo"
+"org/global-repo" = "/tmp/overridden-path"

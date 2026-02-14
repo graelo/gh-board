@@ -1,0 +1,79 @@
+# T041: ANSI-only theme fixture.
+# Every color slot uses an ANSI-256 index (0-255), no hex values.
+
+[[pr_sections]]
+title = "My PRs"
+filters = "is:open author:@me"
+
+[defaults]
+view = "prs"
+
+[defaults.preview]
+width = 0.45
+
+[theme.ui]
+sections_show_count = true
+
+[theme.ui.table]
+show_separator = true
+
+[theme.colors.text]
+primary = "7"
+secondary = "245"
+inverted = "0"
+faint = "243"
+warning = "11"
+success = "10"
+error = "1"
+actor = "6"
+
+[theme.colors.background]
+selected = "237"
+
+[theme.colors.border]
+primary = "244"
+secondary = "243"
+faint = "241"
+
+[theme.colors.icon]
+newcontributor = "11"
+contributor = "10"
+collaborator = "6"
+member = "4"
+owner = "3"
+unknownrole = "243"
+
+[theme.colors.markdown]
+text = "7"
+heading = "12"
+h1 = "12"
+h2 = "14"
+h3 = "6"
+code = "180"
+code_block = "245"
+link = "4"
+link_text = "6"
+horizontal_rule = "241"
+strikethrough = "243"
+emph = "7"
+strong = "7"
+
+[theme.colors.markdown.syntax]
+text = "7"
+comment = "243"
+keyword = "5"
+keyword_reserved = "5"
+keyword_namespace = "5"
+keyword_type = "6"
+operator = "7"
+punctuation = "245"
+name = "7"
+name_builtin = "6"
+name_tag = "4"
+name_attribute = "6"
+name_class = "6"
+name_decorator = "3"
+name_function = "4"
+number = "3"
+string = "2"
+string_escape = "11"

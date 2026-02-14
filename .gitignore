@@ -2,3 +2,8 @@
 CLAUDE.md
 specs/
 .specify/
+
+
+# Added by cargo
+
+/target

@@ -1,0 +1,12 @@
+# Config with unknown keys that should be silently tolerated.
+
+unknown_global_key = "ignored"
+another_unknown = 42
+
+[[pr_sections]]
+title = "PRs with Unknown"
+filters = "is:open"
+unknown_section_key = "also ignored"
+
+[defaults]
+view = "prs"

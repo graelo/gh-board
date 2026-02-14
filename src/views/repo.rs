@@ -1,0 +1,708 @@
+use std::collections::HashMap;
+use std::path::Path;
+use std::process::Command;
+
+use chrono::{DateTime, Utc};
+use iocraft::prelude::*;
+
+use crate::color::ColorDepth;
+use crate::components::footer::{Footer, RenderedFooter};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::table::{
+    Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
+};
+use crate::theme::ResolvedTheme;
+
+// ---------------------------------------------------------------------------
+// T079: Branch type
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub(crate) struct Branch {
+    pub(crate) name: String,
+    pub(crate) is_current: bool,
+    pub(crate) last_commit_message: String,
+    pub(crate) last_updated: Option<DateTime<Utc>>,
+    pub(crate) ahead: u32,
+    pub(crate) behind: u32,
+}
+
+// ---------------------------------------------------------------------------
+// T078: Local Git operations
+// ---------------------------------------------------------------------------
+
+/// List local branches with metadata.
+fn list_branches(repo_path: &Path) -> Vec<Branch> {
+    let output = Command::new("git")
+        .args([
+            "for-each-ref",
+            "--sort=-committerdate",
+            "--format=%(HEAD)|%(refname:short)|%(subject)|%(committerdate:iso8601)",
+            "refs/heads",
+        ])
+        .current_dir(repo_path)
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let default_branch = detect_default_branch(repo_path);
+
+    stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(4, '|').collect();
+            if parts.len() < 4 {
+                return None;
+            }
+            let is_current = parts[0].trim() == "*";
+            let name = parts[1].to_owned();
+            let last_commit_message = parts[2].to_owned();
+            let last_updated = DateTime::parse_from_str(parts[3].trim(), "%Y-%m-%d %H:%M:%S %z")
+                .ok()
+                .map(|dt| dt.with_timezone(&Utc));
+
+            let (ahead, behind) = if name == default_branch {
+                (0, 0)
+            } else {
+                get_ahead_behind(repo_path, &name, &default_branch)
+            };
+
+            Some(Branch {
+                name,
+                is_current,
+                last_commit_message,
+                last_updated,
+                ahead,
+                behind,
+            })
+        })
+        .collect()
+}
+
+fn detect_default_branch(repo_path: &Path) -> String {
+    // Try symbolic-ref for HEAD's upstream default
+    let output = Command::new("git")
+        .args(["symbolic-ref", "refs/remotes/origin/HEAD", "--short"])
+        .current_dir(repo_path)
+        .output();
+    if let Ok(o) = output
+        && o.status.success()
+    {
+        let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+        // "origin/main" → "main"
+        if let Some(branch) = s.strip_prefix("origin/") {
+            return branch.to_owned();
+        }
+    }
+    "main".to_owned()
+}
+
+fn get_ahead_behind(repo_path: &Path, branch: &str, base: &str) -> (u32, u32) {
+    let output = Command::new("git")
+        .args([
+            "rev-list",
+            "--left-right",
+            "--count",
+            &format!("{base}...{branch}"),
+        ])
+        .current_dir(repo_path)
+        .output();
+    match output {
+        Ok(o) if o.status.success() => {
+            let s = String::from_utf8_lossy(&o.stdout);
+            let parts: Vec<&str> = s.trim().split('\t').collect();
+            if parts.len() == 2 {
+                let behind = parts[0].parse().unwrap_or(0);
+                let ahead = parts[1].parse().unwrap_or(0);
+                (ahead, behind)
+            } else {
+                (0, 0)
+            }
+        }
+        _ => (0, 0),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T081: Branch actions
+// ---------------------------------------------------------------------------
+
+fn delete_branch(repo_path: &Path, branch: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(["branch", "-d", branch])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(format!("Deleted branch {branch}"))
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+fn create_branch(repo_path: &Path, name: &str, from: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(["branch", name, from])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(format!("Created branch {name} from {from}"))
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+fn checkout_branch(repo_path: &Path, branch: &str) -> Result<String, String> {
+    let output = Command::new("git")
+        .args(["checkout", branch])
+        .current_dir(repo_path)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if output.status.success() {
+        Ok(format!("Switched to {branch}"))
+    } else {
+        Err(String::from_utf8_lossy(&output.stderr).trim().to_owned())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T080: Table columns and row conversion
+// ---------------------------------------------------------------------------
+
+fn branch_columns() -> Vec<Column> {
+    vec![
+        Column {
+            id: "current".to_owned(),
+            header: " ".to_owned(),
+            default_width_pct: 0.03,
+            align: TextAlign::Center,
+        },
+        Column {
+            id: "name".to_owned(),
+            header: "Branch".to_owned(),
+            default_width_pct: 0.25,
+            align: TextAlign::Left,
+        },
+        Column {
+            id: "message".to_owned(),
+            header: "Last Commit".to_owned(),
+            default_width_pct: 0.35,
+            align: TextAlign::Left,
+        },
+        Column {
+            id: "ahead_behind".to_owned(),
+            header: "\u{2191}/\u{2193}".to_owned(),
+            default_width_pct: 0.10,
+            align: TextAlign::Center,
+        },
+        Column {
+            id: "updated".to_owned(),
+            header: "Updated".to_owned(),
+            default_width_pct: 0.12,
+            align: TextAlign::Right,
+        },
+    ]
+}
+
+fn branch_to_row(branch: &Branch, theme: &ResolvedTheme, date_format: &str) -> Row {
+    let mut row = HashMap::new();
+
+    let marker = if branch.is_current { "*" } else { " " };
+    let marker_color = if branch.is_current {
+        theme.text_success
+    } else {
+        theme.text_faint
+    };
+    row.insert("current".to_owned(), Cell::colored(marker, marker_color));
+
+    let name_color = if branch.is_current {
+        theme.text_success
+    } else {
+        theme.text_primary
+    };
+    row.insert("name".to_owned(), Cell::colored(&branch.name, name_color));
+
+    row.insert(
+        "message".to_owned(),
+        Cell::colored(&branch.last_commit_message, theme.text_secondary),
+    );
+
+    let ab_text = if branch.ahead == 0 && branch.behind == 0 {
+        String::new()
+    } else {
+        format!("\u{2191}{} \u{2193}{}", branch.ahead, branch.behind)
+    };
+    row.insert(
+        "ahead_behind".to_owned(),
+        Cell::colored(ab_text, theme.text_faint),
+    );
+
+    let updated = branch
+        .last_updated
+        .as_ref()
+        .map(|dt| crate::util::format_date(dt, date_format))
+        .unwrap_or_default();
+    row.insert(
+        "updated".to_owned(),
+        Cell::colored(updated, theme.text_faint),
+    );
+
+    row
+}
+
+// ---------------------------------------------------------------------------
+// Input mode for branch actions (T081)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum InputMode {
+    Normal,
+    ConfirmDelete,
+    CreateBranch,
+}
+
+// ---------------------------------------------------------------------------
+// T080/T082: RepoView component
+// ---------------------------------------------------------------------------
+
+#[derive(Default, Props)]
+pub struct RepoViewProps<'a> {
+    pub theme: Option<&'a ResolvedTheme>,
+    pub color_depth: ColorDepth,
+    pub width: u16,
+    pub height: u16,
+    pub show_separator: bool,
+    pub should_exit: Option<State<bool>>,
+    pub switch_view: Option<State<bool>>,
+    pub repo_path: Option<&'a std::path::Path>,
+    pub date_format: Option<&'a str>,
+}
+
+#[component]
+#[allow(clippy::too_many_lines)]
+pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
+    let theme = props.theme.cloned().unwrap_or_else(default_theme);
+    let depth = props.color_depth;
+    let should_exit = props.should_exit;
+    let switch_view = props.switch_view;
+    let date_format = props.date_format.unwrap_or("relative");
+
+    let mut cursor = hooks.use_state(|| 0usize);
+    let mut scroll_offset = hooks.use_state(|| 0usize);
+    let mut input_mode = hooks.use_state(|| InputMode::Normal);
+    let mut input_buffer = hooks.use_state(String::new);
+    let mut action_status = hooks.use_state(|| Option::<String>::None);
+
+    // Load branches.
+    let mut branches_state = hooks.use_state(Vec::<Branch>::new);
+    let mut loaded = hooks.use_state(|| false);
+
+    if !loaded.get() {
+        loaded.set(true);
+        if let Some(repo_path) = props.repo_path {
+            branches_state.set(list_branches(repo_path));
+        }
+    }
+
+    let branches = branches_state.read();
+    let total_rows = branches.len();
+    let visible_rows = props.height.saturating_sub(5) as usize;
+
+    // Keyboard handling.
+    let repo_path_owned = props.repo_path.map(std::borrow::ToOwned::to_owned);
+    hooks.use_terminal_events({
+        move |event| match event {
+            TerminalEvent::Key(KeyEvent {
+                code,
+                kind,
+                modifiers,
+                ..
+            }) if kind != KeyEventKind::Release => {
+                let current_mode = input_mode.read().clone();
+                match current_mode {
+                    InputMode::ConfirmDelete => match code {
+                        KeyCode::Char('y' | 'Y') => {
+                            if let Some(ref repo_path) = repo_path_owned {
+                                let branch_name = branches_state
+                                    .read()
+                                    .get(cursor.get())
+                                    .map(|b| b.name.clone());
+                                if let Some(name) = branch_name {
+                                    match delete_branch(repo_path, &name) {
+                                        Ok(msg) => {
+                                            action_status.set(Some(msg));
+                                            branches_state.set(list_branches(repo_path));
+                                            if cursor.get() >= branches_state.read().len() {
+                                                cursor.set(
+                                                    branches_state.read().len().saturating_sub(1),
+                                                );
+                                            }
+                                        }
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Delete failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                            input_mode.set(InputMode::Normal);
+                        }
+                        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            action_status.set(Some("Cancelled".to_owned()));
+                        }
+                        _ => {}
+                    },
+                    InputMode::CreateBranch => match code {
+                        KeyCode::Enter => {
+                            let name = input_buffer.read().clone();
+                            if !name.is_empty()
+                                && let Some(ref repo_path) = repo_path_owned
+                            {
+                                let from = branches_state
+                                    .read()
+                                    .get(cursor.get())
+                                    .map_or_else(|| "HEAD".to_owned(), |b| b.name.clone());
+                                match create_branch(repo_path, &name, &from) {
+                                    Ok(msg) => {
+                                        action_status.set(Some(msg));
+                                        branches_state.set(list_branches(repo_path));
+                                    }
+                                    Err(e) => {
+                                        action_status.set(Some(format!("Create failed: {e}")));
+                                    }
+                                }
+                            }
+                            input_mode.set(InputMode::Normal);
+                            input_buffer.set(String::new());
+                        }
+                        KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            input_buffer.set(String::new());
+                        }
+                        KeyCode::Backspace => {
+                            let mut buf = input_buffer.read().clone();
+                            buf.pop();
+                            input_buffer.set(buf);
+                        }
+                        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+                            let mut buf = input_buffer.read().clone();
+                            buf.push(ch);
+                            input_buffer.set(buf);
+                        }
+                        _ => {}
+                    },
+                    InputMode::Normal => match code {
+                        KeyCode::Char('q') => {
+                            if let Some(mut exit) = should_exit {
+                                exit.set(true);
+                            }
+                        }
+                        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some(mut exit) = should_exit {
+                                exit.set(true);
+                            }
+                        }
+                        KeyCode::Char('s') => {
+                            if let Some(mut sv) = switch_view {
+                                sv.set(true);
+                            }
+                        }
+                        // Checkout branch
+                        KeyCode::Char(' ') | KeyCode::Enter => {
+                            if let Some(ref repo_path) = repo_path_owned {
+                                let branch_name = branches_state
+                                    .read()
+                                    .get(cursor.get())
+                                    .map(|b| b.name.clone());
+                                if let Some(name) = branch_name {
+                                    match checkout_branch(repo_path, &name) {
+                                        Ok(msg) => {
+                                            action_status.set(Some(msg));
+                                            branches_state.set(list_branches(repo_path));
+                                        }
+                                        Err(e) => {
+                                            action_status
+                                                .set(Some(format!("Checkout failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        // Delete branch
+                        KeyCode::Delete | KeyCode::Char('D') => {
+                            input_mode.set(InputMode::ConfirmDelete);
+                            action_status.set(None);
+                        }
+                        // Create new branch
+                        KeyCode::Char('n') => {
+                            input_mode.set(InputMode::CreateBranch);
+                            input_buffer.set(String::new());
+                            action_status.set(None);
+                        }
+                        // Navigation
+                        KeyCode::Down | KeyCode::Char('j') => {
+                            if total_rows > 0 {
+                                let new_cursor =
+                                    (cursor.get() + 1).min(total_rows.saturating_sub(1));
+                                cursor.set(new_cursor);
+                                if new_cursor >= scroll_offset.get() + visible_rows {
+                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
+                                }
+                            }
+                        }
+                        KeyCode::Up | KeyCode::Char('k') => {
+                            let new_cursor = cursor.get().saturating_sub(1);
+                            cursor.set(new_cursor);
+                            if new_cursor < scroll_offset.get() {
+                                scroll_offset.set(new_cursor);
+                            }
+                        }
+                        KeyCode::Char('g') => {
+                            cursor.set(0);
+                            scroll_offset.set(0);
+                        }
+                        KeyCode::Char('G') => {
+                            if total_rows > 0 {
+                                cursor.set(total_rows.saturating_sub(1));
+                                scroll_offset.set(total_rows.saturating_sub(visible_rows));
+                            }
+                        }
+                        _ => {}
+                    },
+                }
+            }
+            _ => {}
+        }
+    });
+
+    // Build table.
+    let columns = branch_columns();
+    let rows: Vec<Row> = branches
+        .iter()
+        .map(|b| branch_to_row(b, &theme, date_format))
+        .collect();
+
+    let status = if let Some(msg) = action_status.read().as_ref() {
+        msg.clone()
+    } else {
+        let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
+        format!("{cursor_pos}/{total_rows}")
+    };
+
+    let rendered_table = RenderedTable::build(&TableBuildConfig {
+        columns: &columns,
+        rows: &rows,
+        cursor: cursor.get(),
+        scroll_offset: scroll_offset.get(),
+        visible_rows,
+        hidden_columns: None,
+        width_overrides: None,
+        total_width: props.width,
+        depth,
+        selected_bg: Some(theme.bg_selected),
+        header_color: Some(theme.text_secondary),
+        border_color: Some(theme.border_faint),
+        show_separator: props.show_separator,
+        empty_message: Some("No branches found"),
+    });
+
+    let tabs = vec![Tab {
+        title: "Branches".to_owned(),
+        count: Some(total_rows),
+    }];
+    let rendered_tab_bar = RenderedTabBar::build(
+        &tabs,
+        0,
+        true,
+        depth,
+        Some(theme.border_primary),
+        Some(theme.text_faint),
+        Some(theme.border_faint),
+    );
+
+    let current_mode = input_mode.read().clone();
+    let help_text = match &current_mode {
+        InputMode::Normal => {
+            "[j/k] Nav  [Space] Checkout  [n] New  [D] Delete  [s] Switch  [q] Quit"
+        }
+        InputMode::ConfirmDelete => "[y] Confirm  [n/Esc] Cancel",
+        InputMode::CreateBranch => "[Enter] Create  [Esc] Cancel",
+    };
+
+    let rendered_text_input = match &current_mode {
+        InputMode::CreateBranch => Some(crate::components::text_input::RenderedTextInput::build(
+            "New branch name:",
+            &input_buffer.read(),
+            depth,
+            Some(theme.text_primary),
+            Some(theme.text_secondary),
+            Some(theme.border_faint),
+        )),
+        InputMode::ConfirmDelete => {
+            let branch_name = branches.get(cursor.get()).map_or("?", |b| b.name.as_str());
+            let prompt = format!("Delete branch '{branch_name}'? (y/n)");
+            Some(crate::components::text_input::RenderedTextInput::build(
+                &prompt,
+                "",
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_warning),
+                Some(theme.border_faint),
+            ))
+        }
+        InputMode::Normal => None,
+    };
+
+    let rendered_footer = RenderedFooter::build(
+        help_text.to_owned(),
+        status,
+        depth,
+        Some(theme.text_faint),
+        Some(theme.border_faint),
+    );
+
+    let width = u32::from(props.width);
+    let height = u32::from(props.height);
+
+    element! {
+        View(flex_direction: FlexDirection::Column, width, height) {
+            TabBar(tab_bar: rendered_tab_bar)
+            View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                ScrollableTable(table: rendered_table)
+            }
+            crate::components::text_input::TextInput(input: rendered_text_input)
+            Footer(footer: rendered_footer)
+        }
+    }
+}
+
+fn default_theme() -> ResolvedTheme {
+    super::default_theme()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_theme() -> ResolvedTheme {
+        default_theme()
+    }
+
+    fn sample_branch(name: &str, is_current: bool) -> Branch {
+        Branch {
+            name: name.to_owned(),
+            is_current,
+            last_commit_message: "test commit".to_owned(),
+            last_updated: Some(chrono::Utc::now()),
+            ahead: 2,
+            behind: 1,
+        }
+    }
+
+    #[test]
+    fn branch_columns_has_five_entries() {
+        let cols = branch_columns();
+        assert_eq!(cols.len(), 5);
+        assert_eq!(cols[0].id, "current");
+        assert_eq!(cols[1].id, "name");
+        assert_eq!(cols[2].id, "message");
+        assert_eq!(cols[3].id, "ahead_behind");
+        assert_eq!(cols[4].id, "updated");
+    }
+
+    #[test]
+    fn branch_to_row_current_marker() {
+        let theme = test_theme();
+        let branch = sample_branch("main", true);
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("current").unwrap().text, "*");
+    }
+
+    #[test]
+    fn branch_to_row_non_current_marker() {
+        let theme = test_theme();
+        let branch = sample_branch("feature", false);
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("current").unwrap().text, " ");
+    }
+
+    #[test]
+    fn branch_to_row_name() {
+        let theme = test_theme();
+        let branch = sample_branch("feature-xyz", false);
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("name").unwrap().text, "feature-xyz");
+    }
+
+    #[test]
+    fn branch_to_row_ahead_behind_nonzero() {
+        let theme = test_theme();
+        let branch = sample_branch("dev", false);
+        let row = branch_to_row(&branch, &theme, "relative");
+        let ab = &row.get("ahead_behind").unwrap().text;
+        assert!(ab.contains('2'), "should contain ahead count");
+        assert!(ab.contains('1'), "should contain behind count");
+    }
+
+    #[test]
+    fn branch_to_row_ahead_behind_zero() {
+        let theme = test_theme();
+        let mut branch = sample_branch("main", true);
+        branch.ahead = 0;
+        branch.behind = 0;
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("ahead_behind").unwrap().text, "");
+    }
+
+    #[test]
+    fn branch_to_row_commit_message() {
+        let theme = test_theme();
+        let mut branch = sample_branch("fix", false);
+        branch.last_commit_message = "fix: resolve bug".to_owned();
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("message").unwrap().text, "fix: resolve bug");
+    }
+
+    #[test]
+    fn list_branches_nonexistent_path_returns_empty() {
+        let branches = list_branches(Path::new("/nonexistent/path"));
+        assert!(branches.is_empty());
+    }
+
+    #[test]
+    fn detect_default_branch_nonexistent_path_returns_main() {
+        let default = detect_default_branch(Path::new("/nonexistent/path"));
+        assert_eq!(default, "main");
+    }
+
+    #[test]
+    fn get_ahead_behind_nonexistent_returns_zero() {
+        let (ahead, behind) = get_ahead_behind(Path::new("/nonexistent/path"), "foo", "bar");
+        assert_eq!(ahead, 0);
+        assert_eq!(behind, 0);
+    }
+
+    #[test]
+    fn delete_branch_nonexistent_path_returns_err() {
+        let result = delete_branch(Path::new("/nonexistent/path"), "foo");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn create_branch_nonexistent_path_returns_err() {
+        let result = create_branch(Path::new("/nonexistent/path"), "foo", "HEAD");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn checkout_branch_nonexistent_path_returns_err() {
+        let result = checkout_branch(Path::new("/nonexistent/path"), "foo");
+        assert!(result.is_err());
+    }
+}

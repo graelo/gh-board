@@ -1,0 +1,1164 @@
+use std::sync::Arc;
+
+use anyhow::{Context, Result, bail};
+use chrono::{DateTime, Utc};
+use octocrab::Octocrab;
+use serde::{Deserialize, Serialize};
+
+use crate::github::types::{
+    Actor, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType, Issue, IssueState,
+    Label, MergeableState, PrState, PullRequest, ReactionGroups, RepoRef, Review, ReviewDecision,
+    ReviewState, ReviewThread, TimelineEvent,
+};
+
+// ---------------------------------------------------------------------------
+// GraphQL query strings
+// ---------------------------------------------------------------------------
+
+const SEARCH_PULL_REQUESTS_QUERY: &str = r"
+query SearchPullRequests($query: String!, $first: Int!, $after: String) {
+  search(query: $query, type: ISSUE, first: $first, after: $after) {
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    nodes {
+      ... on PullRequest {
+        number
+        title
+        body
+        state
+        isDraft
+        mergeable
+        reviewDecision
+        additions
+        deletions
+        headRefName
+        baseRefName
+        url
+        updatedAt
+        createdAt
+        author { login avatarUrl }
+        labels(first: 10) { nodes { name color } }
+        assignees(first: 10) { nodes { login } }
+        comments { totalCount }
+        reviewRequests(first: 10) {
+          nodes {
+            requestedReviewer {
+              ... on User { login }
+            }
+          }
+        }
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                contexts(first: 50) {
+                  nodes {
+                    ... on CheckRun { name status conclusion detailsUrl }
+                    ... on StatusContext { context state targetUrl }
+                  }
+                }
+              }
+            }
+          }
+        }
+        repository { nameWithOwner }
+      }
+    }
+  }
+}
+";
+
+const PR_DETAIL_QUERY: &str = r"
+query PullRequestDetail($owner: String!, $repo: String!, $number: Int!) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      body
+      reviews(last: 50) {
+        nodes { author { login } state body submittedAt }
+      }
+      reviewThreads(first: 50) {
+        nodes { isResolved comments(first: 10) { nodes { author { login } body createdAt } } }
+      }
+      timelineItems(last: 100) {
+        nodes {
+          __typename
+          ... on IssueComment { author { login } body createdAt }
+          ... on PullRequestReview { author { login } state body submittedAt }
+          ... on MergedEvent { actor { login } createdAt }
+          ... on ClosedEvent { actor { login } createdAt }
+          ... on ReopenedEvent { actor { login } createdAt }
+          ... on HeadRefForcePushedEvent { actor { login } createdAt }
+        }
+      }
+      commits(first: 100) {
+        nodes { commit { oid messageHeadline author { name } committedDate } }
+      }
+      files(first: 100) {
+        nodes { path additions deletions changeType }
+      }
+    }
+  }
+}
+";
+
+const REPOSITORY_LABELS_QUERY: &str = r"
+query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
+  repository(owner: $owner, name: $repo) {
+    labels(first: $first, orderBy: { field: NAME, direction: ASC }) {
+      nodes { name color description }
+    }
+  }
+}
+";
+
+const SEARCH_ISSUES_QUERY: &str = r"
+query SearchIssues($query: String!, $first: Int!, $after: String) {
+  search(query: $query, type: ISSUE, first: $first, after: $after) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      ... on Issue {
+        number
+        title
+        body
+        state
+        url
+        updatedAt
+        createdAt
+        author { login avatarUrl }
+        assignees(first: 10) { nodes { login } }
+        labels(first: 10) { nodes { name color } }
+        comments { totalCount }
+        reactionGroups { content users { totalCount } }
+        repository { nameWithOwner }
+      }
+    }
+  }
+}
+";
+
+// ---------------------------------------------------------------------------
+// Query helpers
+// ---------------------------------------------------------------------------
+
+/// Ensure the search query contains `is:<type_qualifier>` (e.g. `is:pr` or
+/// `is:issue`). If missing, prepend it so that the GraphQL search only returns
+/// the expected node type and avoids deserialization failures from mixed results.
+fn ensure_type_qualifier(query: &str, qualifier: &str) -> String {
+    let tag = format!("is:{qualifier}");
+    if query.split_whitespace().any(|token| token.eq_ignore_ascii_case(&tag)) {
+        query.to_owned()
+    } else {
+        format!("{tag} {query}")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Request payload
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct GraphQLPayload<V: Serialize> {
+    query: &'static str,
+    variables: V,
+}
+
+#[derive(Serialize)]
+struct SearchVariables {
+    query: String,
+    first: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    after: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PrDetailVariables {
+    owner: String,
+    repo: String,
+    number: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Response types (mirror the GraphQL response shape)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct GraphQLResponse<D> {
+    data: Option<D>,
+    errors: Option<Vec<GraphQLError>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GraphQLError {
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchData {
+    search: SearchResult,
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchResult {
+    #[serde(rename = "pageInfo")]
+    page_info: PageInfo,
+    #[serde(default)]
+    nodes: Vec<Option<RawPullRequest>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IssueSearchData {
+    search: IssueSearchResult,
+}
+
+#[derive(Debug, Deserialize)]
+struct IssueSearchResult {
+    #[serde(rename = "pageInfo")]
+    page_info: PageInfo,
+    #[serde(default)]
+    nodes: Vec<Option<RawIssue>>,
+}
+
+/// Pagination info from GraphQL.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PageInfo {
+    #[serde(rename = "hasNextPage")]
+    pub has_next_page: bool,
+    #[serde(rename = "endCursor")]
+    pub end_cursor: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// PR detail response types (Q2)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct PrDetailData {
+    repository: Option<PrDetailRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PrDetailRepo {
+    #[serde(rename = "pullRequest")]
+    pull_request: Option<RawPrDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawPrDetail {
+    #[serde(default)]
+    body: String,
+    reviews: Option<Connection<RawReview>>,
+    #[serde(rename = "reviewThreads")]
+    review_threads: Option<Connection<RawReviewThread>>,
+    #[serde(rename = "timelineItems")]
+    timeline_items: Option<Connection<RawTimelineItem>>,
+    commits: Option<Connection<RawDetailCommitNode>>,
+    files: Option<Connection<RawFile>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawReview {
+    author: Option<RawActor>,
+    state: ReviewState,
+    #[serde(default)]
+    body: String,
+    #[serde(rename = "submittedAt")]
+    submitted_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawReviewThread {
+    #[serde(rename = "isResolved", default)]
+    is_resolved: bool,
+    comments: Option<Connection<RawComment>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawComment {
+    author: Option<RawActor>,
+    #[serde(default)]
+    body: String,
+    #[serde(rename = "createdAt")]
+    created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawTimelineItem {
+    #[serde(rename = "__typename")]
+    typename: String,
+    // IssueComment / PullRequestReview fields
+    author: Option<RawActor>,
+    #[serde(default)]
+    body: Option<String>,
+    #[serde(rename = "createdAt")]
+    created_at: Option<DateTime<Utc>>,
+    #[serde(rename = "submittedAt")]
+    submitted_at: Option<DateTime<Utc>>,
+    state: Option<ReviewState>,
+    // MergedEvent / ClosedEvent / ReopenedEvent / HeadRefForcePushedEvent
+    actor: Option<RawActor>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawDetailCommitNode {
+    commit: Option<RawDetailCommit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawDetailCommit {
+    oid: String,
+    #[serde(rename = "messageHeadline", default)]
+    message_headline: String,
+    author: Option<RawCommitAuthor>,
+    #[serde(rename = "committedDate")]
+    committed_date: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCommitAuthor {
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawFile {
+    path: String,
+    #[serde(default)]
+    additions: u32,
+    #[serde(default)]
+    deletions: u32,
+    #[serde(rename = "changeType")]
+    change_type: Option<FileChangeType>,
+}
+
+// ---------------------------------------------------------------------------
+// Raw search PR response types (Q1)
+// ---------------------------------------------------------------------------
+
+/// Raw PR as returned by the GraphQL API (camelCase, nested connections).
+#[derive(Debug, Deserialize)]
+struct RawPullRequest {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    state: PrState,
+    #[serde(rename = "isDraft", default)]
+    is_draft: bool,
+    mergeable: Option<MergeableState>,
+    #[serde(rename = "reviewDecision")]
+    review_decision: Option<ReviewDecision>,
+    #[serde(default)]
+    additions: u32,
+    #[serde(default)]
+    deletions: u32,
+    #[serde(rename = "headRefName", default)]
+    head_ref_name: String,
+    #[serde(rename = "baseRefName", default)]
+    base_ref_name: String,
+    url: String,
+    #[serde(rename = "updatedAt")]
+    updated_at: DateTime<Utc>,
+    #[serde(rename = "createdAt")]
+    created_at: DateTime<Utc>,
+    author: Option<RawActor>,
+    labels: Option<Connection<RawLabel>>,
+    assignees: Option<Connection<RawAssignee>>,
+    comments: Option<TotalCount>,
+    #[serde(rename = "reviewRequests")]
+    review_requests: Option<Connection<RawReviewRequest>>,
+    commits: Option<Connection<RawCommitNode>>,
+    repository: Option<RawRepository>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawActor {
+    login: String,
+    #[serde(rename = "avatarUrl", default)]
+    avatar_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "T: serde::de::DeserializeOwned"))]
+struct Connection<T> {
+    #[serde(default)]
+    nodes: Vec<Option<T>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawLabel {
+    name: String,
+    color: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawAssignee {
+    login: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct TotalCount {
+    #[serde(rename = "totalCount", default)]
+    total_count: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawReviewRequest {
+    #[serde(rename = "requestedReviewer")]
+    requested_reviewer: Option<RawReviewer>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawReviewer {
+    login: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCommitNode {
+    commit: Option<RawCommit>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCommit {
+    #[serde(rename = "statusCheckRollup")]
+    status_check_rollup: Option<RawStatusCheckRollup>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawStatusCheckRollup {
+    contexts: Option<Connection<RawCheckContext>>,
+}
+
+/// A check context can be either a `CheckRun` or a `StatusContext`.
+/// We unify them into our `CheckRun` domain type.
+#[derive(Debug, Deserialize)]
+struct RawCheckContext {
+    // CheckRun fields
+    name: Option<String>,
+    status: Option<CheckStatus>,
+    conclusion: Option<CheckConclusion>,
+    #[serde(rename = "detailsUrl")]
+    details_url: Option<String>,
+    // StatusContext fields
+    context: Option<String>,
+    state: Option<String>,
+    #[serde(rename = "targetUrl")]
+    target_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawRepository {
+    #[serde(rename = "nameWithOwner")]
+    name_with_owner: String,
+}
+
+/// Raw Issue as returned by the GraphQL API.
+#[derive(Debug, Deserialize)]
+struct RawIssue {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    state: IssueState,
+    url: String,
+    #[serde(rename = "updatedAt")]
+    updated_at: DateTime<Utc>,
+    #[serde(rename = "createdAt")]
+    created_at: DateTime<Utc>,
+    author: Option<RawActor>,
+    assignees: Option<Connection<RawAssignee>>,
+    labels: Option<Connection<RawLabel>>,
+    comments: Option<TotalCount>,
+    #[serde(rename = "reactionGroups", default)]
+    reaction_groups: Vec<RawReactionGroup>,
+    repository: Option<RawRepository>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawReactionGroup {
+    content: String,
+    users: TotalCount,
+}
+
+// ---------------------------------------------------------------------------
+// Conversion: Raw → Domain
+// ---------------------------------------------------------------------------
+
+impl RawPullRequest {
+    #[allow(clippy::too_many_lines)]
+    fn into_domain(self) -> PullRequest {
+        let author = self.author.map(|a| Actor {
+            login: a.login,
+            avatar_url: a.avatar_url,
+        });
+
+        let labels = self
+            .labels
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|l| Label {
+                        name: l.name,
+                        color: l.color,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let assignees = self
+            .assignees
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|a| Actor {
+                        login: a.login,
+                        avatar_url: String::new(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let comment_count = self.comments.map_or(0, |c| c.total_count);
+
+        let review_requests = self
+            .review_requests
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|rr| {
+                        rr.requested_reviewer.and_then(|r| {
+                            r.login.map(|login| Actor {
+                                login,
+                                avatar_url: String::new(),
+                            })
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let check_runs = self
+            .commits
+            .and_then(|c| c.nodes.into_iter().flatten().next())
+            .and_then(|cn| cn.commit)
+            .and_then(|c| c.status_check_rollup)
+            .and_then(|sr| sr.contexts)
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|ctx| {
+                        // Unify CheckRun and StatusContext into our CheckRun type.
+                        let name = ctx
+                            .name
+                            .or(ctx.context)
+                            .unwrap_or_else(|| "<unknown>".to_owned());
+                        let url = ctx.details_url.or(ctx.target_url);
+
+                        // StatusContext uses "state" (string) instead of typed
+                        // status/conclusion. Map common values.
+                        let (status, conclusion) = if ctx.status.is_some() {
+                            (ctx.status, ctx.conclusion)
+                        } else if let Some(ref state) = ctx.state {
+                            match state.as_str() {
+                                "success" => {
+                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Success))
+                                }
+                                "failure" | "error" => {
+                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Failure))
+                                }
+                                "pending" => (Some(CheckStatus::InProgress), None),
+                                _ => (None, None),
+                            }
+                        } else {
+                            (None, None)
+                        };
+
+                        CheckRun {
+                            name,
+                            status,
+                            conclusion,
+                            url,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let repo = self
+            .repository
+            .and_then(|r| RepoRef::from_full_name(&r.name_with_owner));
+
+        PullRequest {
+            number: self.number,
+            title: self.title,
+            body: self.body,
+            author,
+            state: self.state,
+            is_draft: self.is_draft,
+            mergeable: self.mergeable,
+            review_decision: self.review_decision,
+            additions: self.additions,
+            deletions: self.deletions,
+            head_ref: self.head_ref_name,
+            base_ref: self.base_ref_name,
+            labels,
+            assignees,
+            commits: Vec::new(),
+            comments: Vec::new(),
+            review_threads: Vec::new(),
+            review_requests,
+            reviews: Vec::new(),
+            timeline_events: Vec::new(),
+            files: Vec::new(),
+            check_runs,
+            updated_at: self.updated_at,
+            created_at: self.created_at,
+            url: self.url,
+            repo,
+            comment_count,
+        }
+    }
+}
+
+impl RawIssue {
+    fn into_domain(self) -> Issue {
+        let author = self.author.map(|a| Actor {
+            login: a.login,
+            avatar_url: a.avatar_url,
+        });
+
+        let labels = self
+            .labels
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|l| Label {
+                        name: l.name,
+                        color: l.color,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let assignees = self
+            .assignees
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|a| Actor {
+                        login: a.login,
+                        avatar_url: String::new(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let comment_count = self.comments.map_or(0, |c| c.total_count);
+
+        let reactions = parse_reaction_groups(&self.reaction_groups);
+
+        let repo = self
+            .repository
+            .and_then(|r| RepoRef::from_full_name(&r.name_with_owner));
+
+        Issue {
+            number: self.number,
+            title: self.title,
+            body: self.body,
+            author,
+            state: self.state,
+            assignees,
+            comments: Vec::new(),
+            reactions,
+            labels,
+            updated_at: self.updated_at,
+            created_at: self.created_at,
+            url: self.url,
+            repo,
+            comment_count,
+        }
+    }
+}
+
+fn parse_reaction_groups(groups: &[RawReactionGroup]) -> ReactionGroups {
+    let mut r = ReactionGroups::default();
+    for g in groups {
+        let count = g.users.total_count;
+        match g.content.as_str() {
+            "THUMBS_UP" => r.thumbs_up = count,
+            "THUMBS_DOWN" => r.thumbs_down = count,
+            "LAUGH" => r.laugh = count,
+            "HOORAY" => r.hooray = count,
+            "CONFUSED" => r.confused = count,
+            "HEART" => r.heart = count,
+            "ROCKET" => r.rocket = count,
+            "EYES" => r.eyes = count,
+            _ => {}
+        }
+    }
+    r
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Result of a single page of PR search results.
+pub struct SearchPrPage {
+    pub pull_requests: Vec<PullRequest>,
+    pub page_info: PageInfo,
+}
+
+/// Execute the `SearchPullRequests` GraphQL query for a single page.
+///
+/// Automatically prepends `is:pr` to the query if not already present, so that
+/// the search only returns pull requests (not issues).
+pub async fn search_pull_requests(
+    octocrab: &Arc<Octocrab>,
+    query: &str,
+    limit: u32,
+    after: Option<String>,
+) -> Result<SearchPrPage> {
+    let effective_query = ensure_type_qualifier(query, "pr");
+    let payload = GraphQLPayload {
+        query: SEARCH_PULL_REQUESTS_QUERY,
+        variables: SearchVariables {
+            query: effective_query,
+            first: limit,
+            after,
+        },
+    };
+
+    let response: GraphQLResponse<SearchData> = octocrab
+        .graphql(&payload)
+        .await
+        .with_context(|| format!("GraphQL PR search failed for query: {query}"))?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    let pull_requests = data
+        .search
+        .nodes
+        .into_iter()
+        .flatten()
+        .map(RawPullRequest::into_domain)
+        .collect();
+
+    Ok(SearchPrPage {
+        pull_requests,
+        page_info: data.search.page_info,
+    })
+}
+
+/// Fetch all pages of PR search results up to the given limit.
+pub async fn search_pull_requests_all(
+    octocrab: &Arc<Octocrab>,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<PullRequest>> {
+    let page_size = limit.min(100); // GitHub caps at 100 per page
+    let mut all_prs = Vec::new();
+    let mut cursor: Option<String> = None;
+
+    loop {
+        let remaining = limit.saturating_sub(u32::try_from(all_prs.len()).unwrap_or(u32::MAX));
+        if remaining == 0 {
+            break;
+        }
+        let fetch_count = remaining.min(page_size);
+
+        let page = search_pull_requests(octocrab, query, fetch_count, cursor).await?;
+        all_prs.extend(page.pull_requests);
+
+        if !page.page_info.has_next_page || page.page_info.end_cursor.is_none() {
+            break;
+        }
+        cursor = page.page_info.end_cursor;
+    }
+
+    Ok(all_prs)
+}
+
+// ---------------------------------------------------------------------------
+// Issue search API
+// ---------------------------------------------------------------------------
+
+/// Result of a single page of Issue search results.
+pub struct SearchIssuePage {
+    pub issues: Vec<Issue>,
+    pub page_info: PageInfo,
+}
+
+/// Execute the `SearchIssues` GraphQL query for a single page.
+///
+/// Automatically prepends `is:issue` to the query if not already present, so
+/// that the search only returns issues (not pull requests).
+pub async fn search_issues(
+    octocrab: &Arc<Octocrab>,
+    query: &str,
+    limit: u32,
+    after: Option<String>,
+) -> Result<SearchIssuePage> {
+    let effective_query = ensure_type_qualifier(query, "issue");
+    let payload = GraphQLPayload {
+        query: SEARCH_ISSUES_QUERY,
+        variables: SearchVariables {
+            query: effective_query,
+            first: limit,
+            after,
+        },
+    };
+
+    let response: GraphQLResponse<IssueSearchData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    let issues = data
+        .search
+        .nodes
+        .into_iter()
+        .flatten()
+        .map(RawIssue::into_domain)
+        .collect();
+
+    Ok(SearchIssuePage {
+        issues,
+        page_info: data.search.page_info,
+    })
+}
+
+/// Fetch all pages of Issue search results up to the given limit.
+pub async fn search_issues_all(
+    octocrab: &Arc<Octocrab>,
+    query: &str,
+    limit: u32,
+) -> Result<Vec<Issue>> {
+    let page_size = limit.min(100);
+    let mut all_issues = Vec::new();
+    let mut cursor: Option<String> = None;
+
+    loop {
+        let remaining = limit.saturating_sub(u32::try_from(all_issues.len()).unwrap_or(u32::MAX));
+        if remaining == 0 {
+            break;
+        }
+        let fetch_count = remaining.min(page_size);
+
+        let page = search_issues(octocrab, query, fetch_count, cursor).await?;
+        all_issues.extend(page.issues);
+
+        if !page.page_info.has_next_page || page.page_info.end_cursor.is_none() {
+            break;
+        }
+        cursor = page.page_info.end_cursor;
+    }
+
+    Ok(all_issues)
+}
+
+// ---------------------------------------------------------------------------
+// PR detail API (Q2 — sidebar tabs)
+// ---------------------------------------------------------------------------
+
+/// Detailed PR data fetched for the sidebar tabs.
+pub struct PrDetail {
+    pub body: String,
+    pub reviews: Vec<Review>,
+    pub review_threads: Vec<ReviewThread>,
+    pub timeline_events: Vec<TimelineEvent>,
+    pub commits: Vec<Commit>,
+    pub files: Vec<File>,
+}
+
+fn raw_actor_login(a: Option<RawActor>) -> Option<String> {
+    a.map(|a| a.login)
+}
+
+fn raw_actor_to_actor(a: RawActor) -> Actor {
+    Actor {
+        login: a.login,
+        avatar_url: String::new(),
+    }
+}
+
+fn convert_timeline_item(item: RawTimelineItem) -> Option<TimelineEvent> {
+    match item.typename.as_str() {
+        "IssueComment" => Some(TimelineEvent::Comment {
+            author: raw_actor_login(item.author),
+            body: item.body.unwrap_or_default(),
+            created_at: item.created_at?,
+        }),
+        "PullRequestReview" => Some(TimelineEvent::Review {
+            author: raw_actor_login(item.author),
+            state: item.state.unwrap_or(ReviewState::Unknown),
+            body: item.body.unwrap_or_default(),
+            submitted_at: item.submitted_at.or(item.created_at)?,
+        }),
+        "MergedEvent" => Some(TimelineEvent::Merged {
+            actor: raw_actor_login(item.actor),
+            created_at: item.created_at?,
+        }),
+        "ClosedEvent" => Some(TimelineEvent::Closed {
+            actor: raw_actor_login(item.actor),
+            created_at: item.created_at?,
+        }),
+        "ReopenedEvent" => Some(TimelineEvent::Reopened {
+            actor: raw_actor_login(item.actor),
+            created_at: item.created_at?,
+        }),
+        "HeadRefForcePushedEvent" => Some(TimelineEvent::ForcePushed {
+            actor: raw_actor_login(item.actor),
+            created_at: item.created_at?,
+        }),
+        _ => None,
+    }
+}
+
+impl RawPrDetail {
+    fn into_domain(self) -> PrDetail {
+        let reviews = self
+            .reviews
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|r| Review {
+                        author: r.author.map(raw_actor_to_actor),
+                        state: r.state,
+                        body: r.body,
+                        submitted_at: r.submitted_at,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let review_threads = self
+            .review_threads
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|rt| ReviewThread {
+                        is_resolved: rt.is_resolved,
+                        comments: rt
+                            .comments
+                            .map(|cc| {
+                                cc.nodes
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|rc| crate::github::types::Comment {
+                                        author: rc.author.map(raw_actor_to_actor),
+                                        body: rc.body,
+                                        created_at: rc.created_at,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let timeline_events = self
+            .timeline_items
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .filter_map(convert_timeline_item)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let commits = self
+            .commits
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|cn| {
+                        let c = cn.commit?;
+                        Some(Commit {
+                            sha: c.oid,
+                            message: c.message_headline,
+                            author: c.author.and_then(|a| a.name),
+                            committed_date: c.committed_date,
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let files = self
+            .files
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|f| File {
+                        path: f.path,
+                        additions: f.additions,
+                        deletions: f.deletions,
+                        status: f.change_type,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        PrDetail {
+            body: self.body,
+            reviews,
+            review_threads,
+            timeline_events,
+            commits,
+            files,
+        }
+    }
+}
+
+/// Fetch detailed PR data for sidebar tabs.
+pub async fn fetch_pr_detail(
+    octocrab: &Arc<Octocrab>,
+    owner: &str,
+    repo: &str,
+    number: u64,
+) -> Result<PrDetail> {
+    let payload = GraphQLPayload {
+        query: PR_DETAIL_QUERY,
+        variables: PrDetailVariables {
+            owner: owner.to_owned(),
+            repo: repo.to_owned(),
+            number: i64::try_from(number).context("PR number too large")?,
+        },
+    };
+
+    let response: GraphQLResponse<PrDetailData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL PR detail request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    let raw = data
+        .repository
+        .and_then(|r| r.pull_request)
+        .context("PR not found")?;
+
+    Ok(raw.into_domain())
+}
+
+// ---------------------------------------------------------------------------
+// Q4: Repository Labels (T083)
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+struct RepoLabelsVariables {
+    owner: String,
+    repo: String,
+    first: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoLabelsData {
+    repository: Option<RepoLabelsRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoLabelsRepo {
+    labels: Option<RepoLabelsConnection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoLabelsConnection {
+    nodes: Option<Vec<RawRepoLabel>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawRepoLabel {
+    name: String,
+    color: String,
+    description: Option<String>,
+}
+
+/// A repository label with name, color, and optional description.
+#[derive(Debug, Clone)]
+pub struct RepoLabel {
+    pub name: String,
+    pub color: String,
+    pub description: Option<String>,
+}
+
+/// Fetch all labels for a repository (for autocomplete).
+pub async fn fetch_repo_labels(
+    octocrab: &Arc<Octocrab>,
+    owner: &str,
+    repo: &str,
+) -> Result<Vec<RepoLabel>> {
+    let payload = GraphQLPayload {
+        query: REPOSITORY_LABELS_QUERY,
+        variables: RepoLabelsVariables {
+            owner: owner.to_owned(),
+            repo: repo.to_owned(),
+            first: 100,
+        },
+    };
+
+    let response: GraphQLResponse<RepoLabelsData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL repo labels request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    let labels = data
+        .repository
+        .and_then(|r| r.labels)
+        .and_then(|l| l.nodes)
+        .unwrap_or_default();
+
+    Ok(labels
+        .into_iter()
+        .map(|l| RepoLabel {
+            name: l.name,
+            color: l.color,
+            description: l.description,
+        })
+        .collect())
+}

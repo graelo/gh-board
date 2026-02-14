@@ -1,0 +1,202 @@
+# gh-board configuration – Solarized Light theme
+#
+# Uses the terminal's 16-color palette (ANSI 0–15). Configure your terminal
+# emulator with the Solarized palette for correct rendering.
+#
+# Solarized ANSI mapping (when terminal is set to Solarized):
+#
+#   ANSI   Solarized   Role in Light theme
+#   ─────  ──────────  ──────────────────────────────
+#    0     base02      —  (dark bg tone, rarely used)
+#    1     red         accent
+#    2     green       accent
+#    3     yellow      accent
+#    4     blue        accent
+#    5     magenta     accent
+#    6     cyan        accent
+#    7     base2       background highlights
+#    8     base03      —  (dark bg, rarely used)
+#    9     orange      accent
+#   10     base01      emphasized content
+#   11     base00      body text
+#   12     base0       secondary text
+#   13     violet      accent
+#   14     base1       comments / de-emphasized
+#   15     base3       background
+#
+# Copy to ~/.config/gh-board/config.toml and customize.
+
+# ==============================================================================
+# DEFAULTS
+# ==============================================================================
+
+[defaults]
+view = "prs"
+refetch_interval_minutes = 10
+date_format = "relative"
+
+[defaults.preview]
+width = 0.45
+
+# ==============================================================================
+# PR SECTIONS
+# ==============================================================================
+
+[[pr_sections]]
+title = "My PRs"
+filters = "is:open author:@me"
+limit = 50
+
+[[pr_sections]]
+title = "Needs My Review"
+filters = "is:open review-requested:@me"
+limit = 50
+
+[[pr_sections]]
+title = "Recently Merged"
+filters = "is:merged author:@me sort:updated-desc"
+limit = 20
+
+# ==============================================================================
+# ISSUE SECTIONS
+# ==============================================================================
+
+[[issues_sections]]
+title = "Assigned to Me"
+filters = "is:open assignee:@me"
+
+[[issues_sections]]
+title = "Created by Me"
+filters = "is:open author:@me"
+
+# ==============================================================================
+# NOTIFICATION SECTIONS
+# ==============================================================================
+
+[[notifications_sections]]
+title = "Unread"
+filters = "is:unread"
+
+[[notifications_sections]]
+title = "Review Requests"
+filters = "is:unread reason:review_requested"
+
+# ==============================================================================
+# THEME
+# ==============================================================================
+
+[theme.ui]
+sections_show_count = true
+
+[theme.ui.table]
+show_separator = true
+compact = false
+
+# ------------------------------------------------------------------------------
+# Colors: Text
+# ------------------------------------------------------------------------------
+
+[theme.colors.text]
+primary = "11"       # base00 – body text
+secondary = "14"     # base1  – de-emphasized content
+inverted = "15"      # base3  – background (for selected-row text)
+faint = "12"         # base0  – very subtle
+warning = "3"        # yellow
+success = "2"        # green
+error = "1"          # red
+actor = "4"          # blue
+
+# ------------------------------------------------------------------------------
+# Colors: Background
+# ------------------------------------------------------------------------------
+
+[theme.colors.background]
+selected = "7"       # base2 – highlight bar
+
+# ------------------------------------------------------------------------------
+# Colors: Borders
+# ------------------------------------------------------------------------------
+
+[theme.colors.border]
+primary = "14"       # base1
+secondary = "7"      # base2
+faint = "15"         # base3
+
+# ------------------------------------------------------------------------------
+# Colors: Icons (author role indicators)
+# ------------------------------------------------------------------------------
+
+[theme.colors.icon]
+newcontributor = "3"    # yellow
+contributor = "2"       # green
+collaborator = "4"      # blue
+member = "13"           # violet
+owner = "9"             # orange
+unknownrole = "14"      # base1
+
+# ------------------------------------------------------------------------------
+# Colors: Markdown Rendering
+# ------------------------------------------------------------------------------
+
+[theme.colors.markdown]
+text = "11"             # base00
+heading = "4"           # blue (fallback)
+h1 = "1"                # red
+h2 = "9"                # orange
+h3 = "3"                # yellow
+h4 = "2"                # green
+h5 = "4"                # blue
+h6 = "13"               # violet
+code = "5"              # magenta
+code_block = "14"       # base1
+link = "6"              # cyan
+link_text = "4"         # blue
+image = "6"             # cyan
+image_text = "2"        # green
+horizontal_rule = "14"  # base1
+strikethrough = "14"    # base1
+emph = "5"              # magenta
+strong = "9"            # orange
+
+# ------------------------------------------------------------------------------
+# Colors: Syntax Highlighting
+# ------------------------------------------------------------------------------
+
+[theme.colors.markdown.syntax]
+text = "11"                # base00
+background = "15"          # base3 (light bg)
+error = "1"                # red
+error_background = "7"     # base2
+comment = "14"             # base1
+comment_preproc = "2"      # green
+keyword = "13"             # violet
+keyword_reserved = "1"     # red
+keyword_namespace = "4"    # blue
+keyword_type = "3"         # yellow
+operator = "6"             # cyan
+punctuation = "11"         # base00
+name = "11"                # base00
+name_builtin = "5"         # magenta
+name_tag = "4"             # blue
+name_attribute = "3"       # yellow
+name_class = "3"           # yellow
+name_decorator = "5"       # magenta
+name_function = "4"        # blue
+number = "9"               # orange
+string = "2"               # green
+string_escape = "5"        # magenta
+deleted = "1"              # red
+inserted = "2"             # green
+subheading = "9"           # orange
+
+# ==============================================================================
+# ICONS
+# ==============================================================================
+
+[theme.icons]
+newcontributor = "+"
+contributor = "~"
+collaborator = "*"
+member = "o"
+owner = "#"
+unknownrole = "?"

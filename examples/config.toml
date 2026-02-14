@@ -1,0 +1,559 @@
+# gh-board configuration example
+#
+# This file demonstrates all available configuration options with explanatory
+# comments. Copy to ~/.config/gh-board/config.toml and customize.
+#
+# Color format: All color fields accept EITHER:
+#   - ANSI-256 index: "0" through "255" (indices 0-15 respect terminal palette)
+#   - Hex color: "#RRGGBB" or "#RGB"
+#
+# Config priority (highest to lowest):
+#   1. --config flag
+#   2. .gh-board.toml in Git repo root
+#   3. $GH_BOARD_CONFIG env var
+#   4. $XDG_CONFIG_HOME/gh-board/config.toml
+#   5. ~/.config/gh-board/config.toml
+
+# ==============================================================================
+# DEFAULTS
+# ==============================================================================
+
+[defaults]
+# Initial view on startup: "prs", "issues", "notifications", or "repo"
+view = "prs"
+
+# Cache TTL in minutes (how often to refetch from GitHub API)
+refetch_interval_minutes = 10
+
+# Date format: "relative" or a strftime format string like "%Y-%m-%d %H:%M"
+date_format = "relative"
+
+[defaults.preview]
+# Preview pane width as fraction of terminal width (0.0 to 1.0)
+width = 0.45
+
+# ==============================================================================
+# PR SECTIONS
+# ==============================================================================
+
+[[pr_sections]]
+title = "My PRs"
+filters = "is:open author:@me"
+limit = 50  # Optional: max items to fetch
+# host = "github.acme.com"  # Optional: GitHub Enterprise hostname (default: github.com)
+
+# Optional: override column visibility/width for this section
+# [pr_sections.layout]
+# hidden = ["assignees", "created_at"]
+# widths = { title = 60, repo = 30 }
+
+[[pr_sections]]
+title = "Needs My Review"
+filters = "is:open review-requested:@me"
+limit = 50
+
+[[pr_sections]]
+title = "Waiting on CI"
+filters = "is:open author:@me status:pending"
+
+[[pr_sections]]
+title = "Recently Merged"
+filters = "is:merged author:@me sort:updated-desc"
+limit = 20
+
+# ==============================================================================
+# ISSUE SECTIONS
+# ==============================================================================
+
+[[issues_sections]]
+title = "Assigned to Me"
+filters = "is:open assignee:@me"
+
+[[issues_sections]]
+title = "Created by Me"
+filters = "is:open author:@me"
+
+[[issues_sections]]
+title = "Mentions"
+filters = "is:open mentions:@me"
+
+# ==============================================================================
+# NOTIFICATION SECTIONS
+# ==============================================================================
+
+[[notifications_sections]]
+title = "Unread"
+# Supported filters:
+#   repo:<owner/name>
+#   reason:<reason>  (subscribed, review_requested, mention, author, comment,
+#                     assign, state_change, ci_activity, team_mention, security_alert)
+#   is:unread, is:read, is:done, is:all
+filters = "is:unread"
+
+[[notifications_sections]]
+title = "Review Requests"
+filters = "is:unread reason:review_requested"
+
+# ==============================================================================
+# REPOSITORY PATHS
+# ==============================================================================
+
+# Map "owner/repo" to local filesystem paths for checkout and branch operations
+[repo_paths]
+"graelo/gh-board" = "~/code/gh-board"
+# "myorg/myrepo" = "/home/user/projects/myrepo"
+
+# ==============================================================================
+# THEME
+# ==============================================================================
+
+[theme.ui]
+# Show item count in section tabs (e.g., "My PRs (5)")
+sections_show_count = true
+
+[theme.ui.table]
+# Show separators between table rows
+show_separator = true
+# Use compact row height
+compact = false
+
+# ------------------------------------------------------------------------------
+# Colors: Text
+# ------------------------------------------------------------------------------
+
+[theme.colors.text]
+# Primary text color (main content)
+primary = "7"  # ANSI white (terminal foreground)
+
+# Secondary text (less important metadata)
+secondary = "8"  # ANSI bright black (gray)
+
+# Inverted text (for selected items)
+inverted = "0"  # ANSI black (terminal background)
+
+# Faint text (very subtle, disabled items)
+faint = "240"  # Dark gray (ANSI-256)
+
+# Warning text
+warning = "#f9e2af"  # Catppuccin yellow
+
+# Success text (e.g., "merged", "passing")
+success = "#a6e3a1"  # Catppuccin green
+
+# Error text (e.g., "failing", "closed")
+error = "#f38ba8"  # Catppuccin red
+
+# Actor/author name color
+actor = "#89b4fa"  # Catppuccin blue
+
+# ------------------------------------------------------------------------------
+# Colors: Background
+# ------------------------------------------------------------------------------
+
+[theme.colors.background]
+# Background for selected row
+selected = "#45475a"  # Catppuccin surface1
+
+# ------------------------------------------------------------------------------
+# Colors: Borders
+# ------------------------------------------------------------------------------
+
+[theme.colors.border]
+# Primary borders (main UI chrome)
+primary = "#6c7086"  # Catppuccin overlay0
+
+# Secondary borders
+secondary = "#45475a"  # Catppuccin surface1
+
+# Faint borders
+faint = "#313244"  # Catppuccin surface0
+
+# ------------------------------------------------------------------------------
+# Colors: Icons (author role indicators)
+# ------------------------------------------------------------------------------
+
+[theme.colors.icon]
+newcontributor = "#f9e2af"  # Yellow
+contributor = "#a6e3a1"     # Green
+collaborator = "#89b4fa"    # Blue
+member = "#cba6f7"          # Mauve
+owner = "#fab387"           # Peach
+unknownrole = "#6c7086"     # Gray
+
+# ------------------------------------------------------------------------------
+# Colors: Markdown Rendering
+# ------------------------------------------------------------------------------
+
+[theme.colors.markdown]
+# Default text in markdown preview
+text = "7"
+
+# Generic heading color (fallback for h1-h6)
+heading = "#89b4fa"  # Blue
+
+# Per-level heading colors (override 'heading')
+h1 = "#f38ba8"  # Red
+h2 = "#fab387"  # Peach
+h3 = "#f9e2af"  # Yellow
+h4 = "#a6e3a1"  # Green
+h5 = "#89b4fa"  # Blue
+h6 = "#cba6f7"  # Mauve
+
+# Inline code (`code`)
+code = "#f5c2e7"  # Pink
+
+# Fenced code block background/border
+code_block = "8"  # Gray
+
+# Link URL color
+link = "#89dceb"  # Sky
+
+# Link display text color
+link_text = "#89b4fa"  # Blue
+
+# Image URL color
+image = "#89dceb"  # Sky
+
+# Image alt text color
+image_text = "#a6e3a1"  # Green
+
+# Horizontal rule (---)
+horizontal_rule = "#6c7086"  # Gray
+
+# Strikethrough text (~~text~~)
+strikethrough = "#6c7086"  # Gray
+
+# Emphasis (*text*)
+emph = "#f5c2e7"  # Pink
+
+# Strong emphasis (**text**)
+strong = "#fab387"  # Peach
+
+# ------------------------------------------------------------------------------
+# Colors: Syntax Highlighting
+# ------------------------------------------------------------------------------
+# Full token color palette for code blocks. All colors accept ANSI or hex.
+
+[theme.colors.markdown.syntax]
+# Default text in code blocks
+text = "7"
+
+# Code block background
+background = "#1e1e2e"  # Catppuccin base
+
+# Error tokens
+error = "#f38ba8"
+error_background = "#45475a"
+
+# Comments
+comment = "#6c7086"          # Gray
+comment_preproc = "#a6e3a1"  # Preprocessor directives (green)
+
+# Keywords
+keyword = "#cba6f7"           # Mauve (fn, let, const, etc.)
+keyword_reserved = "#f38ba8"  # Red (unsafe, async, etc.)
+keyword_namespace = "#89b4fa" # Blue (use, import, etc.)
+keyword_type = "#f9e2af"      # Yellow (i32, String, etc.)
+
+# Operators and punctuation
+operator = "#89dceb"     # Sky (+, -, *, ==, etc.)
+punctuation = "#cdd6f4"  # Text (;, :, {}, etc.)
+
+# Names (identifiers)
+name = "#cdd6f4"              # Default text
+name_builtin = "#f5c2e7"      # Pink (built-in types/functions)
+name_tag = "#89b4fa"          # Blue (HTML tags)
+name_attribute = "#f9e2af"    # Yellow (HTML attributes, struct fields)
+name_class = "#f9e2af"        # Yellow (class/type names)
+name_decorator = "#f5c2e7"    # Pink (decorators, attributes)
+name_function = "#89b4fa"     # Blue (function names)
+
+# Literals
+number = "#fab387"  # Peach (42, 3.14, 0xFF)
+string = "#a6e3a1"  # Green ("hello", 'world')
+string_escape = "#f5c2e7"  # Pink (\n, \t, \u{...})
+
+# Diff-specific
+deleted = "#f38ba8"   # Red (removed lines)
+inserted = "#a6e3a1"  # Green (added lines)
+
+# Markdown-specific
+subheading = "#fab387"  # Peach (## headings in markdown)
+
+# ==============================================================================
+# ICONS
+# ==============================================================================
+
+[theme.icons]
+# Author role icons (appear next to usernames if author_icon column is visible)
+newcontributor = "✨"
+contributor = "✓"
+collaborator = "◆"
+member = "●"
+owner = "★"
+unknownrole = "?"
+
+# ==============================================================================
+# KEYBINDINGS
+# ==============================================================================
+
+# Universal keybindings (active in all views)
+[[keybindings.universal]]
+key = "j"
+builtin = "move_down"
+name = "Move cursor down"
+
+[[keybindings.universal]]
+key = "down"
+builtin = "move_down"
+
+[[keybindings.universal]]
+key = "k"
+builtin = "move_up"
+name = "Move cursor up"
+
+[[keybindings.universal]]
+key = "up"
+builtin = "move_up"
+
+[[keybindings.universal]]
+key = "g"
+builtin = "first"
+name = "Jump to first item"
+
+[[keybindings.universal]]
+key = "home"
+builtin = "first"
+
+[[keybindings.universal]]
+key = "G"
+builtin = "last"
+name = "Jump to last item"
+
+[[keybindings.universal]]
+key = "end"
+builtin = "last"
+
+[[keybindings.universal]]
+key = "ctrl+d"
+builtin = "page_down"
+name = "Page down (preview pane)"
+
+[[keybindings.universal]]
+key = "pagedown"
+builtin = "page_down"
+
+[[keybindings.universal]]
+key = "ctrl+u"
+builtin = "page_up"
+name = "Page up (preview pane)"
+
+[[keybindings.universal]]
+key = "pageup"
+builtin = "page_up"
+
+[[keybindings.universal]]
+key = "h"
+builtin = "prev_section"
+name = "Previous section"
+
+[[keybindings.universal]]
+key = "left"
+builtin = "prev_section"
+
+[[keybindings.universal]]
+key = "l"
+builtin = "next_section"
+name = "Next section"
+
+[[keybindings.universal]]
+key = "right"
+builtin = "next_section"
+
+[[keybindings.universal]]
+key = "p"
+builtin = "toggle_preview"
+name = "Toggle preview pane"
+
+[[keybindings.universal]]
+key = "o"
+builtin = "open_browser"
+name = "Open in browser"
+
+[[keybindings.universal]]
+key = "r"
+builtin = "refresh"
+name = "Refresh current section"
+
+[[keybindings.universal]]
+key = "R"
+builtin = "refresh_all"
+name = "Refresh all sections (clear cache)"
+
+[[keybindings.universal]]
+key = "/"
+builtin = "search"
+name = "Search / filter"
+
+[[keybindings.universal]]
+key = "y"
+builtin = "copy_number"
+name = "Copy number to clipboard"
+
+[[keybindings.universal]]
+key = "Y"
+builtin = "copy_url"
+name = "Copy URL to clipboard"
+
+[[keybindings.universal]]
+key = "?"
+builtin = "toggle_help"
+name = "Toggle help overlay"
+
+[[keybindings.universal]]
+key = "q"
+builtin = "quit"
+name = "Quit"
+
+[[keybindings.universal]]
+key = "ctrl+c"
+builtin = "quit"
+
+# ------------------------------------------------------------------------------
+# PR view keybindings
+# ------------------------------------------------------------------------------
+
+[[keybindings.prs]]
+key = "v"
+builtin = "approve"
+name = "Approve"
+
+[[keybindings.prs]]
+key = "a"
+builtin = "assign"
+name = "Assign"
+
+[[keybindings.prs]]
+key = "A"
+builtin = "unassign"
+name = "Unassign"
+
+[[keybindings.prs]]
+key = "c"
+builtin = "comment"
+name = "Comment"
+
+[[keybindings.prs]]
+key = "d"
+builtin = "view_diff"
+name = "View diff in pager"
+
+[[keybindings.prs]]
+key = "C"
+builtin = "checkout"
+name = "Checkout branch"
+
+[[keybindings.prs]]
+key = "space"
+builtin = "checkout"
+name = "Checkout branch"
+
+[[keybindings.prs]]
+key = "x"
+builtin = "close"
+name = "Close PR"
+
+[[keybindings.prs]]
+key = "X"
+builtin = "reopen"
+name = "Reopen PR"
+
+[[keybindings.prs]]
+key = "W"
+builtin = "mark_ready"
+name = "Mark as ready for review"
+
+[[keybindings.prs]]
+key = "m"
+builtin = "merge"
+name = "Merge PR"
+
+[[keybindings.prs]]
+key = "u"
+builtin = "update_from_base"
+name = "Update PR from base branch"
+
+[[keybindings.prs]]
+key = "s"
+builtin = "switch_view"
+name = "Switch view"
+
+# Example custom keybinding with shell command
+# Template variables: {{.Url}}, {{.Number}}, {{.RepoName}}, {{.HeadBranch}}, {{.BaseBranch}}
+# [[keybindings.prs]]
+# key = "ctrl+b"
+# command = "open {{.Url}}"
+# name = "Open in browser (custom)"
+
+# ------------------------------------------------------------------------------
+# Issue view keybindings
+# ------------------------------------------------------------------------------
+
+[[keybindings.issues]]
+key = "L"
+builtin = "label"
+name = "Label (autocomplete)"
+
+[[keybindings.issues]]
+key = "a"
+builtin = "assign"
+name = "Assign"
+
+[[keybindings.issues]]
+key = "A"
+builtin = "unassign"
+name = "Unassign"
+
+[[keybindings.issues]]
+key = "c"
+builtin = "comment"
+name = "Comment"
+
+[[keybindings.issues]]
+key = "x"
+builtin = "close"
+name = "Close issue"
+
+[[keybindings.issues]]
+key = "X"
+builtin = "reopen"
+name = "Reopen issue"
+
+[[keybindings.issues]]
+key = "s"
+builtin = "switch_view"
+name = "Switch view"
+
+# ------------------------------------------------------------------------------
+# Branch view keybindings
+# ------------------------------------------------------------------------------
+
+[[keybindings.branches]]
+key = "delete"
+builtin = "delete_branch"
+name = "Delete branch"
+
+[[keybindings.branches]]
+key = "n"
+builtin = "new_branch"
+name = "Create new branch"
+
+[[keybindings.branches]]
+key = "p"
+builtin = "create_pr_from_branch"
+name = "Create PR from branch"
+
+[[keybindings.branches]]
+key = "v"
+builtin = "view_prs_for_branch"
+name = "View PRs for branch"

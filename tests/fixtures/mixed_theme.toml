@@ -1,0 +1,57 @@
+# T042: Mixed ANSI+hex theme fixture.
+# Demonstrates coexistence of ANSI-256 indices and hex values.
+
+[[pr_sections]]
+title = "My PRs"
+filters = "is:open author:@me"
+
+[defaults]
+view = "prs"
+
+[defaults.preview]
+width = 0.50
+
+[theme.colors.text]
+primary = "#c0caf5"
+secondary = "245"
+inverted = "#1a1b26"
+faint = "243"
+warning = "#e0af68"
+success = "#9ece6a"
+error = "#f7768e"
+actor = "6"
+
+[theme.colors.background]
+selected = "#292e42"
+
+[theme.colors.border]
+primary = "#565f89"
+secondary = "243"
+faint = "241"
+
+[theme.colors.markdown]
+text = "#c0caf5"
+heading = "#7aa2f7"
+h1 = "#7aa2f7"
+h2 = "#7dcfff"
+h3 = "6"
+code = "#e0af68"
+code_block = "245"
+link = "#7aa2f7"
+link_text = "#73daca"
+horizontal_rule = "241"
+strikethrough = "243"
+emph = "#c0caf5"
+strong = "#c0caf5"
+
+[theme.colors.markdown.syntax]
+keyword = "#bb9af7"
+string = "#9ece6a"
+comment = "243"
+number = "#ff9e64"
+name_function = "#7aa2f7"
+keyword_type = "#2ac3de"
+operator = "7"
+punctuation = "245"
+name = "#c0caf5"
+name_builtin = "#2ac3de"

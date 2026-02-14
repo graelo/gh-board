@@ -1,0 +1,26 @@
+# Global config fixture for integration tests.
+
+[[pr_sections]]
+title = "Global PRs"
+filters = "author:@me is:open"
+limit = 20
+
+[[issues_sections]]
+title = "Global Issues"
+filters = "assignee:@me is:open"
+limit = 10
+
+[defaults]
+view = "prs"
+refetch_interval_minutes = 15
+date_format = "%Y-%m-%d %H:%M"
+
+[defaults.preview]
+width = 0.5
+
+[theme.colors.text]
+primary = "7"
+secondary = "245"
+
+[repo_paths]
+"org/global-repo" = "/tmp/global-repo"

@@ -274,8 +274,7 @@ These control the preview pane rendering.
 
 | Field | Element |
 | ----- | ------- |
-
-| `code` | Inline code spans (`` `code` ``) |
+| `code` | Inline code spans |
 | `link` | Bare URLs and autolinks (`↗` symbol) |
 | `link_text` | Link display text (`[text](url)`) |
 | `image` | Image URLs |

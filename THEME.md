@@ -11,13 +11,15 @@ document maps each configuration field to the exact UI elements it affects.
 
 ## Text Colors — `[theme.colors.text]`
 
+> **Note:** Some text elements (issue titles, notification titles when read) use
+> your terminal's default text color rather than a theme color. These are not
+> listed in the tables below.
+
 ### `primary`
 
 | View / Component  | Element                          |
 | ----------------- | -------------------------------- |
 | PR list           | PR number (`#27384`), title text |
-| Issue list        | Issue number, title text         |
-| Notification list | Title text                       |
 | Sidebar           | Title, metadata value text       |
 | Help overlay      | Overlay title                    |
 
@@ -27,7 +29,7 @@ document maps each configuration field to the exact UI elements it affects.
 | ----------------- | --------------------------------------------------------------- |
 | PR list           | Repo name (`FreeCAD/FreeCAD`), comment count                    |
 | Issue list        | Repo name, comment count, reaction count                        |
-| Notification list | Repo name, reason badge                                         |
+| Notification list | Repo name                                                       |
 | All list views    | Table column header icons                                       |
 | Tab bar           | Inactive tab labels                                             |
 | Sidebar           | Bold label prefixes (`Author:`, `State:`, `Labels:`, `Branch:`) |
@@ -40,8 +42,9 @@ document maps each configuration field to the exact UI elements it affects.
 | View / Component  | Element                                                        |
 | ----------------- | -------------------------------------------------------------- |
 | PR list           | `"by"` connector, updated/created dates, empty review/CI (`–`) |
-| Issue list        | `"by"` connector, dates                                        |
-| Notification list | Dates, read (non-unread) indicator                             |
+| Issue list        | Assignees, dates                                               |
+| Notification list | Dates, read (non-unread) indicator, reason badge               |
+| Repo/Branch view  | Ahead/behind counts with icons                                 |
 | Sidebar           | Branch arrow (`→`), diff separator (`/`), commit SHA           |
 | Sidebar Activity  | Timestamps on timeline events                                  |
 | Tab bar           | Bottom border line                                             |
@@ -65,7 +68,6 @@ document maps each configuration field to the exact UI elements it affects.
 | PR list           | Open state icon, approved review icon, passing CI icon, `+N` additions |
 | Issue list        | Open state icon                                                        |
 | Notification list | Unread indicator dot, PR-type badge icon                               |
-| Repo/Branch view  | Ahead count                                                            |
 | Sidebar           | Merged timeline event, successful check icon                           |
 | Sidebar Files     | Added file entries                                                     |
 | Help overlay      | Key binding labels                                                     |
@@ -227,11 +229,11 @@ comes from the text color fields listed above. Here is the full mapping:
 
 ### Branch Status Icons
 
-| Icon field      | Colored by     |
-| --------------- | -------------- |
-| `branch_ahead`  | `text.success` |
-| `branch_behind` | `text.faint`   |
-| `branch_arrow`  | `text.faint`   |
+| Icon field      | Colored by   |
+| --------------- | ------------ |
+| `branch_ahead`  | `text.faint` |
+| `branch_behind` | `text.faint` |
+| `branch_arrow`  | `text.faint` |
 
 ### Check Status Icons (Sidebar)
 

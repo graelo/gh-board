@@ -27,6 +27,7 @@ pub struct RenderedTab {
 }
 
 impl RenderedTabBar {
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         tabs: &[Tab],
         active: usize,
@@ -35,10 +36,17 @@ impl RenderedTabBar {
         active_color: Option<AppColor>,
         inactive_color: Option<AppColor>,
         border_color: Option<AppColor>,
+        icon: &str,
     ) -> Self {
         let active_fg = active_color.map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
         let inactive_fg = inactive_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+
+        let icon_prefix = if icon.is_empty() {
+            String::new()
+        } else {
+            format!("{icon} ")
+        };
 
         let rendered_tabs: Vec<RenderedTab> = tabs
             .iter()
@@ -46,12 +54,12 @@ impl RenderedTabBar {
             .map(|(i, tab)| {
                 let label = if show_count {
                     if let Some(count) = tab.count {
-                        format!(" {} ({}) ", tab.title, count)
+                        format!(" {icon_prefix}{} ({}) ", tab.title, count)
                     } else {
-                        format!(" {} ", tab.title)
+                        format!(" {icon_prefix}{} ", tab.title)
                     }
                 } else {
-                    format!(" {} ", tab.title)
+                    format!(" {icon_prefix}{} ", tab.title)
                 };
                 RenderedTab {
                     label,
@@ -91,17 +99,15 @@ pub fn TabBar(props: &mut TabBarProps) -> impl Into<AnyElement<'static>> {
             padding_left: 1,
         ) {
             #(tb.tabs.into_iter().enumerate().map(|(i, tab)| {
-                let color = if tab.is_active { active_fg } else { inactive_fg };
-                let weight = if tab.is_active { Weight::Bold } else { Weight::Normal };
-                let decoration = if tab.is_active {
-                    TextDecoration::Underline
+                let (fg, bg, weight) = if tab.is_active {
+                    (Color::White, Some(active_fg), Weight::Bold)
                 } else {
-                    TextDecoration::None
+                    (inactive_fg, None, Weight::Normal)
                 };
 
                 element! {
-                    View(key: i, padding_right: 1) {
-                        Text(content: tab.label, color, weight, decoration)
+                    View(key: i, padding_right: 1, background_color: bg.unwrap_or(Color::Reset)) {
+                        Text(content: tab.label, color: fg, weight, wrap: TextWrap::NoWrap)
                     }
                 }
             }))

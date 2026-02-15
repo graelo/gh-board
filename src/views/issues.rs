@@ -638,6 +638,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         Some(theme.border_primary),
         Some(theme.text_faint),
         Some(theme.border_faint),
+        &theme.icons.tab_section,
     );
 
     // Build text input widget.

@@ -440,6 +440,8 @@ pub struct IconConfig {
     pub section_issues: Option<String>,
     pub section_notifications: Option<String>,
     pub section_repo: Option<String>,
+    // Tab section marker
+    pub tab_section: Option<String>,
     // Pill caps (rounded edges)
     pub pill_left: Option<String>,
     pub pill_right: Option<String>,

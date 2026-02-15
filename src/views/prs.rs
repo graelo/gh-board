@@ -1356,6 +1356,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         Some(theme.border_primary),
         Some(theme.text_faint),
         Some(theme.border_faint),
+        &theme.icons.tab_section,
     );
 
     // Build footer or input area based on mode.

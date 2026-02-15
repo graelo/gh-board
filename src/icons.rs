@@ -63,6 +63,8 @@ pub struct ResolvedIcons {
     pub section_issues: String,
     pub section_notifications: String,
     pub section_repo: String,
+    // Tab section marker (1)
+    pub tab_section: String,
     // Pill caps (rounded edges, 2)
     pub pill_left: String,
     pub pill_right: String,
@@ -131,6 +133,8 @@ impl ResolvedIcons {
             section_issues: "\u{2299}".to_owned(),         // ⊙
             section_notifications: "\u{1f514}".to_owned(), // 🔔
             section_repo: "\u{2387}".to_owned(),           // ⎇
+            // Tab section marker
+            tab_section: "\u{25c6}".to_owned(), // ◆
             // Pill caps (no rounded edges in unicode preset)
             pill_left: String::new(),
             pill_right: String::new(),
@@ -200,6 +204,8 @@ impl ResolvedIcons {
             section_issues: "\u{f41b}".to_owned(), //  nf-oct-issue_opened
             section_notifications: "\u{eaa2}".to_owned(), //  nf-cod-bell
             section_repo: "\u{e727}".to_owned(), //  nf-dev-git_branch
+            // Tab section marker
+            tab_section: "\u{f02b}".to_owned(), //  nf-fa-tag
             // Pill caps (Powerline half-circles for rounded edges)
             pill_left: "\u{e0b6}".to_owned(), //  nf-pl-right_half_circle_thick
             pill_right: "\u{e0b4}".to_owned(), //  nf-pl-left_half_circle_thick
@@ -268,6 +274,8 @@ impl ResolvedIcons {
             section_issues: "I".to_owned(),
             section_notifications: "N".to_owned(),
             section_repo: "R".to_owned(),
+            // Tab section marker
+            tab_section: "#".to_owned(),
             // Pill caps (no rounded edges in ascii preset)
             pill_left: String::new(),
             pill_right: String::new(),
@@ -364,6 +372,7 @@ impl ResolvedIcons {
                 .clone()
                 .unwrap_or(base.section_notifications),
             section_repo: config.section_repo.clone().unwrap_or(base.section_repo),
+            tab_section: config.tab_section.clone().unwrap_or(base.tab_section),
             pill_left: config.pill_left.clone().unwrap_or(base.pill_left),
             pill_right: config.pill_right.clone().unwrap_or(base.pill_right),
         }

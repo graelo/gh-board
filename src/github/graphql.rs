@@ -862,13 +862,12 @@ pub async fn search_pull_requests_all(
     let cache_key = format!("prs:{query}:{limit}");
 
     // Try cache first.
-    if let Some(c) = cache {
-        if let Some(cached) = c.get(&cache_key).await {
-            if let Ok(prs) = serde_json::from_str::<Vec<PullRequest>>(&cached) {
-                tracing::debug!("cache hit for {cache_key}");
-                return Ok((prs, None));
-            }
-        }
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok(prs) = serde_json::from_str::<Vec<PullRequest>>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((prs, None));
     }
 
     let page_size = limit.min(100); // GitHub caps at 100 per page
@@ -896,10 +895,10 @@ pub async fn search_pull_requests_all(
     }
 
     // Store in cache.
-    if let Some(c) = cache {
-        if let Ok(json) = serde_json::to_string(&all_prs) {
-            c.insert(cache_key, json).await;
-        }
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&all_prs)
+    {
+        c.insert(cache_key, json).await;
     }
 
     Ok((all_prs, last_rate_limit))
@@ -985,13 +984,12 @@ pub async fn search_issues_all(
 ) -> Result<(Vec<Issue>, Option<RateLimitInfo>)> {
     let cache_key = format!("issues:{query}:{limit}");
 
-    if let Some(c) = cache {
-        if let Some(cached) = c.get(&cache_key).await {
-            if let Ok(issues) = serde_json::from_str::<Vec<Issue>>(&cached) {
-                tracing::debug!("cache hit for {cache_key}");
-                return Ok((issues, None));
-            }
-        }
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok(issues) = serde_json::from_str::<Vec<Issue>>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((issues, None));
     }
 
     let page_size = limit.min(100);
@@ -1018,10 +1016,10 @@ pub async fn search_issues_all(
         cursor = page.page_info.end_cursor;
     }
 
-    if let Some(c) = cache {
-        if let Ok(json) = serde_json::to_string(&all_issues) {
-            c.insert(cache_key, json).await;
-        }
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&all_issues)
+    {
+        c.insert(cache_key, json).await;
     }
 
     Ok((all_issues, last_rate_limit))
@@ -1203,13 +1201,12 @@ pub async fn fetch_pr_detail(
 ) -> Result<(PrDetail, Option<RateLimitInfo>)> {
     let cache_key = format!("pr:{owner}/{repo}#{number}");
 
-    if let Some(c) = cache {
-        if let Some(cached) = c.get(&cache_key).await {
-            if let Ok(detail) = serde_json::from_str::<PrDetail>(&cached) {
-                tracing::debug!("cache hit for {cache_key}");
-                return Ok((detail, None));
-            }
-        }
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok(detail) = serde_json::from_str::<PrDetail>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((detail, None));
     }
 
     let payload = GraphQLPayload {
@@ -1248,10 +1245,10 @@ pub async fn fetch_pr_detail(
 
     let detail = raw.into_domain();
 
-    if let Some(c) = cache {
-        if let Ok(json) = serde_json::to_string(&detail) {
-            c.insert(cache_key, json).await;
-        }
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&detail)
+    {
+        c.insert(cache_key, json).await;
     }
 
     Ok((detail, rate_limit))
@@ -1314,13 +1311,12 @@ pub async fn fetch_repo_labels(
 ) -> Result<(Vec<RepoLabel>, Option<RateLimitInfo>)> {
     let cache_key = format!("labels:{owner}/{repo}");
 
-    if let Some(c) = cache {
-        if let Some(cached) = c.get(&cache_key).await {
-            if let Ok(labels) = serde_json::from_str::<Vec<RepoLabel>>(&cached) {
-                tracing::debug!("cache hit for {cache_key}");
-                return Ok((labels, None));
-            }
-        }
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok(labels) = serde_json::from_str::<Vec<RepoLabel>>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((labels, None));
     }
 
     let payload = GraphQLPayload {
@@ -1365,10 +1361,10 @@ pub async fn fetch_repo_labels(
         })
         .collect();
 
-    if let Some(c) = cache {
-        if let Ok(json) = serde_json::to_string(&labels) {
-            c.insert(cache_key, json).await;
-        }
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&labels)
+    {
+        c.insert(cache_key, json).await;
     }
 
     Ok((labels, rate_limit))

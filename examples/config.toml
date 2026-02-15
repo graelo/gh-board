@@ -81,6 +81,11 @@ filters = "is:open author:@me"
 title = "Mentions"
 filters = "is:open mentions:@me"
 
+[[issues_sections]]
+title = "All Repo Issues"
+filters = "is:open"
+limit = 50
+
 # ==============================================================================
 # NOTIFICATION SECTIONS
 # ==============================================================================

@@ -70,6 +70,11 @@ filters = "is:open assignee:@me"
 title = "Created by Me"
 filters = "is:open author:@me"
 
+[[issues_sections]]
+title = "All Repo Issues"
+filters = "is:open"
+limit = 50
+
 # ==============================================================================
 # NOTIFICATION SECTIONS
 # ==============================================================================

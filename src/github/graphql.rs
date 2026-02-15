@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
+use moka::future::Cache;
 use octocrab::Octocrab;
 use serde::{Deserialize, Serialize};
 
@@ -814,11 +815,27 @@ pub async fn search_pull_requests(
 }
 
 /// Fetch all pages of PR search results up to the given limit.
+///
+/// When a `cache` is provided, results are served from the moka LRU cache
+/// if a fresh entry exists (TTL is set at client creation time).
 pub async fn search_pull_requests_all(
     octocrab: &Arc<Octocrab>,
     query: &str,
     limit: u32,
+    cache: Option<&Cache<String, String>>,
 ) -> Result<Vec<PullRequest>> {
+    let cache_key = format!("prs:{query}:{limit}");
+
+    // Try cache first.
+    if let Some(c) = cache {
+        if let Some(cached) = c.get(&cache_key).await {
+            if let Ok(prs) = serde_json::from_str::<Vec<PullRequest>>(&cached) {
+                tracing::debug!("cache hit for {cache_key}");
+                return Ok(prs);
+            }
+        }
+    }
+
     let page_size = limit.min(100); // GitHub caps at 100 per page
     let mut all_prs = Vec::new();
     let mut cursor: Option<String> = None;
@@ -837,6 +854,13 @@ pub async fn search_pull_requests_all(
             break;
         }
         cursor = page.page_info.end_cursor;
+    }
+
+    // Store in cache.
+    if let Some(c) = cache {
+        if let Ok(json) = serde_json::to_string(&all_prs) {
+            c.insert(cache_key, json).await;
+        }
     }
 
     Ok(all_prs)
@@ -901,11 +925,26 @@ pub async fn search_issues(
 }
 
 /// Fetch all pages of Issue search results up to the given limit.
+///
+/// When a `cache` is provided, results are served from the moka LRU cache
+/// if a fresh entry exists.
 pub async fn search_issues_all(
     octocrab: &Arc<Octocrab>,
     query: &str,
     limit: u32,
+    cache: Option<&Cache<String, String>>,
 ) -> Result<Vec<Issue>> {
+    let cache_key = format!("issues:{query}:{limit}");
+
+    if let Some(c) = cache {
+        if let Some(cached) = c.get(&cache_key).await {
+            if let Ok(issues) = serde_json::from_str::<Vec<Issue>>(&cached) {
+                tracing::debug!("cache hit for {cache_key}");
+                return Ok(issues);
+            }
+        }
+    }
+
     let page_size = limit.min(100);
     let mut all_issues = Vec::new();
     let mut cursor: Option<String> = None;
@@ -926,6 +965,12 @@ pub async fn search_issues_all(
         cursor = page.page_info.end_cursor;
     }
 
+    if let Some(c) = cache {
+        if let Ok(json) = serde_json::to_string(&all_issues) {
+            c.insert(cache_key, json).await;
+        }
+    }
+
     Ok(all_issues)
 }
 
@@ -934,7 +979,7 @@ pub async fn search_issues_all(
 // ---------------------------------------------------------------------------
 
 /// Detailed PR data fetched for the sidebar tabs.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PrDetail {
     pub body: String,
     pub reviews: Vec<Review>,
@@ -1091,12 +1136,27 @@ impl RawPrDetail {
 }
 
 /// Fetch detailed PR data for sidebar tabs.
+///
+/// When a `cache` is provided, results are served from the moka LRU cache
+/// if a fresh entry exists.
 pub async fn fetch_pr_detail(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
     number: u64,
+    cache: Option<&Cache<String, String>>,
 ) -> Result<PrDetail> {
+    let cache_key = format!("pr:{owner}/{repo}#{number}");
+
+    if let Some(c) = cache {
+        if let Some(cached) = c.get(&cache_key).await {
+            if let Ok(detail) = serde_json::from_str::<PrDetail>(&cached) {
+                tracing::debug!("cache hit for {cache_key}");
+                return Ok(detail);
+            }
+        }
+    }
+
     let payload = GraphQLPayload {
         query: PR_DETAIL_QUERY,
         variables: PrDetailVariables {
@@ -1125,7 +1185,15 @@ pub async fn fetch_pr_detail(
         .and_then(|r| r.pull_request)
         .context("PR not found")?;
 
-    Ok(raw.into_domain())
+    let detail = raw.into_domain();
+
+    if let Some(c) = cache {
+        if let Ok(json) = serde_json::to_string(&detail) {
+            c.insert(cache_key, json).await;
+        }
+    }
+
+    Ok(detail)
 }
 
 // ---------------------------------------------------------------------------
@@ -1162,7 +1230,7 @@ struct RawRepoLabel {
 }
 
 /// A repository label with name, color, and optional description.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoLabel {
     pub name: String,
     pub color: String,
@@ -1170,11 +1238,26 @@ pub struct RepoLabel {
 }
 
 /// Fetch all labels for a repository (for autocomplete).
+///
+/// When a `cache` is provided, results are served from the moka LRU cache
+/// if a fresh entry exists.
 pub async fn fetch_repo_labels(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
+    cache: Option<&Cache<String, String>>,
 ) -> Result<Vec<RepoLabel>> {
+    let cache_key = format!("labels:{owner}/{repo}");
+
+    if let Some(c) = cache {
+        if let Some(cached) = c.get(&cache_key).await {
+            if let Ok(labels) = serde_json::from_str::<Vec<RepoLabel>>(&cached) {
+                tracing::debug!("cache hit for {cache_key}");
+                return Ok(labels);
+            }
+        }
+    }
+
     let payload = GraphQLPayload {
         query: REPOSITORY_LABELS_QUERY,
         variables: RepoLabelsVariables {
@@ -1198,18 +1281,24 @@ pub async fn fetch_repo_labels(
         .data
         .context("GraphQL response missing data field")?;
 
-    let labels = data
+    let labels: Vec<RepoLabel> = data
         .repository
         .and_then(|r| r.labels)
         .and_then(|l| l.nodes)
-        .unwrap_or_default();
-
-    Ok(labels
+        .unwrap_or_default()
         .into_iter()
         .map(|l| RepoLabel {
             name: l.name,
             color: l.color,
             description: l.description,
         })
-        .collect())
+        .collect();
+
+    if let Some(c) = cache {
+        if let Ok(json) = serde_json::to_string(&labels) {
+            c.insert(cache_key, json).await;
+        }
+    }
+
+    Ok(labels)
 }

@@ -1,11 +1,11 @@
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
 // Enums
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum PrState {
     Open,
@@ -13,7 +13,7 @@ pub enum PrState {
     Merged,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum IssueState {
     Open,
@@ -22,7 +22,7 @@ pub enum IssueState {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum MergeableState {
     Mergeable,
@@ -30,7 +30,7 @@ pub enum MergeableState {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ReviewDecision {
     Approved,
@@ -38,7 +38,7 @@ pub enum ReviewDecision {
     ReviewRequired,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum NotificationReason {
     Subscribed,
@@ -74,7 +74,7 @@ impl NotificationReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SubjectType {
     PullRequest,
     Issue,
@@ -84,7 +84,7 @@ pub enum SubjectType {
     Other,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AuthorAssociation {
     Collaborator,
@@ -97,7 +97,7 @@ pub enum AuthorAssociation {
     Owner,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CheckStatus {
     Queued,
@@ -105,7 +105,7 @@ pub enum CheckStatus {
     Completed,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CheckConclusion {
     Success,
@@ -120,7 +120,7 @@ pub enum CheckConclusion {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FileChangeType {
     Added,
@@ -136,14 +136,14 @@ pub enum FileChangeType {
 // Supporting types
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Actor {
     pub login: String,
     #[serde(default)]
     pub avatar_url: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoRef {
     pub owner: String,
     pub name: String,
@@ -164,21 +164,21 @@ impl RepoRef {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Label {
     pub name: String,
     /// Hex color without `#` prefix, as returned by the GitHub API.
     pub color: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Comment {
     pub author: Option<Actor>,
     pub body: String,
     pub created_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Commit {
     pub sha: String,
     pub message: String,
@@ -186,7 +186,7 @@ pub struct Commit {
     pub committed_date: Option<DateTime<Utc>>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CheckRun {
     pub name: String,
     pub status: Option<CheckStatus>,
@@ -194,7 +194,7 @@ pub struct CheckRun {
     pub url: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct File {
     pub path: String,
     pub additions: u32,
@@ -202,13 +202,13 @@ pub struct File {
     pub status: Option<FileChangeType>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewThread {
     pub is_resolved: bool,
     pub comments: Vec<Comment>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ReviewState {
     Approved,
@@ -221,7 +221,7 @@ pub enum ReviewState {
 }
 
 /// A review on a pull request (from `reviews` connection).
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Review {
     pub author: Option<Actor>,
     pub state: ReviewState,
@@ -230,7 +230,7 @@ pub struct Review {
 }
 
 /// A timeline event on a pull request.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TimelineEvent {
     Comment {
         author: Option<String>,
@@ -261,7 +261,7 @@ pub enum TimelineEvent {
     },
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReactionGroups {
     #[serde(default)]
     pub thumbs_up: u32,
@@ -299,7 +299,7 @@ impl ReactionGroups {
 // Primary domain entities
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PullRequest {
     pub number: u64,
     pub title: String,
@@ -352,7 +352,7 @@ pub struct PullRequest {
     pub participants: Vec<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Issue {
     pub number: u64,
     pub title: String,
@@ -376,7 +376,7 @@ pub struct Issue {
     pub comment_count: u32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Notification {
     pub id: String,
     pub subject_type: Option<SubjectType>,

@@ -18,7 +18,7 @@ use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::NotificationSection;
 use crate::filter;
-use crate::github::notifications::{self, NotificationFilter};
+use crate::github::notifications;
 use crate::github::rate_limit;
 use crate::github::types::{Notification, SubjectType};
 use crate::theme::ResolvedTheme;
@@ -246,14 +246,15 @@ pub fn NotificationsView<'a>(
     let mut help_visible = hooks.use_state(|| false);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
 
-    // State: last fetch time (for status bar).
-    let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
+    // State: per-section fetch tracking (lazy: only fetch the active section).
+    let mut section_fetch_times =
+        hooks.use_state(move || vec![Option::<std::time::Instant>::None; section_count]);
+    let mut section_in_flight = hooks.use_state(move || vec![false; section_count]);
 
     let initial_sections = vec![SectionData::default(); section_count];
     let mut notif_state = hooks.use_state(move || NotificationsState {
         sections: initial_sections,
     });
-    let mut fetch_triggered = hooks.use_state(|| false);
 
     // Timer tick for periodic re-renders (supports auto-refetch).
     let mut tick = hooks.use_state(|| 0u64);
@@ -264,39 +265,75 @@ pub fn NotificationsView<'a>(
         }
     });
 
-    // Auto-refetch if interval has elapsed (only for already-visited views).
+    // Compute active section index early (needed by fetch logic below).
+    let current_section_idx = active_section
+        .get()
+        .min(section_count.saturating_sub(1));
+
+    // Auto-refetch: only reset the active section when its interval has elapsed.
     let refetch_interval = props.refetch_interval_minutes;
-    if fetch_triggered.get()
-        && is_active
+    let needs_refetch = is_active
         && refetch_interval > 0
-        && let Some(last) = last_fetch_time.get()
-        && last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
-    {
-        fetch_triggered.set(false);
-        notif_state.set(NotificationsState {
-            sections: vec![SectionData::default(); section_count],
-        });
+        && !section_in_flight
+            .read()
+            .get(current_section_idx)
+            .copied()
+            .unwrap_or(false)
+        && section_fetch_times
+            .read()
+            .get(current_section_idx)
+            .copied()
+            .flatten()
+            .is_some_and(|last| {
+                last.elapsed()
+                    >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
+            });
+    if needs_refetch {
+        let mut state = notif_state.read().clone();
+        if current_section_idx < state.sections.len() {
+            state.sections[current_section_idx] = SectionData::default();
+        }
+        notif_state.set(state);
+        let mut times = section_fetch_times.read().clone();
+        if current_section_idx < times.len() {
+            times[current_section_idx] = None;
+        }
+        section_fetch_times.set(times);
     }
 
-    // Trigger data fetch on first visit to this view.
-    if !fetch_triggered.get()
+    // Lazy fetch: only fetch the active section when it needs data.
+    let active_needs_fetch = notif_state
+        .read()
+        .sections
+        .get(current_section_idx)
+        .is_some_and(|s| s.loading);
+    let active_in_flight = section_in_flight
+        .read()
+        .get(current_section_idx)
+        .copied()
+        .unwrap_or(false);
+
+    if active_needs_fetch
+        && !active_in_flight
         && is_active
-        && !sections_cfg.is_empty()
+        && let Some(cfg) = sections_cfg.get(current_section_idx)
         && let Some(octocrab) = props.octocrab
     {
-        fetch_triggered.set(true);
+        let mut in_flight = section_in_flight.read().clone();
+        if current_section_idx < in_flight.len() {
+            in_flight[current_section_idx] = true;
+        }
+        section_in_flight.set(in_flight);
+
         let octocrab = Arc::clone(octocrab);
-        let configs: Vec<NotificationFilter> = sections_cfg
-            .iter()
-            .map(|s| notifications::parse_filters(&s.filters, s.limit.unwrap_or(30)))
-            .collect();
+        let section_idx = current_section_idx;
+        let filter = notifications::parse_filters(&cfg.filters, cfg.limit.unwrap_or(30));
         let theme_clone = theme.clone();
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
         smol::spawn(Compat::new(async move {
-            let mut new_sections = Vec::new();
-            for filter in &configs {
-                match notifications::fetch_notifications(&octocrab, filter).await {
+            let section_data =
+                match notifications::fetch_notifications(&octocrab, &filter).await {
                     Ok(notifs) => {
                         let rows: Vec<Row> = notifs
                             .iter()
@@ -304,14 +341,14 @@ pub fn NotificationsView<'a>(
                             .collect();
                         let ids: Vec<String> = notifs.iter().map(|n| n.id.clone()).collect();
                         let notification_count = notifs.len();
-                        new_sections.push(SectionData {
+                        SectionData {
                             rows,
                             ids,
                             notifications: notifs,
                             notification_count,
                             loading: false,
                             error: None,
-                        });
+                        }
                     }
                     Err(e) => {
                         let error_msg = if rate_limit::is_rate_limited(&e) {
@@ -319,26 +356,35 @@ pub fn NotificationsView<'a>(
                         } else {
                             e.to_string()
                         };
-                        new_sections.push(SectionData {
+                        SectionData {
                             loading: false,
                             error: Some(error_msg),
                             ..SectionData::default()
-                        });
+                        }
                     }
-                }
+                };
+
+            let mut state = notif_state.read().clone();
+            if section_idx < state.sections.len() {
+                state.sections[section_idx] = section_data;
             }
-            notif_state.set(NotificationsState {
-                sections: new_sections,
-            });
-            last_fetch_time.set(Some(std::time::Instant::now()));
+            notif_state.set(state);
+
+            let mut times = section_fetch_times.read().clone();
+            if section_idx < times.len() {
+                times[section_idx] = Some(std::time::Instant::now());
+            }
+            section_fetch_times.set(times);
+            let mut in_flight = section_in_flight.read().clone();
+            if section_idx < in_flight.len() {
+                in_flight[section_idx] = false;
+            }
+            section_in_flight.set(in_flight);
         }))
         .detach();
     }
 
     let state_ref = notif_state.read();
-    let current_section_idx = active_section
-        .get()
-        .min(state_ref.sections.len().saturating_sub(1));
     let all_rows_count = state_ref
         .sections
         .get(current_section_idx)
@@ -560,10 +606,17 @@ pub fn NotificationsView<'a>(
                         }
                         // Retry / refresh
                         KeyCode::Char('r') => {
-                            fetch_triggered.set(false);
-                            notif_state.set(NotificationsState {
-                                sections: vec![SectionData::default(); section_count],
-                            });
+                            let idx = active_section.get();
+                            let mut state = notif_state.read().clone();
+                            if idx < state.sections.len() {
+                                state.sections[idx] = SectionData::default();
+                            }
+                            notif_state.set(state);
+                            let mut times = section_fetch_times.read().clone();
+                            if idx < times.len() {
+                                times[idx] = None;
+                            }
+                            section_fetch_times.set(times);
                             cursor.set(0);
                             scroll_offset.set(0);
                         }
@@ -866,7 +919,12 @@ pub fn NotificationsView<'a>(
             format!("Notif {cursor_pos}/{total_rows} (filtered from {total})")
         }
     };
-    let updated_text = footer::format_updated_ago(last_fetch_time.get());
+    let active_fetch_time = section_fetch_times
+        .read()
+        .get(current_section_idx)
+        .copied()
+        .flatten();
+    let updated_text = footer::format_updated_ago(active_fetch_time);
 
     let rendered_footer = RenderedFooter::build(
         ViewKind::Notifications,

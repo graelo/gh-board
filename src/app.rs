@@ -2,6 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use iocraft::prelude::*;
+use moka::future::Cache;
 use octocrab::Octocrab;
 
 use crate::color::ColorDepth;
@@ -61,6 +62,7 @@ impl ViewKind {
 pub struct AppProps<'a> {
     pub config: Option<&'a AppConfig>,
     pub octocrab: Option<&'a Arc<Octocrab>>,
+    pub api_cache: Option<&'a Cache<String, String>>,
     pub theme: Option<&'a ResolvedTheme>,
     pub keybindings: Option<&'a MergedBindings>,
     pub color_depth: ColorDepth,
@@ -141,6 +143,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 PrsView(
                     sections: sections_pr,
                     octocrab: props.octocrab,
+                    api_cache: props.api_cache,
                     theme,
                     keybindings,
                     color_depth: depth,
@@ -165,6 +168,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 IssuesView(
                     sections: sections_issue,
                     octocrab: props.octocrab,
+                    api_cache: props.api_cache,
                     theme,
                     keybindings,
                     color_depth: depth,

@@ -67,6 +67,7 @@ fn main() -> Result<()> {
     let mut gh_client = GitHubClient::new(config.defaults.refetch_interval_minutes);
     let default_host = "github.com";
     let octocrab = gh_client.octocrab_for(default_host)?;
+    let api_cache = gh_client.cache();
 
     tracing::info!("gh-board starting");
 
@@ -80,6 +81,7 @@ fn main() -> Result<()> {
             App(
                 config: &config,
                 octocrab: &octocrab,
+                api_cache: &api_cache,
                 theme: &theme,
                 keybindings: &keybindings,
                 color_depth,

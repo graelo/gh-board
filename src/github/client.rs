@@ -56,18 +56,8 @@ impl GitHubClient {
         Ok(instance)
     }
 
-    /// Get a cached value, or return `None`.
-    pub async fn cache_get(&self, key: &str) -> Option<String> {
-        self.cache.get(key).await
-    }
-
-    /// Insert a value into the cache.
-    pub async fn cache_insert(&self, key: String, value: String) {
-        self.cache.insert(key, value).await;
-    }
-
-    /// Invalidate all cached entries.
-    pub fn cache_clear(&self) {
-        self.cache.invalidate_all();
+    /// Return a clone of the internal cache (Arc-backed, cheap to clone).
+    pub fn cache(&self) -> Cache<String, String> {
+        self.cache.clone()
     }
 }

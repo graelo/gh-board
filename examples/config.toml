@@ -22,6 +22,10 @@
 # Initial view on startup: "prs", "issues", "notifications", or "repo"
 view = "prs"
 
+# Scope mode: "auto" (repo-scoped when in a git repo, global otherwise),
+# "repo" (always repo-scoped), or "global" (always global)
+scope = "auto"
+
 # Cache TTL in minutes (how often to refetch from GitHub API)
 refetch_interval_minutes = 10
 
@@ -581,9 +585,19 @@ builtin = "update_from_base"
 name = "Update PR from base branch"
 
 [[keybindings.prs]]
-key = "s"
+key = "n"
 builtin = "switch_view"
 name = "Switch view"
+
+[[keybindings.prs]]
+key = "N"
+builtin = "switch_view_back"
+name = "Switch view back"
+
+[[keybindings.prs]]
+key = "S"
+builtin = "toggle_scope"
+name = "Toggle repo scope"
 
 # Example custom keybinding with shell command
 # Template variables: {{.Url}}, {{.Number}}, {{.RepoName}}, {{.HeadBranch}}, {{.BaseBranch}}
@@ -627,9 +641,19 @@ builtin = "reopen"
 name = "Reopen issue"
 
 [[keybindings.issues]]
-key = "s"
+key = "n"
 builtin = "switch_view"
 name = "Switch view"
+
+[[keybindings.issues]]
+key = "N"
+builtin = "switch_view_back"
+name = "Switch view back"
+
+[[keybindings.issues]]
+key = "S"
+builtin = "toggle_scope"
+name = "Toggle repo scope"
 
 # ------------------------------------------------------------------------------
 # Branch view keybindings
@@ -641,7 +665,7 @@ builtin = "delete_branch"
 name = "Delete branch"
 
 [[keybindings.branches]]
-key = "n"
+key = "+"
 builtin = "new_branch"
 name = "Create new branch"
 
@@ -654,3 +678,18 @@ name = "Create PR from branch"
 key = "v"
 builtin = "view_prs_for_branch"
 name = "View PRs for branch"
+
+[[keybindings.branches]]
+key = "n"
+builtin = "switch_view"
+name = "Switch view"
+
+[[keybindings.branches]]
+key = "N"
+builtin = "switch_view_back"
+name = "Switch view back"
+
+[[keybindings.branches]]
+key = "S"
+builtin = "toggle_scope"
+name = "Toggle repo scope"

@@ -7,7 +7,8 @@ use octocrab::Octocrab;
 
 use crate::color::ColorDepth;
 use crate::config::keybindings::MergedBindings;
-use crate::config::types::AppConfig;
+use crate::config::types::{AppConfig, Scope};
+use crate::github::types::RepoRef;
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 use crate::views::issues::IssuesView;
@@ -67,6 +68,7 @@ pub struct AppProps<'a> {
     pub keybindings: Option<&'a MergedBindings>,
     pub color_depth: ColorDepth,
     pub repo_path: Option<&'a Path>,
+    pub detected_repo: Option<&'a RepoRef>,
 }
 
 #[component]
@@ -115,6 +117,31 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         active_view.set(prev);
     }
 
+    // Scope state: repo-scoped vs global.
+    let detected_repo = props.detected_repo;
+    let scope_config = config.map_or(Scope::Auto, |c| c.defaults.scope);
+    let initial_scoped = match scope_config {
+        Scope::Auto | Scope::Repo => detected_repo.is_some(),
+        Scope::Global => false,
+    };
+    let mut repo_scoped = hooks.use_state(move || initial_scoped);
+
+    // Scope toggle signal: when a child view sets this to true, we toggle.
+    let mut scope_toggle_signal = hooks.use_state(|| false);
+    if scope_toggle_signal.get() {
+        scope_toggle_signal.set(false);
+        if detected_repo.is_some() {
+            repo_scoped.set(!repo_scoped.get());
+        }
+    }
+
+    // Effective scope repo string to pass to views.
+    let scope_repo: Option<String> = if repo_scoped.get() {
+        detected_repo.map(RepoRef::full_name)
+    } else {
+        None
+    };
+
     // Exit handling.
     if should_exit.get() {
         system.exit();
@@ -155,6 +182,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    scope_toggle: scope_toggle_signal,
+                    scope_repo: scope_repo.clone(),
                     repo_paths,
                     date_format,
                     is_active: active == ViewKind::Prs,
@@ -180,6 +209,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    scope_toggle: scope_toggle_signal,
+                    scope_repo: scope_repo.clone(),
                     date_format,
                     is_active: active == ViewKind::Issues,
                     refetch_interval_minutes: refetch_minutes,
@@ -202,6 +233,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    scope_toggle: scope_toggle_signal,
+                    scope_repo: scope_repo.clone(),
                     date_format,
                     is_active: active == ViewKind::Notifications,
                     refetch_interval_minutes: refetch_minutes,
@@ -221,6 +254,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    scope_toggle: scope_toggle_signal,
+                    scope_repo: scope_repo.clone(),
                     repo_path,
                     date_format,
                     is_active: active == ViewKind::Repo,

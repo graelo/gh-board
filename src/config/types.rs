@@ -92,6 +92,15 @@ pub struct LayoutConfig {
 // Defaults
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Scope {
+    #[default]
+    Auto,
+    Repo,
+    Global,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
@@ -107,6 +116,7 @@ pub enum View {
 #[serde(default)]
 pub struct Defaults {
     pub view: View,
+    pub scope: Scope,
     pub preview: PreviewDefaults,
     pub refetch_interval_minutes: u32,
     pub date_format: String,
@@ -116,6 +126,7 @@ impl Default for Defaults {
     fn default() -> Self {
         Self {
             view: View::Prs,
+            scope: Scope::Auto,
             preview: PreviewDefaults::default(),
             refetch_interval_minutes: 10,
             date_format: "relative".to_owned(),

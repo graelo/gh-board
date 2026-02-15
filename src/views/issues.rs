@@ -268,6 +268,10 @@ pub struct IssuesViewProps<'a> {
     pub switch_view: Option<State<bool>>,
     /// Signal to switch to the previous view.
     pub switch_view_back: Option<State<bool>>,
+    /// Signal to toggle repo scope.
+    pub scope_toggle: Option<State<bool>>,
+    /// Active scope repo (e.g. `"owner/repo"`), or `None` for global.
+    pub scope_repo: Option<String>,
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
     pub is_active: bool,
@@ -284,6 +288,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let switch_view_back = props.switch_view_back;
+    let scope_toggle = props.scope_toggle;
+    let scope_repo = &props.scope_repo;
     let section_count = sections_cfg.len();
     let is_active = props.is_active;
     let preview_pct = if props.preview_width_pct > 0.0 {
@@ -322,6 +328,17 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut issues_state = hooks.use_state(move || IssuesState {
         sections: initial_sections,
     });
+
+    // Track scope changes: when scope_repo changes, invalidate all sections.
+    let mut last_scope = hooks.use_state(|| scope_repo.clone());
+    if *last_scope.read() != *scope_repo {
+        last_scope.set(scope_repo.clone());
+        issues_state.set(IssuesState {
+            sections: vec![SectionData::default(); section_count],
+        });
+        section_fetch_times.set(vec![None; section_count]);
+        section_in_flight.set(vec![false; section_count]);
+    }
 
     // Timer tick for periodic re-renders (supports auto-refetch).
     let mut tick = hooks.use_state(|| 0u64);
@@ -399,7 +416,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         let octocrab = Arc::clone(octocrab);
         let api_cache = props.api_cache.cloned();
         let section_idx = current_section_idx;
-        let filters = cfg.filters.clone();
+        let mut filters = cfg.filters.clone();
+        // Inject repo scope if active and not already present.
+        if let Some(ref repo) = *scope_repo
+            && !filters.split_whitespace().any(|t| t.starts_with("repo:"))
+        {
+            filters = format!("{filters} repo:{repo}");
+        }
         let limit = cfg.limit.unwrap_or(30);
         let theme_clone = theme.clone();
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
@@ -560,6 +583,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             should_exit,
                             switch_view,
                             switch_view_back,
+                            scope_toggle,
                             preview_open,
                             preview_scroll,
                             cursor,
@@ -791,9 +815,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
 
+    let scope_label = match scope_repo {
+        Some(repo) => repo.clone(),
+        None => "all repos".to_owned(),
+    };
     let rendered_footer = RenderedFooter::build(
         ViewKind::Issues,
         &theme.icons,
+        scope_label,
         context_text,
         updated_text,
         rate_limit_text,
@@ -1110,6 +1139,7 @@ fn handle_normal_input(
     should_exit: Option<State<bool>>,
     switch_view: Option<State<bool>>,
     switch_view_back: Option<State<bool>>,
+    scope_toggle: Option<State<bool>>,
     mut preview_open: State<bool>,
     mut preview_scroll: State<usize>,
     mut cursor: State<usize>,
@@ -1142,14 +1172,19 @@ fn handle_normal_input(
                 exit.set(true);
             }
         }
-        KeyCode::Char('s') => {
+        KeyCode::Char('n') => {
             if let Some(mut sv) = switch_view {
                 sv.set(true);
             }
         }
-        KeyCode::Char('S') => {
+        KeyCode::Char('N') => {
             if let Some(mut sv) = switch_view_back {
                 sv.set(true);
+            }
+        }
+        KeyCode::Char('S') => {
+            if let Some(mut st) = scope_toggle {
+                st.set(true);
             }
         }
         KeyCode::Char('p') => {

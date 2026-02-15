@@ -74,6 +74,8 @@ pub enum BuiltinAction {
     // View switching
     SwitchView,
     SwitchViewBack,
+    // Scope
+    ToggleScope,
 }
 
 impl BuiltinAction {
@@ -120,6 +122,7 @@ impl BuiltinAction {
             "view_prs_for_branch" => Self::ViewPrsForBranch,
             "switch_view" => Self::SwitchView,
             "switch_view_back" => Self::SwitchViewBack,
+            "toggle_scope" => Self::ToggleScope,
             _ => return None,
         })
     }
@@ -167,6 +170,7 @@ impl BuiltinAction {
             Self::ViewPrsForBranch => "View PRs for branch",
             Self::SwitchView => "Switch view",
             Self::SwitchViewBack => "Switch view back",
+            Self::ToggleScope => "Toggle repo scope",
         }
     }
 }
@@ -296,8 +300,9 @@ pub fn default_prs() -> Vec<Keybinding> {
         kb("W", "mark_ready", "Mark ready for review"),
         kb("m", "merge", "Merge PR"),
         kb("u", "update_from_base", "Update from base"),
-        kb("s", "switch_view", "Switch view"),
-        kb("S", "switch_view_back", "Switch view back"),
+        kb("n", "switch_view", "Switch view"),
+        kb("N", "switch_view_back", "Switch view back"),
+        kb("S", "toggle_scope", "Toggle repo scope"),
     ]
 }
 
@@ -310,8 +315,9 @@ pub(crate) fn default_issues() -> Vec<Keybinding> {
         kb("c", "comment", "Comment"),
         kb("x", "close", "Close issue"),
         kb("X", "reopen", "Reopen issue"),
-        kb("s", "switch_view", "Switch view"),
-        kb("S", "switch_view_back", "Switch view back"),
+        kb("n", "switch_view", "Switch view"),
+        kb("N", "switch_view_back", "Switch view back"),
+        kb("S", "toggle_scope", "Toggle repo scope"),
     ]
 }
 
@@ -323,8 +329,9 @@ pub(crate) fn default_notifications() -> Vec<Keybinding> {
         kb("m", "mark_read", "Mark as read"),
         kb("M", "mark_all_read", "Mark all as read"),
         kb("u", "unsubscribe", "Unsubscribe"),
-        kb("s", "switch_view", "Switch view"),
-        kb("S", "switch_view_back", "Switch view back"),
+        kb("n", "switch_view", "Switch view"),
+        kb("N", "switch_view_back", "Switch view back"),
+        kb("S", "toggle_scope", "Toggle repo scope"),
     ]
 }
 
@@ -332,11 +339,12 @@ pub(crate) fn default_notifications() -> Vec<Keybinding> {
 pub(crate) fn default_branches() -> Vec<Keybinding> {
     vec![
         kb("delete", "delete_branch", "Delete branch"),
-        kb("n", "new_branch", "Create new branch"),
+        kb("+", "new_branch", "Create new branch"),
         kb("p", "create_pr_from_branch", "Create PR from branch"),
         kb("v", "view_prs_for_branch", "View PRs for branch"),
-        kb("s", "switch_view", "Switch view"),
-        kb("S", "switch_view_back", "Switch view back"),
+        kb("n", "switch_view", "Switch view"),
+        kb("N", "switch_view_back", "Switch view back"),
+        kb("S", "toggle_scope", "Toggle repo scope"),
     ]
 }
 
@@ -645,8 +653,8 @@ mod tests {
     fn resolve_context_takes_priority() {
         let config = KeybindingsConfig::default();
         let merged = MergedBindings::from_config(&config);
-        // 's' is bound to switch_view in prs context.
-        let binding = merged.resolve("s", ViewContext::Prs);
+        // 'n' is bound to switch_view in prs context.
+        let binding = merged.resolve("n", ViewContext::Prs);
         assert!(matches!(
             binding,
             Some(ResolvedBinding::Builtin(BuiltinAction::SwitchView))

@@ -297,6 +297,10 @@ pub struct RepoViewProps<'a> {
     pub switch_view: Option<State<bool>>,
     /// Signal to switch to the previous view.
     pub switch_view_back: Option<State<bool>>,
+    /// Signal to toggle repo scope.
+    pub scope_toggle: Option<State<bool>>,
+    /// Active scope repo (e.g. `"owner/repo"`), or `None` for global.
+    pub scope_repo: Option<String>,
     pub repo_path: Option<&'a std::path::Path>,
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
@@ -313,6 +317,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let switch_view_back = props.switch_view_back;
+    let scope_toggle = props.scope_toggle;
+    let scope_repo = &props.scope_repo;
     let date_format = props.date_format.unwrap_or("relative");
     let is_active = props.is_active;
 
@@ -467,15 +473,21 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 exit.set(true);
                             }
                         }
-                        KeyCode::Char('s') => {
+                        KeyCode::Char('n') => {
                             if let Some(mut sv) = switch_view {
                                 sv.set(true);
                             }
                         }
                         // Switch view back
-                        KeyCode::Char('S') => {
+                        KeyCode::Char('N') => {
                             if let Some(mut sv) = switch_view_back {
                                 sv.set(true);
+                            }
+                        }
+                        // Toggle repo scope
+                        KeyCode::Char('S') => {
+                            if let Some(mut st) = scope_toggle {
+                                st.set(true);
                             }
                         }
                         // Checkout branch
@@ -505,7 +517,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                             action_status.set(None);
                         }
                         // Create new branch
-                        KeyCode::Char('n') => {
+                        KeyCode::Char('+') => {
                             input_mode.set(InputMode::CreateBranch);
                             input_buffer.set(String::new());
                             action_status.set(None);
@@ -632,9 +644,14 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     };
     let updated_text = footer::format_updated_ago(last_fetch_time.get());
 
+    let scope_label = match scope_repo {
+        Some(repo) => repo.clone(),
+        None => "all repos".to_owned(),
+    };
     let rendered_footer = RenderedFooter::build(
         ViewKind::Repo,
         &theme.icons,
+        scope_label,
         context_text,
         updated_text,
         String::new(),

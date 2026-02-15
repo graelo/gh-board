@@ -22,6 +22,8 @@ model for perfect terminal theme integration.
   commands
 - **Configurable Icons**: Ship with `unicode`, `nerdfont`, and `ascii` presets,
   with per-icon overrides
+- **Repo Scope Auto-Detection**: Auto-detects `owner/repo` from git remotes;
+  toggle between repo-scoped and global modes with `S`
 - **Smart Caching**: In-memory LRU cache with configurable TTL
 - **Fast Startup**: Under 500ms to first render on cold cache
 
@@ -119,6 +121,7 @@ The config uses TOML with these main sections:
 ```toml
 [defaults]
 view = "prs"                        # Initial view: prs, issues, notifications, repo
+scope = "auto"                      # "auto" (repo if in git dir), "repo", or "global"
 refetch_interval_minutes = 10       # Cache TTL
 date_format = "relative"            # Or strftime format
 
@@ -247,19 +250,23 @@ The PR view displays the following columns:
 | `W`           | Mark as ready for review   |
 | `m`           | Merge PR                   |
 | `u`           | Update PR from base branch |
-| `s`           | Switch to Issues view      |
+| `n`           | Switch view                |
+| `N`           | Switch view back           |
+| `S`           | Toggle repo scope          |
 
 ### Issue View
 
-| Key | Action                       |
-| --- | ---------------------------- |
-| `L` | Label (with autocomplete)    |
-| `a` | Assign                       |
-| `A` | Unassign                     |
-| `c` | Comment                      |
-| `x` | Close issue                  |
-| `X` | Reopen issue                 |
-| `s` | Switch to Notifications view |
+| Key | Action                    |
+| --- | ------------------------- |
+| `L` | Label (with autocomplete) |
+| `a` | Assign                    |
+| `A` | Unassign                  |
+| `c` | Comment                   |
+| `x` | Close issue               |
+| `X` | Reopen issue              |
+| `n` | Switch view               |
+| `N` | Switch view back          |
+| `S` | Toggle repo scope         |
 
 ### Notification View
 
@@ -271,16 +278,21 @@ The PR view displays the following columns:
 | `m`     | Mark as read              |
 | `M`     | Mark all as read          |
 | `u`     | Unsubscribe               |
-| `s`     | Switch to PRs view        |
+| `n`     | Switch view               |
+| `N`     | Switch view back          |
+| `S`     | Toggle repo scope         |
 
 ### Branches View
 
 | Key      | Action                |
 | -------- | --------------------- |
 | `Delete` | Delete branch         |
-| `n`      | Create new branch     |
+| `+`      | Create new branch     |
 | `p`      | Create PR from branch |
 | `v`      | View PRs for branch   |
+| `n`      | Switch view           |
+| `N`      | Switch view back      |
+| `S`      | Toggle repo scope     |
 
 All keybindings are customizable via the config.
 

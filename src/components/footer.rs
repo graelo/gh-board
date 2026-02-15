@@ -20,6 +20,7 @@ pub struct FooterSection {
 pub struct RenderedFooter {
     pub sections: Vec<FooterSection>,
     pub inactive_fg: Color,
+    pub scope_label: String,
     pub context_text: String,
     pub updated_text: String,
     pub rate_limit_text: String,
@@ -34,6 +35,7 @@ impl RenderedFooter {
     pub fn build(
         active_view: ViewKind,
         icons: &ResolvedIcons,
+        scope_label: String,
         context_text: String,
         updated_text: String,
         rate_limit_text: String,
@@ -61,6 +63,7 @@ impl RenderedFooter {
         Self {
             sections,
             inactive_fg,
+            scope_label,
             context_text,
             updated_text,
             rate_limit_text,
@@ -106,12 +109,19 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
         return element! { View }.into_any();
     };
 
+    let has_scope = !f.scope_label.is_empty();
     let has_context = !f.context_text.is_empty();
     let has_updated = !f.updated_text.is_empty();
     let has_rate_limit = !f.rate_limit_text.is_empty();
 
     // Pre-build context area contents for MixedText.
     let mut context_contents = Vec::new();
+    if has_scope {
+        context_contents.push(MixedTextContent::new(&f.scope_label).color(f.text_fg));
+    }
+    if has_scope && (has_context || has_updated || has_rate_limit) {
+        context_contents.push(MixedTextContent::new("  \u{2022}  ").color(f.separator_fg));
+    }
     if has_context {
         context_contents.push(MixedTextContent::new(&f.context_text).color(f.text_fg));
     }

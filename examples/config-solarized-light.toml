@@ -32,6 +32,7 @@
 
 [defaults]
 view = "prs"
+scope = "auto"
 refetch_interval_minutes = 10
 date_format = "relative"
 

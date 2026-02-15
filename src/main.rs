@@ -72,6 +72,7 @@ fn main() -> Result<()> {
     tracing::info!("gh-board starting");
 
     let cwd = std::env::current_dir().ok();
+    let detected_repo = cwd.as_deref().and_then(gh_board::git::detect_repo);
 
     // Enter fullscreen TUI. iocraft uses smol internally; the Tokio runtime
     // context remains active so that octocrab/tower calls (wrapped in
@@ -86,6 +87,7 @@ fn main() -> Result<()> {
                 keybindings: &keybindings,
                 color_depth,
                 repo_path: cwd.as_deref(),
+                detected_repo: detected_repo.as_ref(),
             )
         }
         .fullscreen(),

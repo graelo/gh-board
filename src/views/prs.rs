@@ -377,6 +377,10 @@ pub struct PrsViewProps<'a> {
     pub switch_view: Option<State<bool>>,
     /// Signal to switch to the previous view.
     pub switch_view_back: Option<State<bool>>,
+    /// Signal to toggle repo scope.
+    pub scope_toggle: Option<State<bool>>,
+    /// Active scope repo (e.g. `"owner/repo"`), or `None` for global.
+    pub scope_repo: Option<String>,
     /// Repo paths for checkout (from `config.repo_paths`).
     pub repo_paths: Option<&'a HashMap<String, std::path::PathBuf>>,
     /// Date format string (from `config.defaults.date_format`).
@@ -396,6 +400,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let switch_view_back = props.switch_view_back;
+    let scope_toggle = props.scope_toggle;
+    let scope_repo = &props.scope_repo;
     let section_count = sections_cfg.len();
     let is_active = props.is_active;
     let preview_pct = if props.preview_width_pct > 0.0 {
@@ -445,6 +451,18 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let mut prs_state = hooks.use_state(move || PrsState {
         sections: initial_sections,
     });
+
+    // Track scope changes: when scope_repo changes, invalidate all sections.
+    let mut last_scope = hooks.use_state(|| scope_repo.clone());
+    if *last_scope.read() != *scope_repo {
+        last_scope.set(scope_repo.clone());
+        // Reset all sections to trigger refetch with new scope.
+        prs_state.set(PrsState {
+            sections: vec![SectionData::default(); section_count],
+        });
+        section_fetch_times.set(vec![None; section_count]);
+        section_in_flight.set(vec![false; section_count]);
+    }
 
     // Timer tick for periodic re-renders (supports auto-refetch).
     let mut tick = hooks.use_state(|| 0u64);
@@ -554,7 +572,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         let octocrab = Arc::clone(octocrab);
         let api_cache = props.api_cache.cloned();
         let section_idx = current_section_idx;
-        let filters = cfg.filters.clone();
+        let mut filters = cfg.filters.clone();
+        // Inject repo scope if active and not already present.
+        if let Some(ref repo) = *scope_repo
+            && !filters.split_whitespace().any(|t| t.starts_with("repo:"))
+        {
+            filters = format!("{filters} repo:{repo}");
+        }
         let limit = cfg.limit.unwrap_or(30);
         let theme_clone = theme.clone();
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
@@ -836,15 +860,21 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             }
                         }
                         // Switch view
-                        KeyCode::Char('s') => {
+                        KeyCode::Char('n') => {
                             if let Some(mut sv) = switch_view {
                                 sv.set(true);
                             }
                         }
                         // Switch view back
-                        KeyCode::Char('S') => {
+                        KeyCode::Char('N') => {
                             if let Some(mut sv) = switch_view_back {
                                 sv.set(true);
+                            }
+                        }
+                        // Toggle repo scope
+                        KeyCode::Char('S') => {
+                            if let Some(mut st) = scope_toggle {
+                                st.set(true);
                             }
                         }
                         // Toggle preview pane
@@ -1457,9 +1487,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
 
+    let scope_label = match scope_repo {
+        Some(repo) => repo.clone(),
+        None => "all repos".to_owned(),
+    };
     let rendered_footer = RenderedFooter::build(
         ViewKind::Prs,
         &theme.icons,
+        scope_label,
         context_text,
         updated_text,
         rate_limit_text,

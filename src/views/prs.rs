@@ -1482,7 +1482,11 @@ fn build_sidebar_meta(pr: &PullRequest, theme: &ResolvedTheme, depth: ColorDepth
 
     // Pill: state + draft
     let (pill_icon, pill_text, pill_bg_app) = if pr.is_draft {
-        (icons.pr_draft.clone(), "Draft".to_owned(), theme.pill_draft_bg)
+        (
+            icons.pr_draft.clone(),
+            "Draft".to_owned(),
+            theme.pill_draft_bg,
+        )
     } else {
         match pr.state {
             crate::github::types::PrState::Open => {

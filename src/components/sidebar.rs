@@ -235,11 +235,21 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
     let meta = sb.meta;
 
     // Pre-build tab label contents for MixedText.
-    let tab_contents: Vec<MixedTextContent> = sb.tab_labels.into_iter().map(|(label, active)| {
-        let color = if active { sb.tab_active_fg } else { sb.tab_inactive_fg };
-        let weight = if active { Weight::Bold } else { Weight::Normal };
-        MixedTextContent::new(format!(" {label} ")).color(color).weight(weight)
-    }).collect();
+    let tab_contents: Vec<MixedTextContent> = sb
+        .tab_labels
+        .into_iter()
+        .map(|(label, active)| {
+            let color = if active {
+                sb.tab_active_fg
+            } else {
+                sb.tab_inactive_fg
+            };
+            let weight = if active { Weight::Bold } else { Weight::Normal };
+            MixedTextContent::new(format!(" {label} "))
+                .color(color)
+                .weight(weight)
+        })
+        .collect();
 
     element! {
         View(

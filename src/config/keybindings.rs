@@ -318,8 +318,8 @@ pub(crate) fn default_issues() -> Vec<Keybinding> {
 /// Default Notification view keybindings.
 pub(crate) fn default_notifications() -> Vec<Keybinding> {
     vec![
-        kb("D", "mark_done", "Mark as done"),
-        kb("alt+d", "mark_all_done", "Mark all as done"),
+        kb("d", "mark_done", "Mark as done"),
+        kb("D", "mark_all_done", "Mark all as done"),
         kb("m", "mark_read", "Mark as read"),
         kb("M", "mark_all_read", "Mark all as read"),
         kb("u", "unsubscribe", "Unsubscribe"),

@@ -64,7 +64,11 @@ pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<
 // ---------------------------------------------------------------------------
 
 /// Render the Activity tab: chronological timeline events.
-pub fn render_activity(detail: &PrDetail, theme: &ResolvedTheme, depth: ColorDepth) -> Vec<StyledLine> {
+pub fn render_activity(
+    detail: &PrDetail,
+    theme: &ResolvedTheme,
+    depth: ColorDepth,
+) -> Vec<StyledLine> {
     if detail.timeline_events.is_empty() {
         return vec![StyledLine::from_span(StyledSpan::text(
             "(no timeline events)",

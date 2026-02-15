@@ -140,10 +140,20 @@ fn notification_to_row(
     row
 }
 
+/// Destructive or bulk actions that require confirmation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PendingAction {
+    MarkAllDone,
+    MarkAllRead,
+    Unsubscribe,
+}
+
 /// Input modes for the notifications view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum InputMode {
     Normal,
+    /// Confirmation prompt for a destructive/bulk action (y/n).
+    Confirm(PendingAction),
     Search,
 }
 
@@ -155,8 +165,7 @@ enum InputMode {
 #[derive(Debug, Clone)]
 struct SectionData {
     rows: Vec<Row>,
-    /// Notification IDs indexed same as rows (for future action keybindings).
-    #[allow(dead_code)]
+    /// Notification IDs indexed same as rows (used by action keybindings).
     ids: Vec<String>,
     /// Original notification objects for structured filtering (T089).
     notifications: Vec<Notification>,
@@ -235,6 +244,7 @@ pub fn NotificationsView<'a>(
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut search_query = hooks.use_state(String::new);
     let mut help_visible = hooks.use_state(|| false);
+    let mut action_status = hooks.use_state(|| Option::<String>::None);
 
     // State: last fetch time (for status bar).
     let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
@@ -345,6 +355,9 @@ pub fn NotificationsView<'a>(
     // Reserve space for tab bar (2 lines), footer (2 lines), header (1 line).
     let visible_rows = props.height.saturating_sub(5) as usize;
 
+    // Clone octocrab for action closures.
+    let octocrab_for_actions = props.octocrab.map(Arc::clone);
+
     // Keyboard handling.
     hooks.use_terminal_events({
         move |event| match event {
@@ -366,9 +379,103 @@ pub fn NotificationsView<'a>(
                     return;
                 }
 
-                if *input_mode.read() == InputMode::Search {
-                    // Search mode handling.
-                    match code {
+                // Read input mode into a local to avoid borrow conflict.
+                let current_mode = input_mode.read().clone();
+                match current_mode {
+                    InputMode::Confirm(ref pending) => match code {
+                        KeyCode::Char('y' | 'Y') => {
+                            if let Some(ref octocrab) = octocrab_for_actions {
+                                match pending {
+                                    PendingAction::Unsubscribe => {
+                                        let notif = get_current_notification(
+                                            &notif_state,
+                                            current_section_idx,
+                                            cursor.get(),
+                                        );
+                                        if let Some(n) = notif {
+                                            let octocrab = Arc::clone(octocrab);
+                                            let id = n.id.clone();
+                                            smol::spawn(Compat::new(async move {
+                                                match notifications::unsubscribe(&octocrab, &id)
+                                                    .await
+                                                {
+                                                    Ok(()) => action_status
+                                                        .set(Some("Unsubscribed".to_owned())),
+                                                    Err(e) => action_status.set(Some(format!(
+                                                        "Unsubscribe failed: {e}"
+                                                    ))),
+                                                }
+                                            }))
+                                            .detach();
+                                            remove_notification(
+                                                notif_state,
+                                                current_section_idx,
+                                                cursor.get(),
+                                            );
+                                            clamp_cursor(
+                                                cursor,
+                                                scroll_offset,
+                                                total_rows.saturating_sub(1),
+                                            );
+                                        }
+                                    }
+                                    PendingAction::MarkAllRead => {
+                                        let octocrab = Arc::clone(octocrab);
+                                        smol::spawn(Compat::new(async move {
+                                            match notifications::mark_all_as_read(&octocrab).await {
+                                                Ok(()) => action_status
+                                                    .set(Some("All marked as read".to_owned())),
+                                                Err(e) => action_status.set(Some(format!(
+                                                    "Mark all read failed: {e}"
+                                                ))),
+                                            }
+                                        }))
+                                        .detach();
+                                        clear_section(notif_state, current_section_idx);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    PendingAction::MarkAllDone => {
+                                        let ids = get_section_ids(notif_state, current_section_idx);
+                                        let octocrab = Arc::clone(octocrab);
+                                        smol::spawn(Compat::new(async move {
+                                            let mut failed = 0usize;
+                                            for id in &ids {
+                                                if notifications::mark_as_done(&octocrab, id)
+                                                    .await
+                                                    .is_err()
+                                                {
+                                                    failed += 1;
+                                                }
+                                            }
+                                            if failed == 0 {
+                                                action_status.set(Some(format!(
+                                                    "Marked {} as done",
+                                                    ids.len()
+                                                )));
+                                            } else {
+                                                action_status.set(Some(format!(
+                                                    "{failed}/{} failed",
+                                                    ids.len()
+                                                )));
+                                            }
+                                        }))
+                                        .detach();
+                                        clear_section(notif_state, current_section_idx);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                }
+                            }
+                            input_mode.set(InputMode::Normal);
+                        }
+                        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            action_status.set(Some("Cancelled".to_owned()));
+                        }
+                        _ => {}
+                    },
+                    InputMode::Search => match code {
                         KeyCode::Esc => {
                             input_mode.set(InputMode::Normal);
                             search_query.set(String::new());
@@ -391,9 +498,8 @@ pub fn NotificationsView<'a>(
                             scroll_offset.set(0);
                         }
                         _ => {}
-                    }
-                } else {
-                    match code {
+                    },
+                    InputMode::Normal => match code {
                         // Quit
                         KeyCode::Char('q') => {
                             if let Some(mut exit) = should_exit {
@@ -466,7 +572,100 @@ pub fn NotificationsView<'a>(
                             input_mode.set(InputMode::Search);
                             search_query.set(String::new());
                         }
+
+                        // -------------------------------------------------------
+                        // Notification actions
+                        // -------------------------------------------------------
+
+                        // Mark as done (d) — immediate, no confirm
+                        KeyCode::Char('d') if !modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some(ref octocrab) = octocrab_for_actions {
+                                let notif = get_current_notification(
+                                    &notif_state,
+                                    current_section_idx,
+                                    cursor.get(),
+                                );
+                                if let Some(n) = notif {
+                                    let octocrab = Arc::clone(octocrab);
+                                    let id = n.id.clone();
+                                    smol::spawn(Compat::new(async move {
+                                        match notifications::mark_as_done(&octocrab, &id).await {
+                                            Ok(()) => {
+                                                action_status
+                                                    .set(Some("Marked as done".to_owned()));
+                                            }
+                                            Err(e) => action_status
+                                                .set(Some(format!("Mark done failed: {e}"))),
+                                        }
+                                    }))
+                                    .detach();
+                                    remove_notification(
+                                        notif_state,
+                                        current_section_idx,
+                                        cursor.get(),
+                                    );
+                                    clamp_cursor(
+                                        cursor,
+                                        scroll_offset,
+                                        total_rows.saturating_sub(1),
+                                    );
+                                }
+                            }
+                        }
+                        // Mark as read (m) — immediate, no confirm
+                        KeyCode::Char('m') => {
+                            if let Some(ref octocrab) = octocrab_for_actions {
+                                let notif = get_current_notification(
+                                    &notif_state,
+                                    current_section_idx,
+                                    cursor.get(),
+                                );
+                                if let Some(n) = notif {
+                                    let octocrab = Arc::clone(octocrab);
+                                    let id = n.id.clone();
+                                    smol::spawn(Compat::new(async move {
+                                        match notifications::mark_as_read(&octocrab, &id).await {
+                                            Ok(()) => {
+                                                action_status
+                                                    .set(Some("Marked as read".to_owned()));
+                                            }
+                                            Err(e) => action_status
+                                                .set(Some(format!("Mark read failed: {e}"))),
+                                        }
+                                    }))
+                                    .detach();
+                                    remove_notification(
+                                        notif_state,
+                                        current_section_idx,
+                                        cursor.get(),
+                                    );
+                                    clamp_cursor(
+                                        cursor,
+                                        scroll_offset,
+                                        total_rows.saturating_sub(1),
+                                    );
+                                }
+                            }
+                        }
+                        // Mark all as read (M) — confirm first
+                        KeyCode::Char('M') => {
+                            input_mode.set(InputMode::Confirm(PendingAction::MarkAllRead));
+                            action_status.set(None);
+                        }
+                        // Mark all as done (D) — confirm first
+                        KeyCode::Char('D') => {
+                            input_mode.set(InputMode::Confirm(PendingAction::MarkAllDone));
+                            action_status.set(None);
+                        }
+                        // Unsubscribe (u, plain — not Ctrl+u) — confirm first
+                        KeyCode::Char('u') if !modifiers.contains(KeyModifiers::CONTROL) => {
+                            input_mode.set(InputMode::Confirm(PendingAction::Unsubscribe));
+                            action_status.set(None);
+                        }
+
+                        // -------------------------------------------------------
                         // Cursor movement
+                        // -------------------------------------------------------
                         KeyCode::Down | KeyCode::Char('j') => {
                             if total_rows > 0 {
                                 let new_cursor =
@@ -551,7 +750,7 @@ pub fn NotificationsView<'a>(
                             help_visible.set(true);
                         }
                         _ => {}
-                    }
+                    },
                 }
             }
             _ => {}
@@ -620,22 +819,40 @@ pub fn NotificationsView<'a>(
         Some(theme.border_faint),
     );
 
-    let is_searching = *input_mode.read() == InputMode::Search;
+    let current_mode = input_mode.read().clone();
 
-    let rendered_text_input = if is_searching {
-        Some(RenderedTextInput::build(
+    let rendered_text_input = match &current_mode {
+        InputMode::Confirm(action) => {
+            let prompt = match action {
+                PendingAction::MarkAllDone => "Mark ALL notifications as done? (y/n)",
+                PendingAction::MarkAllRead => "Mark ALL notifications as read? (y/n)",
+                PendingAction::Unsubscribe => {
+                    "Unsubscribe from this thread? This is irreversible. (y/n)"
+                }
+            };
+            Some(RenderedTextInput::build(
+                prompt,
+                "",
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_warning),
+                Some(theme.border_faint),
+            ))
+        }
+        InputMode::Search => Some(RenderedTextInput::build(
             "/",
             &search_query.read(),
             depth,
             Some(theme.text_primary),
             Some(theme.text_secondary),
             Some(theme.border_faint),
-        ))
-    } else {
-        None
+        )),
+        InputMode::Normal => None,
     };
 
-    let context_text = if current_data.is_some_and(|d| d.loading) {
+    let context_text = if let Some(msg) = action_status.read().as_ref() {
+        msg.clone()
+    } else if current_data.is_some_and(|d| d.loading) {
         "Fetching notifications...".to_owned()
     } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
         format!("Error: {err}")
@@ -705,6 +922,55 @@ fn get_current_notification(
     let state = notif_state.read();
     let section = state.sections.get(section_idx)?;
     section.notifications.get(cursor).cloned()
+}
+
+/// Remove a notification at `index` from section `section_idx` in local state.
+fn remove_notification(
+    mut notif_state: State<NotificationsState>,
+    section_idx: usize,
+    index: usize,
+) {
+    let mut state = notif_state.read().clone();
+    if let Some(section) = state.sections.get_mut(section_idx)
+        && index < section.rows.len()
+    {
+        section.rows.remove(index);
+        section.ids.remove(index);
+        section.notifications.remove(index);
+        section.notification_count = section.notifications.len();
+    }
+    notif_state.set(state);
+}
+
+/// Clear all notifications from a section in local state.
+fn clear_section(mut notif_state: State<NotificationsState>, section_idx: usize) {
+    let mut state = notif_state.read().clone();
+    if let Some(section) = state.sections.get_mut(section_idx) {
+        section.rows.clear();
+        section.ids.clear();
+        section.notifications.clear();
+        section.notification_count = 0;
+    }
+    notif_state.set(state);
+}
+
+/// Get all notification IDs for a section.
+fn get_section_ids(notif_state: State<NotificationsState>, section_idx: usize) -> Vec<String> {
+    let state = notif_state.read();
+    state
+        .sections
+        .get(section_idx)
+        .map_or_else(Vec::new, |s| s.ids.clone())
+}
+
+/// Clamp cursor and scroll offset after removing an item.
+fn clamp_cursor(mut cursor: State<usize>, mut scroll_offset: State<usize>, max_index: usize) {
+    if cursor.get() > max_index {
+        cursor.set(max_index);
+    }
+    if scroll_offset.get() > max_index {
+        scroll_offset.set(max_index);
+    }
 }
 
 fn default_theme() -> ResolvedTheme {

@@ -17,25 +17,25 @@ document maps each configuration field to the exact UI elements it affects.
 
 ### `primary`
 
-| View / Component  | Element                          |
-| ----------------- | -------------------------------- |
-| PR list           | PR number (`#27384`), title text |
-| Sidebar           | Title, metadata value text       |
-| Help overlay      | Overlay title                    |
+| View / Component | Element                          |
+| ---------------- | -------------------------------- |
+| PR list          | PR number (`#27384`), title text |
+| Sidebar          | Title, metadata value text       |
+| Help overlay     | Overlay title                    |
 
 ### `secondary`
 
-| View / Component  | Element                                                         |
-| ----------------- | --------------------------------------------------------------- |
-| PR list           | Repo name (`FreeCAD/FreeCAD`), comment count                    |
-| Issue list        | Repo name, comment count, reaction count                        |
-| Notification list | Repo name                                                       |
-| All list views    | Table column header icons                                       |
-| Tab bar           | Inactive tab labels                                             |
-| Sidebar           | Bold label prefixes (`Labels:`, `Assign:`, `Lines:`)            |
-| Sidebar Activity  | Action descriptions (`commented`, `reviewed`, `assigned`)       |
-| Help overlay      | Key description text                                            |
-| Footer            | Context/status text                                             |
+| View / Component  | Element                                                   |
+| ----------------- | --------------------------------------------------------- |
+| PR list           | Repo name (`FreeCAD/FreeCAD`), comment count              |
+| Issue list        | Repo name, comment count, reaction count                  |
+| Notification list | Repo name                                                 |
+| All list views    | Table column header icons                                 |
+| Tab bar           | Inactive tab labels                                       |
+| Sidebar           | Bold label prefixes (`Labels:`, `Assign:`, `Lines:`)      |
+| Sidebar Activity  | Action descriptions (`commented`, `reviewed`, `assigned`) |
+| Help overlay      | Key description text                                      |
+| Footer            | Context/status text                                       |
 
 ### `faint`
 
@@ -119,7 +119,6 @@ document maps each configuration field to the exact UI elements it affects.
 | Tab bar          | Active tab bottom indicator |
 | Sidebar          | Pane border                 |
 | Help overlay     | Overlay border              |
-| Footer           | Active section icon color   |
 | Sidebar Activity | Timeline box borders        |
 
 ### `secondary`
@@ -190,6 +189,20 @@ state pill, branch info, and the `by @author · age · role` line.
 
 ---
 
+## Footer Colors — `[theme.colors.footer]`
+
+Per-view background colors for the active section indicator in the footer bar.
+The foreground text is always white and bold for the active section.
+
+| Field           | Default       | Element                                   |
+| --------------- | ------------- | ----------------------------------------- |
+| `prs`           | `4` (blue)    | Background of the PRs indicator           |
+| `issues`        | `2` (green)   | Background of the Issues indicator        |
+| `notifications` | `5` (magenta) | Background of the Notifications indicator |
+| `repo`          | `13` (violet) | Background of the Repo indicator          |
+
+---
+
 ## Icon Colors — `[theme.colors.icon]`
 
 These color the author-role badge shown next to usernames in the sidebar.
@@ -228,13 +241,13 @@ comes from the text color fields listed above. Here is the full mapping:
 
 ### Review Decision Icons
 
-| Icon field          | Colored by       |
-| ------------------- | ---------------- |
-| `review_approved`   | `text.success`   |
-| `review_changes`    | `text.warning`   |
-| `review_commented`  | `text.secondary` |
-| `review_required`   | `text.faint`     |
-| `review_none`       | `text.faint`     |
+| Icon field         | Colored by       |
+| ------------------ | ---------------- |
+| `review_approved`  | `text.success`   |
+| `review_changes`   | `text.warning`   |
+| `review_commented` | `text.secondary` |
+| `review_required`  | `text.faint`     |
+| `review_none`      | `text.faint`     |
 
 ### CI Status Icons
 
@@ -283,7 +296,7 @@ comes from the text color fields listed above. Here is the full mapping:
 
 | Icon field   | Preset defaults                                            | Colored by  |
 | ------------ | ---------------------------------------------------------- | ----------- |
-| `pill_left`  | nerdfont: U+E0B6 (left half-circle), unicode/ascii: empty | `pill.*_bg` |
+| `pill_left`  | nerdfont: U+E0B6 (left half-circle), unicode/ascii: empty  | `pill.*_bg` |
 | `pill_right` | nerdfont: U+E0B4 (right half-circle), unicode/ascii: empty | `pill.*_bg` |
 
 The left/right cap glyphs are rendered with `fg = pill background color` (no
@@ -314,16 +327,16 @@ These control the preview pane rendering.
 
 ### Inline Elements
 
-| Field | Element |
-| ----- | ------- |
-| `code` | Inline code spans |
-| `link` | Bare URLs and autolinks (`↗` symbol) |
-| `link_text` | Link display text (`[text](url)`) |
-| `image` | Image URLs |
-| `image_text` | Image alt text |
-| `emph` | Italic text (`*text*`) |
-| `strong` | Bold text (`**text**`) |
-| `strikethrough` | Strikethrough text (`~~text~~`) |
+| Field           | Element                              |
+| --------------- | ------------------------------------ |
+| `code`          | Inline code spans                    |
+| `link`          | Bare URLs and autolinks (`↗` symbol) |
+| `link_text`     | Link display text (`[text](url)`)    |
+| `image`         | Image URLs                           |
+| `image_text`    | Image alt text                       |
+| `emph`          | Italic text (`*text*`)               |
+| `strong`        | Bold text (`**text**`)               |
+| `strikethrough` | Strikethrough text (`~~text~~`)      |
 
 ### Blockquote Alerts
 

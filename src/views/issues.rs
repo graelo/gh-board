@@ -798,7 +798,12 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         updated_text,
         rate_limit_text,
         depth,
-        Some(theme.border_primary),
+        [
+            Some(theme.footer_prs),
+            Some(theme.footer_issues),
+            Some(theme.footer_notifications),
+            Some(theme.footer_repo),
+        ],
         Some(theme.text_faint),
         Some(theme.text_faint),
         Some(theme.border_faint),

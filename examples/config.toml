@@ -200,6 +200,16 @@ role      = "#a6adc8"  # Catppuccin subtext0
 separator = "#6c7086"  # Catppuccin overlay0
 
 # ------------------------------------------------------------------------------
+# Colors: Footer (per-view active section background)
+# ------------------------------------------------------------------------------
+
+[theme.colors.footer]
+prs           = "#89b4fa"  # Catppuccin blue
+issues        = "#a6e3a1"  # Catppuccin green
+notifications = "#cba6f7"  # Catppuccin mauve
+repo          = "#b4befe"  # Catppuccin lavender
+
+# ------------------------------------------------------------------------------
 # Colors: Markdown Rendering
 # ------------------------------------------------------------------------------
 

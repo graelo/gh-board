@@ -83,6 +83,11 @@ pub struct ResolvedTheme {
     pub pill_age: Color,
     pub pill_role: Color,
     pub pill_separator: Color,
+    // Footer
+    pub footer_prs: Color,
+    pub footer_issues: Color,
+    pub footer_notifications: Color,
+    pub footer_repo: Color,
     // Icons
     pub icons: ResolvedIcons,
 }
@@ -153,6 +158,11 @@ impl ResolvedTheme {
             pill_age: pill.age.unwrap_or(text_faint),
             pill_role: pill.role.unwrap_or(text_secondary),
             pill_separator: pill.separator.unwrap_or(text_faint),
+            // Footer
+            footer_prs: theme.colors.footer.prs.unwrap_or(d.footer_prs),
+            footer_issues: theme.colors.footer.issues.unwrap_or(d.footer_issues),
+            footer_notifications: theme.colors.footer.notifications.unwrap_or(d.footer_notifications),
+            footer_repo: theme.colors.footer.repo.unwrap_or(d.footer_repo),
             icons: ResolvedIcons::resolve(&theme.icons),
         }
     }
@@ -190,6 +200,11 @@ struct Defaults {
     syn_operator: Color,
     syn_punctuation: Color,
     syn_name_builtin: Color,
+    // Footer
+    footer_prs: Color,
+    footer_issues: Color,
+    footer_notifications: Color,
+    footer_repo: Color,
 }
 
 impl Defaults {
@@ -226,6 +241,11 @@ impl Defaults {
                 syn_operator: Color::Ansi256(7),  // white
                 syn_punctuation: Color::Ansi256(245),
                 syn_name_builtin: Color::Ansi256(6),
+                // Footer
+                footer_prs: Color::Ansi256(4),            // blue
+                footer_issues: Color::Ansi256(2),         // green
+                footer_notifications: Color::Ansi256(5),  // magenta
+                footer_repo: Color::Ansi256(13),          // bright magenta/violet
             },
             Background::Light => Self {
                 text_primary: Color::Ansi256(0),
@@ -258,6 +278,11 @@ impl Defaults {
                 syn_operator: Color::Ansi256(0),  // black
                 syn_punctuation: Color::Ansi256(240),
                 syn_name_builtin: Color::Ansi256(6),
+                // Footer
+                footer_prs: Color::Ansi256(4),            // blue
+                footer_issues: Color::Ansi256(2),         // green
+                footer_notifications: Color::Ansi256(5),  // magenta
+                footer_repo: Color::Ansi256(13),          // bright magenta/violet
             },
         }
     }

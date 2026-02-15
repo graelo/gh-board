@@ -14,11 +14,11 @@ use crate::icons::ResolvedIcons;
 pub struct FooterSection {
     pub label: String,
     pub is_active: bool,
+    pub color: Color,
 }
 
 pub struct RenderedFooter {
     pub sections: Vec<FooterSection>,
-    pub active_fg: Color,
     pub inactive_fg: Color,
     pub context_text: String,
     pub updated_text: String,
@@ -38,12 +38,11 @@ impl RenderedFooter {
         updated_text: String,
         rate_limit_text: String,
         depth: ColorDepth,
-        active_color: Option<AppColor>,
+        section_colors: [Option<AppColor>; 4],
         inactive_color: Option<AppColor>,
         text_color: Option<AppColor>,
         border_color: Option<AppColor>,
     ) -> Self {
-        let active_fg = active_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let inactive_fg = inactive_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let text_fg = text_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
@@ -51,15 +50,16 @@ impl RenderedFooter {
 
         let sections = ViewKind::ALL
             .iter()
-            .map(|v| FooterSection {
+            .zip(section_colors.iter())
+            .map(|(v, color)| FooterSection {
                 label: v.icon_label(icons),
                 is_active: *v == active_view,
+                color: color.map_or(Color::White, |c| c.to_crossterm_color(depth)),
             })
             .collect();
 
         Self {
             sections,
-            active_fg,
             inactive_fg,
             context_text,
             updated_text,
@@ -139,7 +139,7 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
             // Left: section indicators
             #(f.sections.iter().map(|s| {
                 let (fg, bg, weight) = if s.is_active {
-                    (Color::White, Some(f.active_fg), Weight::Bold)
+                    (Color::White, Some(s.color), Weight::Bold)
                 } else {
                     (f.inactive_fg, None, Weight::Normal)
                 };

@@ -192,6 +192,20 @@ pub struct ColorsTheme {
     pub icon: IconColors,
     pub pill: PillColors,
     pub markdown: MarkdownColors,
+    pub footer: FooterColors,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct FooterColors {
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub prs: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub issues: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub notifications: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub repo: Option<Color>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]

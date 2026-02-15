@@ -639,7 +639,12 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         updated_text,
         String::new(),
         depth,
-        Some(theme.border_primary),
+        [
+            Some(theme.footer_prs),
+            Some(theme.footer_issues),
+            Some(theme.footer_notifications),
+            Some(theme.footer_repo),
+        ],
         Some(theme.text_faint),
         Some(theme.text_faint),
         Some(theme.border_faint),

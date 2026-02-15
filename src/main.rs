@@ -40,6 +40,7 @@ fn main() -> Result<()> {
         let file = std::fs::File::create("debug.log")?;
         tracing_subscriber::fmt()
             .with_writer(file)
+            .with_ansi(false)
             .with_env_filter(
                 tracing_subscriber::EnvFilter::try_from_env("RUST_LOG")
                     .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")),

@@ -285,7 +285,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
             // Meta section (pill badge + author line, Overview tab only)
             #(meta.map(|m| {
                 let pill_label = format!(" {} {} ", m.pill_icon, m.pill_text);
-                let branch_label = format!("  {}", m.branch_text);
+                let branch_label = format!(" {}", m.branch_text);
                 let author_line = format!(
                     "{} {} {} {} {} {}",
                     m.author_text, "\u{b7}", m.age_text, "\u{b7}", m.role_icon, m.role_text

@@ -410,9 +410,11 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: sidebar tab (T072 — FR-014).
     let mut sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
 
-    // State: cached PR detail data for sidebar tabs.
-    let mut detail_data = hooks.use_state(|| Option::<(u64, PrDetail)>::None);
-    let mut detail_fetch_key = hooks.use_state(|| Option::<u64>::None);
+    // State: cached PR detail data for sidebar tabs (HashMap cache + debounce).
+    let mut detail_cache = hooks.use_state(HashMap::<u64, PrDetail>::new);
+    let mut pending_detail =
+        hooks.use_state(|| Option::<(Arc<Octocrab>, String, String, u64)>::None);
+    let mut debounce_gen = hooks.use_state(|| 0u64);
 
     // State: input mode for actions (T058, T061).
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
@@ -443,6 +445,36 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         }
     });
 
+    // Debounce future: waits for cursor to settle, then spawns the detail fetch directly.
+    hooks.use_future(async move {
+        let mut last_gen = 0u64;
+        let mut spawned_gen = 0u64;
+        loop {
+            smol::Timer::after(std::time::Duration::from_millis(300)).await;
+            let current_gen = debounce_gen.get();
+            if current_gen != last_gen {
+                // Generation changed during this cycle — not stable yet.
+                last_gen = current_gen;
+            } else if current_gen > 0 && current_gen != spawned_gen {
+                // Stable for one full cycle and not yet spawned — fetch now.
+                let req = pending_detail.read().clone();
+                if let Some((octocrab, owner, repo, pr_number)) = req {
+                    spawned_gen = current_gen;
+                    smol::spawn(Compat::new(async move {
+                        if let Ok(detail) =
+                            graphql::fetch_pr_detail(&octocrab, &owner, &repo, pr_number).await
+                        {
+                            let mut cache = detail_cache.read().clone();
+                            cache.insert(pr_number, detail);
+                            detail_cache.set(cache);
+                        }
+                    }))
+                    .detach();
+                }
+            }
+        }
+    });
+
     // Auto-refetch if interval has elapsed (only for already-visited views).
     let refetch_interval = props.refetch_interval_minutes;
     if fetch_triggered.get()
@@ -455,6 +487,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         prs_state.set(PrsState {
             sections: vec![SectionData::default(); section_count],
         });
+        detail_cache.set(HashMap::new());
+        pending_detail.set(None);
     }
 
     // Trigger data fetch on first visit to this view.
@@ -984,6 +1018,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             prs_state.set(PrsState {
                                 sections: vec![SectionData::default(); section_count],
                             });
+                            detail_cache.set(HashMap::new());
+                            pending_detail.set(None);
                             cursor.set(0);
                             scroll_offset.set(0);
                         }
@@ -1188,29 +1224,34 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         row_separator: true,
     });
 
-    // Trigger detail fetch when sidebar is open and cursor changes.
+    // Request detail when sidebar is open and current PR is not cached.
     if is_preview_open {
         let cursor_idx = cursor.get();
         let current_pr = current_data.and_then(|d| d.prs.get(cursor_idx));
         if let Some(pr) = current_pr {
             let pr_number = pr.number;
-            // Only fetch if we haven't fetched for this PR yet.
-            if !detail_fetch_key.read().is_some_and(|k| k == pr_number)
-                && let Some(repo_ref) = &pr.repo
-                && let Some(octocrab) = props.octocrab
-            {
-                detail_fetch_key.set(Some(pr_number));
-                let octocrab = Arc::clone(octocrab);
-                let owner = repo_ref.owner.clone();
-                let repo = repo_ref.name.clone();
-                smol::spawn(Compat::new(async move {
-                    if let Ok(detail) =
-                        graphql::fetch_pr_detail(&octocrab, &owner, &repo, pr_number).await
-                    {
-                        detail_data.set(Some((pr_number, detail)));
-                    }
-                }))
-                .detach();
+            let already_cached = detail_cache.read().contains_key(&pr_number);
+            let already_pending = {
+                let guard = pending_detail.read();
+                match *guard {
+                    Some((_, _, _, n)) => n == pr_number,
+                    None => false,
+                }
+            };
+
+            if !already_cached && !already_pending {
+                // Store fetch params; debounce future will spawn fetch when stable.
+                if let Some(repo_ref) = &pr.repo
+                    && let Some(octocrab) = props.octocrab
+                {
+                    pending_detail.set(Some((
+                        Arc::clone(octocrab),
+                        repo_ref.owner.clone(),
+                        repo_ref.name.clone(),
+                        pr_number,
+                    )));
+                    debounce_gen.set(debounce_gen.get() + 1);
+                }
             }
         }
     }
@@ -1224,14 +1265,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
         let current_tab = sidebar_tab.get();
         let current_pr = current_data.and_then(|d| d.prs.get(cursor_idx));
-        let cached_detail = detail_data.read();
-        let detail_for_pr = current_pr.and_then(|pr| {
-            cached_detail.as_ref().and_then(
-                |(num, d)| {
-                    if *num == pr.number { Some(d) } else { None }
-                },
-            )
-        });
+        let cache_ref = detail_cache.read();
+        let detail_for_pr = current_pr.and_then(|pr| cache_ref.get(&pr.number));
 
         let md_lines: Vec<StyledLine> = match current_tab {
             SidebarTab::Overview => {

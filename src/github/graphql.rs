@@ -922,6 +922,7 @@ pub async fn search_issues_all(
 // ---------------------------------------------------------------------------
 
 /// Detailed PR data fetched for the sidebar tabs.
+#[derive(Clone)]
 pub struct PrDetail {
     pub body: String,
     pub reviews: Vec<Review>,

@@ -289,7 +289,8 @@ pub fn default_universal() -> Vec<Keybinding> {
 pub fn default_prs() -> Vec<Keybinding> {
     vec![
         kb("v", "approve", "Approve"),
-        kb("a", "assign", "Assign"),
+        kb("a", "assign", "Assign (autocomplete)"),
+        kb("ctrl+a", "assign_self", "Assign to me"),
         kb("A", "unassign", "Unassign"),
         kb("c", "comment", "Comment"),
         kb("d", "view_diff", "View diff"),
@@ -310,7 +311,8 @@ pub fn default_prs() -> Vec<Keybinding> {
 pub(crate) fn default_issues() -> Vec<Keybinding> {
     vec![
         kb("L", "label", "Label (autocomplete)"),
-        kb("a", "assign", "Assign"),
+        kb("a", "assign", "Assign (autocomplete)"),
+        kb("ctrl+a", "assign_self", "Assign to me"),
         kb("A", "unassign", "Unassign"),
         kb("c", "comment", "Comment"),
         kb("x", "close", "Close issue"),

@@ -144,6 +144,17 @@ query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
 }
 ";
 
+const REPOSITORY_COLLABORATORS_QUERY: &str = r"
+query RepositoryCollaborators($owner: String!, $repo: String!, $first: Int!) {
+  rateLimit { limit remaining cost }
+  repository(owner: $owner, name: $repo) {
+    collaborators(first: $first, affiliation: ALL) {
+      nodes { login }
+    }
+  }
+}
+";
+
 const SEARCH_ISSUES_QUERY: &str = r"
 query SearchIssues($query: String!, $first: Int!, $after: String) {
   rateLimit { limit remaining cost }
@@ -1433,6 +1444,35 @@ pub struct RepoLabel {
     pub description: Option<String>,
 }
 
+#[derive(Serialize)]
+struct RepoCollaboratorsVariables {
+    owner: String,
+    repo: String,
+    first: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoCollaboratorsData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
+    repository: Option<RepoCollaboratorsRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoCollaboratorsRepo {
+    collaborators: Option<RepoCollaboratorsConnection>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoCollaboratorsConnection {
+    nodes: Option<Vec<RawCollaborator>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCollaborator {
+    login: String,
+}
+
 /// Fetch all labels for a repository (for autocomplete).
 ///
 /// When a `cache` is provided, results are served from the moka LRU cache
@@ -1504,4 +1544,76 @@ pub async fn fetch_repo_labels(
     }
 
     Ok((labels, rate_limit))
+}
+
+/// Fetch all collaborators for a repository (for assignee autocomplete).
+///
+/// When a `cache` is provided, results are served from the moka LRU cache
+/// if a fresh entry exists.
+///
+/// Returns `(logins, rate_limit)`. On cache hit, `rate_limit` is `None`.
+pub async fn fetch_repo_collaborators(
+    octocrab: &Arc<Octocrab>,
+    owner: &str,
+    repo: &str,
+    cache: Option<&Cache<String, String>>,
+) -> Result<(Vec<String>, Option<RateLimitInfo>)> {
+    let cache_key = format!("collaborators:{owner}/{repo}");
+
+    // Check cache first
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok(logins) = serde_json::from_str::<Vec<String>>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((logins, None));
+    }
+
+    // Execute GraphQL query
+    let payload = GraphQLPayload {
+        query: REPOSITORY_COLLABORATORS_QUERY,
+        variables: RepoCollaboratorsVariables {
+            owner: owner.to_owned(),
+            repo: repo.to_owned(),
+            first: 100,
+        },
+    };
+
+    let response: GraphQLResponse<RepoCollaboratorsData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL repo collaborators request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    // Extract rate limit
+    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    });
+
+    // Parse collaborators
+    let logins: Vec<String> = data
+        .repository
+        .and_then(|r| r.collaborators)
+        .and_then(|c| c.nodes)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|collab| collab.login)
+        .collect();
+
+    // Cache the result
+    if let Some(c) = cache && let Ok(json) = serde_json::to_string(&logins) {
+        c.insert(cache_key, json).await;
+    }
+
+    Ok((logins, rate_limit))
 }

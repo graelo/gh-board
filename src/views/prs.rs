@@ -438,6 +438,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: search query (T087).
     let mut search_query = hooks.use_state(String::new);
 
+    // State: assignee autocomplete.
+    let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
+    let mut assignee_selection = hooks.use_state(|| 0usize);
+
     let mut help_visible = hooks.use_state(|| false);
 
     // State: rate limit from last GraphQL response.
@@ -705,6 +709,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             current_section_idx,
                             cursor.get(),
                             octocrab_for_actions.as_ref(),
+                            assignee_candidates,
+                            assignee_selection,
                         );
                     }
                     InputMode::Comment => match code {
@@ -971,11 +977,75 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 }
                             }
                         }
+                        // Quick self-assign (Ctrl+a) - immediate action without text input
+                        KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
+                            if let Some(ref octocrab) = octocrab_for_actions {
+                                let pr_info = get_current_pr_info(
+                                    &prs_state,
+                                    current_section_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, number)) = pr_info {
+                                    let octocrab = Arc::clone(octocrab);
+                                    smol::spawn(Compat::new(async move {
+                                        let result = async {
+                                            let user = octocrab.current().user().await?;
+                                            pr_actions::assign(
+                                                &octocrab,
+                                                &owner,
+                                                &repo,
+                                                number,
+                                                &user.login,
+                                            )
+                                            .await
+                                        }
+                                        .await;
+                                        match result {
+                                            Ok(()) => action_status
+                                                .set(Some(format!("Assigned to PR #{number}"))),
+                                            Err(e) => action_status
+                                                .set(Some(format!("Assign failed: {e}"))),
+                                        }
+                                    }))
+                                    .detach();
+                                }
+                            }
+                        }
                         // Assign (text input for any user)
                         KeyCode::Char('a') => {
                             input_mode.set(InputMode::Assign);
                             input_buffer.set(String::new());
+                            assignee_selection.set(0);
                             action_status.set(None);
+
+                            // Fetch collaborators for autocomplete
+                            if let Some(ref octocrab) = octocrab_for_actions {
+                                let pr_info = get_current_pr_info(
+                                    &prs_state,
+                                    current_section_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, _)) = pr_info {
+                                    let octocrab = Arc::clone(octocrab);
+                                    let api_cache = api_cache_for_refresh.clone();
+                                    smol::spawn(Compat::new(async move {
+                                        if let Ok((logins, rl)) = graphql::fetch_repo_collaborators(
+                                            &octocrab,
+                                            &owner,
+                                            &repo,
+                                            api_cache.as_ref(),
+                                        )
+                                        .await
+                                        {
+                                            if rl.is_some() {
+                                                rate_limit_state.set(rl);
+                                            }
+                                            assignee_candidates.set(logins);
+                                        }
+                                    }))
+                                    .detach();
+                                }
+                            }
                         }
                         // Unassign (self)
                         KeyCode::Char('A') => {
@@ -1414,14 +1484,29 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let current_mode = input_mode.read().clone();
 
     let rendered_text_input = match &current_mode {
-        InputMode::Assign => Some(RenderedTextInput::build(
-            "Assign user:",
-            &input_buffer.read(),
-            depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
-        )),
+        InputMode::Assign => {
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let sel = assignee_selection.get();
+            let selected_idx = if filtered.is_empty() {
+                None
+            } else {
+                Some(sel.min(filtered.len().saturating_sub(1)))
+            };
+            Some(RenderedTextInput::build_with_suggestions(
+                "Assign user:",
+                &buf,
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_secondary),
+                Some(theme.border_faint),
+                &filtered,
+                selected_idx,
+                Some(theme.text_inverted),
+                Some(theme.bg_selected),
+            ))
+        }
         InputMode::Comment => Some(RenderedTextInput::build(
             "Comment (Ctrl+D to submit, Esc to cancel):",
             &input_buffer.read(),
@@ -1556,10 +1641,45 @@ fn handle_assign_input(
     section_idx: usize,
     cursor: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
+    assignee_candidates: State<Vec<String>>,
+    mut assignee_selection: State<usize>,
 ) {
     match code {
+        // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
+        KeyCode::Tab | KeyCode::Down => {
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
+            }
+        }
+        KeyCode::Up | KeyCode::BackTab => {
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                let sel = assignee_selection.get();
+                assignee_selection.set(if sel == 0 {
+                    filtered.len() - 1
+                } else {
+                    sel - 1
+                });
+            }
+        }
         KeyCode::Enter => {
-            let username = input_buffer.read().clone();
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+
+            // Use selected suggestion if available, otherwise use typed text
+            let username = if filtered.is_empty() {
+                buf.clone()
+            } else {
+                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
+                filtered[sel].clone()
+            };
+
             if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
                 let info = get_current_pr_info(prs_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
@@ -1589,24 +1709,39 @@ fn handle_assign_input(
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
+            assignee_selection.set(0);
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
+            assignee_selection.set(0);
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();
             buf.pop();
             input_buffer.set(buf);
+            assignee_selection.set(0);
         }
         KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
             let mut buf = input_buffer.read().clone();
             buf.push(ch);
             input_buffer.set(buf);
+            assignee_selection.set(0);
         }
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
             // Backward compatibility: Ctrl+D also submits
-            let username = input_buffer.read().clone();
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+
+            // Use selected suggestion if available, otherwise use typed text
+            let username = if filtered.is_empty() {
+                buf.clone()
+            } else {
+                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
+                filtered[sel].clone()
+            };
+
             if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
                 let info = get_current_pr_info(prs_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
@@ -1634,6 +1769,7 @@ fn handle_assign_input(
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
+            assignee_selection.set(0);
         }
         _ => {}
     }

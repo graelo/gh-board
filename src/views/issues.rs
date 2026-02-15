@@ -326,6 +326,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let action_status = hooks.use_state(|| Option::<String>::None);
     let label_candidates = hooks.use_state(Vec::<String>::new);
     let label_selection = hooks.use_state(|| 0usize);
+    let assignee_candidates = hooks.use_state(Vec::<String>::new);
+    let assignee_selection = hooks.use_state(|| 0usize);
 
     // State: search query (T087).
     let search_query = hooks.use_state(String::new);
@@ -601,6 +603,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             current_section_idx,
                             cursor.get(),
                             octocrab_for_actions.as_ref(),
+                            assignee_candidates,
+                            assignee_selection,
                         );
                     }
                     InputMode::Label => {
@@ -658,6 +662,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             action_status,
                             label_candidates,
                             label_selection,
+                            assignee_candidates,
+                            assignee_selection,
                             total_rows,
                             visible_rows,
                             section_count,
@@ -869,14 +875,29 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(theme.text_secondary),
             Some(theme.border_faint),
         )),
-        InputMode::Assign => Some(RenderedTextInput::build(
-            "Assign user:",
-            &input_buffer.read(),
-            depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
-        )),
+        InputMode::Assign => {
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            let sel = assignee_selection.get();
+            let selected_idx = if filtered.is_empty() {
+                None
+            } else {
+                Some(sel.min(filtered.len().saturating_sub(1)))
+            };
+            Some(RenderedTextInput::build_with_suggestions(
+                "Assign user:",
+                &buf,
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_secondary),
+                Some(theme.border_faint),
+                &filtered,
+                selected_idx,
+                Some(theme.text_inverted),
+                Some(theme.bg_selected),
+            ))
+        }
         InputMode::Label => {
             let buf = input_buffer.read().clone();
             let candidates = label_candidates.read();
@@ -1059,10 +1080,45 @@ fn handle_assign_input(
     section_idx: usize,
     cursor: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
+    assignee_candidates: State<Vec<String>>,
+    mut assignee_selection: State<usize>,
 ) {
     match code {
+        // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
+        KeyCode::Tab | KeyCode::Down => {
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
+            }
+        }
+        KeyCode::Up | KeyCode::BackTab => {
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                let sel = assignee_selection.get();
+                assignee_selection.set(if sel == 0 {
+                    filtered.len() - 1
+                } else {
+                    sel - 1
+                });
+            }
+        }
         KeyCode::Enter => {
-            let username = input_buffer.read().clone();
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+
+            // Use selected suggestion if available, otherwise use typed text
+            let username = if filtered.is_empty() {
+                buf.clone()
+            } else {
+                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
+                filtered[sel].clone()
+            };
+
             if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
                 let info = get_current_issue_info(issues_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
@@ -1092,24 +1148,39 @@ fn handle_assign_input(
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
+            assignee_selection.set(0);
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
+            assignee_selection.set(0);
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();
             buf.pop();
             input_buffer.set(buf);
+            assignee_selection.set(0);
         }
         KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
             let mut buf = input_buffer.read().clone();
             buf.push(ch);
             input_buffer.set(buf);
+            assignee_selection.set(0);
         }
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
             // Backward compatibility: keep Ctrl+D working
-            let username = input_buffer.read().clone();
+            let buf = input_buffer.read().clone();
+            let candidates = assignee_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+
+            // Use selected suggestion if available, otherwise use typed text
+            let username = if filtered.is_empty() {
+                buf.clone()
+            } else {
+                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
+                filtered[sel].clone()
+            };
+
             if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
                 let info = get_current_issue_info(issues_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
@@ -1139,6 +1210,7 @@ fn handle_assign_input(
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
+            assignee_selection.set(0);
         }
         _ => {}
     }
@@ -1380,13 +1452,15 @@ fn handle_normal_input(
     mut action_status: State<Option<String>>,
     mut label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
+    mut assignee_candidates: State<Vec<String>>,
+    mut assignee_selection: State<usize>,
     total_rows: usize,
     visible_rows: usize,
     section_count: usize,
     mut issues_state: State<IssuesState>,
     current_section_idx: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
-    api_cache: Option<&Cache<String, String>>,
+    api_cache_for_refresh: Option<&Cache<String, String>>,
     mut section_fetch_times: State<Vec<Option<std::time::Instant>>>,
     mut help_visible: State<bool>,
     mut rate_limit_state: State<Option<RateLimitInfo>>,
@@ -1440,7 +1514,7 @@ fn handle_normal_input(
                 let info = get_current_issue_info(&issues_state, current_section_idx, cursor.get());
                 if let Some((owner, repo, _)) = info {
                     let octocrab = Arc::clone(octocrab);
-                    let api_cache = api_cache.cloned();
+                    let api_cache = api_cache_for_refresh.cloned();
                     smol::spawn(Compat::new(async move {
                         if let Ok((labels, rl)) =
                             graphql::fetch_repo_labels(&octocrab, &owner, &repo, api_cache.as_ref()).await
@@ -1456,10 +1530,70 @@ fn handle_normal_input(
                 }
             }
         }
+        // Quick self-assign (Ctrl+a) - immediate action without text input
+        KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
+            if let Some(octocrab) = octocrab_for_actions {
+                let state = issues_state.read();
+                let issue = state
+                    .sections
+                    .get(current_section_idx)
+                    .and_then(|s| s.issues.get(cursor.get()));
+                if let Some(issue) = issue && let Some(repo_ref) = &issue.repo {
+                    let owner = repo_ref.owner.clone();
+                    let repo = repo_ref.name.clone();
+                    let number = issue.number;
+                    let octocrab = Arc::clone(octocrab);
+                    smol::spawn(Compat::new(async move {
+                        let result = async {
+                            let user = octocrab.current().user().await?;
+                            issue_actions::assign(&octocrab, &owner, &repo, number, &user.login).await
+                        }
+                        .await;
+                        match result {
+                            Ok(()) => action_status.set(Some(format!("Assigned to issue #{number}"))),
+                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
+                        }
+                    }))
+                    .detach();
+                }
+            }
+        }
         KeyCode::Char('a') => {
             input_mode.set(InputMode::Assign);
             input_buffer.set(String::new());
+            assignee_selection.set(0);
             action_status.set(None);
+
+            // Fetch collaborators for autocomplete
+            if let Some(octocrab) = octocrab_for_actions {
+                let state = issues_state.read();
+                let issue = state
+                    .sections
+                    .get(current_section_idx)
+                    .and_then(|s| s.issues.get(cursor.get()));
+                if let Some(issue) = issue && let Some(repo_ref) = &issue.repo {
+                    let owner = repo_ref.owner.clone();
+                    let repo = repo_ref.name.clone();
+                    let octocrab = Arc::clone(octocrab);
+                    let api_cache = api_cache_for_refresh.cloned();
+                    smol::spawn(Compat::new(async move {
+                        if let Ok((logins, rl)) = graphql::fetch_repo_collaborators(
+                            &octocrab,
+                            &owner,
+                            &repo,
+                            api_cache.as_ref(),
+                        )
+                        .await
+                        {
+                            if rl.is_some() {
+                                rate_limit_state.set(rl);
+                            }
+                            assignee_candidates.set(logins);
+                        }
+                    }))
+                    .detach();
+                }
+            }
         }
         KeyCode::Char('A') => {
             // Unassign: fire immediately for the first assignee.
@@ -1533,7 +1667,7 @@ fn handle_normal_input(
         }
         // Retry / refresh
         KeyCode::Char('r') => {
-            if let Some(c) = api_cache {
+            if let Some(c) = api_cache_for_refresh {
                 c.invalidate_all();
             }
             let idx = active_section.get();

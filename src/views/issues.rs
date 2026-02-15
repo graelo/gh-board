@@ -576,11 +576,24 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
                 let current_mode = input_mode.read().clone();
                 match current_mode {
-                    InputMode::Comment | InputMode::Assign => {
+                    InputMode::Comment => {
                         handle_text_input(
                             code,
                             modifiers,
                             &current_mode,
+                            input_mode,
+                            input_buffer,
+                            action_status,
+                            &issues_state,
+                            current_section_idx,
+                            cursor.get(),
+                            octocrab_for_actions.as_ref(),
+                        );
+                    }
+                    InputMode::Assign => {
+                        handle_assign_input(
+                            code,
+                            modifiers,
                             input_mode,
                             input_buffer,
                             action_status,
@@ -1030,6 +1043,102 @@ fn handle_search_input(
             search_query.set(q);
             cursor.set(0);
             scroll_offset.set(0);
+        }
+        _ => {}
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_assign_input(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    mut input_mode: State<InputMode>,
+    mut input_buffer: State<String>,
+    mut action_status: State<Option<String>>,
+    issues_state: &State<IssuesState>,
+    section_idx: usize,
+    cursor: usize,
+    octocrab_for_actions: Option<&Arc<Octocrab>>,
+) {
+    match code {
+        KeyCode::Enter => {
+            let username = input_buffer.read().clone();
+            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+                let info = get_current_issue_info(issues_state, section_idx, cursor);
+                if let Some((owner, repo, number)) = info {
+                    let octocrab = Arc::clone(octocrab);
+                    smol::spawn(Compat::new(async move {
+                        let result = async {
+                            // Handle @me syntax
+                            let login = if username == "@me" {
+                                let user = octocrab.current().user().await?;
+                                user.login
+                            } else {
+                                // Strip @ prefix if present
+                                username.strip_prefix('@')
+                                    .unwrap_or(&username)
+                                    .to_string()
+                            };
+                            issue_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                        }
+                        .await;
+                        match result {
+                            Ok(()) => action_status.set(Some(format!("Assigned to issue #{number}"))),
+                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
+                        }
+                    }))
+                    .detach();
+                }
+            }
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+        }
+        KeyCode::Esc => {
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+        }
+        KeyCode::Backspace => {
+            let mut buf = input_buffer.read().clone();
+            buf.pop();
+            input_buffer.set(buf);
+        }
+        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+            let mut buf = input_buffer.read().clone();
+            buf.push(ch);
+            input_buffer.set(buf);
+        }
+        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+            // Backward compatibility: keep Ctrl+D working
+            let username = input_buffer.read().clone();
+            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+                let info = get_current_issue_info(issues_state, section_idx, cursor);
+                if let Some((owner, repo, number)) = info {
+                    let octocrab = Arc::clone(octocrab);
+                    smol::spawn(Compat::new(async move {
+                        let result = async {
+                            // Handle @me syntax
+                            let login = if username == "@me" {
+                                let user = octocrab.current().user().await?;
+                                user.login
+                            } else {
+                                // Strip @ prefix if present
+                                username.strip_prefix('@')
+                                    .unwrap_or(&username)
+                                    .to_string()
+                            };
+                            issue_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                        }
+                        .await;
+                        match result {
+                            Ok(()) => action_status.set(Some(format!("Assigned to issue #{number}"))),
+                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
+                        }
+                    }))
+                    .detach();
+                }
+            }
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
         }
         _ => {}
     }

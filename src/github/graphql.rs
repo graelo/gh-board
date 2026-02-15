@@ -70,6 +70,7 @@ query SearchPullRequests($query: String!, $first: Int!, $after: String) {
             }
           }
         }
+        participants(first: 30) { nodes { login } }
         repository { nameWithOwner }
       }
     }
@@ -382,6 +383,7 @@ struct RawPullRequest {
     #[serde(rename = "reviewRequests")]
     review_requests: Option<Connection<RawReviewRequest>>,
     commits: Option<Connection<RawCommitNode>>,
+    participants: Option<Connection<RawAssignee>>,
     repository: Option<RawRepository>,
 }
 
@@ -658,6 +660,16 @@ impl RawPullRequest {
             repo,
             comment_count,
             author_association: self.author_association,
+            participants: self
+                .participants
+                .map(|c| {
+                    c.nodes
+                        .into_iter()
+                        .flatten()
+                        .map(|a| a.login)
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 }

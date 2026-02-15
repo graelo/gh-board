@@ -426,15 +426,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     let mut help_visible = hooks.use_state(|| false);
 
-    // State: last fetch time (for status bar).
-    let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
+    // State: per-section fetch tracking (lazy: only fetch the active section).
+    let mut section_fetch_times =
+        hooks.use_state(move || vec![Option::<std::time::Instant>::None; section_count]);
+    let mut section_in_flight = hooks.use_state(move || vec![false; section_count]);
 
     // State: loaded section data (non-Copy, use .read()/.set()).
     let initial_sections = vec![SectionData::default(); section_count];
     let mut prs_state = hooks.use_state(move || PrsState {
         sections: initial_sections,
     });
-    let mut fetch_triggered = hooks.use_state(|| false);
 
     // Timer tick for periodic re-renders (supports auto-refetch).
     let mut tick = hooks.use_state(|| 0u64);
@@ -1509,13 +1510,6 @@ fn build_sidebar_meta(pr: &PullRequest, theme: &ResolvedTheme, depth: ColorDepth
     // Branch: base ← head
     let branch_text = format!("{} {} {}", pr.base_ref, icons.branch_arrow, pr.head_ref);
 
-    // Author
-    let author = pr.author.as_ref().map_or("unknown", |a| a.login.as_str());
-    let author_text = format!("by @{author}");
-
-    // Age
-    let age_text = crate::util::format_date(&pr.created_at, "relative");
-
     // Role
     let (role_icon, role_text) = match pr.author_association {
         Some(AuthorAssociation::Owner) => (icons.role_owner.clone(), "owner".to_owned()),
@@ -1535,6 +1529,10 @@ fn build_sidebar_meta(pr: &PullRequest, theme: &ResolvedTheme, depth: ColorDepth
         }
     };
 
+    // Participants: from GitHub's native `participants` connection (includes
+    // commenters, reviewers, label editors, etc.)
+    let participants: Vec<String> = pr.participants.iter().map(|l| format!("@{l}")).collect();
+
     SidebarMeta {
         pill_icon,
         pill_text,
@@ -1544,14 +1542,11 @@ fn build_sidebar_meta(pr: &PullRequest, theme: &ResolvedTheme, depth: ColorDepth
         pill_right: icons.pill_right.clone(),
         branch_text,
         branch_fg: theme.pill_branch.to_crossterm_color(depth),
-        author_text,
-        author_fg: theme.pill_author.to_crossterm_color(depth),
-        separator_fg: theme.pill_separator.to_crossterm_color(depth),
-        age_text,
-        age_fg: theme.pill_age.to_crossterm_color(depth),
         role_icon,
         role_text,
         role_fg: theme.pill_role.to_crossterm_color(depth),
+        participants,
+        participants_fg: theme.text_actor.to_crossterm_color(depth),
     }
 }
 

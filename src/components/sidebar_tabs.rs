@@ -53,8 +53,11 @@ pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<
         StyledSpan::text(format!("-{}", pr.deletions), theme.text_error),
     ]));
 
-    // Separator before body
-    lines.push(StyledLine::blank());
+    // Centered horizontal rule before body
+    lines.push(StyledLine::from_span(StyledSpan::text(
+        "─".repeat(20),
+        theme.md_horizontal_rule,
+    )));
 
     lines
 }

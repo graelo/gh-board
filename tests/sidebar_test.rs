@@ -70,6 +70,7 @@ fn test_pr() -> PullRequest {
         }),
         comment_count: 3,
         author_association: None,
+        participants: Vec::new(),
     }
 }
 

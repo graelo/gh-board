@@ -347,6 +347,9 @@ pub struct PullRequest {
     #[serde(default)]
     pub comment_count: u32,
     pub author_association: Option<AuthorAssociation>,
+    /// Deduplicated participant logins (from GitHub's `participants` connection).
+    #[serde(default)]
+    pub participants: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

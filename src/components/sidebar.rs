@@ -86,15 +86,13 @@ pub struct SidebarMeta {
     // Branch (same line, after pill)
     pub branch_text: String,
     pub branch_fg: Color,
-    // Author line
-    pub author_text: String,
-    pub author_fg: Color,
-    pub separator_fg: Color,
-    pub age_text: String,
-    pub age_fg: Color,
+    // Role (appended to line 1 after branch)
     pub role_icon: String,
     pub role_text: String,
     pub role_fg: Color,
+    // Participants line
+    pub participants: Vec<String>,
+    pub participants_fg: Color,
 }
 
 // ---------------------------------------------------------------------------
@@ -292,21 +290,18 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                     MixedText(contents: tab_contents, wrap: TextWrap::NoWrap)
             }
 
-            // Meta section (pill badge + author line, Overview tab only)
+            // Meta section (pill badge + role + participants, Overview tab only)
             #(meta.map(|m| {
                 let pill_label = format!(" {} {} ", m.pill_icon, m.pill_text);
                 let branch_label = format!(" {}", m.branch_text);
-                let author_contents = vec![
-                    MixedTextContent::new(&m.author_text).color(m.author_fg),
-                    MixedTextContent::new(" \u{b7} ").color(m.separator_fg),
-                    MixedTextContent::new(&m.age_text).color(m.age_fg),
-                    MixedTextContent::new(" \u{b7} ").color(m.separator_fg),
-                    MixedTextContent::new(format!("{} {}", m.role_icon, m.role_text)).color(m.role_fg),
-                ];
+                let role_label = format!(" {} {}", m.role_icon, m.role_text);
                 let has_caps = !m.pill_left.is_empty();
+                let has_participants = !m.participants.is_empty();
+                let participants_text = m.participants.join(", ");
+                let participants_fg = m.participants_fg;
                 element! {
-                    View(margin_top: 1, margin_bottom: 1, flex_direction: FlexDirection::Column) {
-                        // Line 1: pill + branch
+                    View(margin_top: 1, flex_direction: FlexDirection::Column) {
+                        // Line 1: pill + branch + role
                         View(flex_direction: FlexDirection::Row) {
                             // Left cap (Powerline glyph, fg = pill color, no bg)
                             #(if has_caps {
@@ -341,11 +336,27 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                                 None
                             })
                             Text(content: branch_label, color: m.branch_fg, wrap: TextWrap::NoWrap)
+                            Text(content: role_label, color: m.role_fg, wrap: TextWrap::NoWrap)
                         }
-                        // Line 2: by @author · age · role
-                        View(margin_top: 1) {
-                            MixedText(contents: author_contents, wrap: TextWrap::NoWrap)
-                        }
+                        // Line 2: Participants
+                        #(if has_participants {
+                            Some(element! {
+                                View(margin_top: 1) {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("Participants: ")
+                                                .color(participants_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(participants_text)
+                                                .color(participants_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
+                            })
+                        } else {
+                            None
+                        })
                     }
                 }
             }))

@@ -292,6 +292,8 @@ enum InputMode {
     Confirm(PendingAction),
     /// Search/filter mode (T087).
     Search,
+    /// Text input mode for assigning to any user.
+    Assign,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -692,6 +694,19 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 // Read input mode into a local to avoid borrow conflict.
                 let current_mode = input_mode.read().clone();
                 match current_mode {
+                    InputMode::Assign => {
+                        handle_assign_input(
+                            code,
+                            modifiers,
+                            input_mode,
+                            input_buffer,
+                            action_status,
+                            &prs_state,
+                            current_section_idx,
+                            cursor.get(),
+                            octocrab_for_actions.as_ref(),
+                        );
+                    }
                     InputMode::Comment => match code {
                         // Submit comment with Ctrl+D.
                         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -956,39 +971,11 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 }
                             }
                         }
-                        // Assign (self)
+                        // Assign (text input for any user)
                         KeyCode::Char('a') => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_section_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    smol::spawn(Compat::new(async move {
-                                        let result = async {
-                                            let user = octocrab.current().user().await?;
-                                            pr_actions::assign(
-                                                &octocrab,
-                                                &owner,
-                                                &repo,
-                                                number,
-                                                &user.login,
-                                            )
-                                            .await
-                                        }
-                                        .await;
-                                        match result {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Assigned to PR #{number}"))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Assign failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                }
-                            }
+                            input_mode.set(InputMode::Assign);
+                            input_buffer.set(String::new());
+                            action_status.set(None);
                         }
                         // Unassign (self)
                         KeyCode::Char('A') => {
@@ -1427,6 +1414,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let current_mode = input_mode.read().clone();
 
     let rendered_text_input = match &current_mode {
+        InputMode::Assign => Some(RenderedTextInput::build(
+            "Assign user:",
+            &input_buffer.read(),
+            depth,
+            Some(theme.text_primary),
+            Some(theme.text_secondary),
+            Some(theme.border_faint),
+        )),
         InputMode::Comment => Some(RenderedTextInput::build(
             "Comment (Ctrl+D to submit, Esc to cancel):",
             &input_buffer.read(),
@@ -1547,6 +1542,101 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         }
     }
     .into_any()
+}
+
+/// Handle text input for assigning PRs to users.
+#[allow(clippy::too_many_arguments)]
+fn handle_assign_input(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    mut input_mode: State<InputMode>,
+    mut input_buffer: State<String>,
+    mut action_status: State<Option<String>>,
+    prs_state: &State<PrsState>,
+    section_idx: usize,
+    cursor: usize,
+    octocrab_for_actions: Option<&Arc<Octocrab>>,
+) {
+    match code {
+        KeyCode::Enter => {
+            let username = input_buffer.read().clone();
+            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+                let info = get_current_pr_info(prs_state, section_idx, cursor);
+                if let Some((owner, repo, number)) = info {
+                    let octocrab = Arc::clone(octocrab);
+                    smol::spawn(Compat::new(async move {
+                        let result = async {
+                            // Handle @me syntax
+                            let login = if username == "@me" {
+                                let user = octocrab.current().user().await?;
+                                user.login
+                            } else {
+                                // Strip @ prefix if present
+                                username.strip_prefix('@')
+                                    .unwrap_or(&username)
+                                    .to_string()
+                            };
+                            pr_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                        }
+                        .await;
+                        match result {
+                            Ok(()) => action_status.set(Some(format!("Assigned to PR #{number}"))),
+                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
+                        }
+                    }))
+                    .detach();
+                }
+            }
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+        }
+        KeyCode::Esc => {
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+        }
+        KeyCode::Backspace => {
+            let mut buf = input_buffer.read().clone();
+            buf.pop();
+            input_buffer.set(buf);
+        }
+        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+            let mut buf = input_buffer.read().clone();
+            buf.push(ch);
+            input_buffer.set(buf);
+        }
+        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+            // Backward compatibility: Ctrl+D also submits
+            let username = input_buffer.read().clone();
+            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+                let info = get_current_pr_info(prs_state, section_idx, cursor);
+                if let Some((owner, repo, number)) = info {
+                    let octocrab = Arc::clone(octocrab);
+                    smol::spawn(Compat::new(async move {
+                        let result = async {
+                            let login = if username == "@me" {
+                                let user = octocrab.current().user().await?;
+                                user.login
+                            } else {
+                                username.strip_prefix('@')
+                                    .unwrap_or(&username)
+                                    .to_string()
+                            };
+                            pr_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                        }
+                        .await;
+                        match result {
+                            Ok(()) => action_status.set(Some(format!("Assigned to PR #{number}"))),
+                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
+                        }
+                    }))
+                    .detach();
+                }
+            }
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+        }
+        _ => {}
+    }
 }
 
 /// Extract (owner, repo, number) from the current PR at cursor position.

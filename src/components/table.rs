@@ -348,10 +348,10 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                 table.body_rows.into_iter().enumerate().map(move |(ri, row)| {
                 let is_last = ri + 1 >= row_count;
                 let subtitle_elem = row.subtitle.map(|sub| {
-                    let content: String = sub.spans.iter().map(|s| s.text.as_str()).collect();
-                    let fg = sub.spans.first().map_or(Color::Reset, |s| s.fg);
-                    let weight = sub.spans.first().map_or(Weight::Normal, |s| s.weight);
-                    (content, fg, weight, sub.width)
+                    let contents: Vec<MixedTextContent> = sub.spans.into_iter().map(|s| {
+                        MixedTextContent::new(s.text).color(s.fg).weight(s.weight)
+                    }).collect();
+                    (contents, sub.width)
                 });
                 element! {
                     View(
@@ -366,16 +366,15 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                         // Main cells line
                         View(flex_direction: FlexDirection::Row) {
                             #(row.cells.into_iter().enumerate().map(|(ci, cell)| {
-                                // For single-span cells, render directly; for multi-span, concatenate.
-                                let content: String = cell.spans.iter().map(|s| s.text.as_str()).collect();
-                                let fg = cell.spans.first().map_or(Color::Reset, |s| s.fg);
-                                let weight = cell.spans.first().map_or(Weight::Normal, |s| s.weight);
+                                let contents: Vec<MixedTextContent> = cell.spans.into_iter().map(|s| {
+                                    MixedTextContent::new(s.text)
+                                        .color(s.fg)
+                                        .weight(s.weight)
+                                }).collect();
                                 element! {
                                     View(key: ci, width: cell.width) {
-                                        Text(
-                                            content,
-                                            color: fg,
-                                            weight,
+                                        MixedText(
+                                            contents,
                                             wrap: TextWrap::NoWrap,
                                             align: cell.align,
                                         )
@@ -384,13 +383,11 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                             }))
                         }
                         // Subtitle line (if present)
-                        #(subtitle_elem.into_iter().map(|(content, fg, weight, width)| {
+                        #(subtitle_elem.into_iter().map(|(contents, width)| {
                             element! {
                                 View(width, padding_left: sub_pad) {
-                                    Text(
-                                        content,
-                                        color: fg,
-                                        weight,
+                                    MixedText(
+                                        contents,
                                         wrap: TextWrap::NoWrap,
                                     )
                                 }

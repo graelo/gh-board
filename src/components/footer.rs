@@ -97,6 +97,18 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
     let has_context = !f.context_text.is_empty();
     let has_updated = !f.updated_text.is_empty();
 
+    // Pre-build context area contents for MixedText.
+    let mut context_contents = Vec::new();
+    if has_context {
+        context_contents.push(MixedTextContent::new(&f.context_text).color(f.text_fg));
+    }
+    if has_context && has_updated {
+        context_contents.push(MixedTextContent::new("  \u{2022}  ").color(f.separator_fg));
+    }
+    if has_updated {
+        context_contents.push(MixedTextContent::new(&f.updated_text).color(f.text_fg));
+    }
+
     element! {
         View(
             border_style: BorderStyle::Single,
@@ -122,27 +134,7 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
             Text(content: " \u{2502} ", color: f.separator_fg, wrap: TextWrap::NoWrap)
             // Middle: context + updated (flex_grow to fill space)
             View(flex_grow: 1.0) {
-                #(if has_context {
-                    Some(element! {
-                        Text(content: f.context_text.clone(), color: f.text_fg, wrap: TextWrap::NoWrap)
-                    })
-                } else {
-                    None
-                })
-                #(if has_context && has_updated {
-                    Some(element! {
-                        Text(content: "  \u{2022}  ", color: f.separator_fg, wrap: TextWrap::NoWrap)
-                    })
-                } else {
-                    None
-                })
-                #(if has_updated {
-                    Some(element! {
-                        Text(content: f.updated_text.clone(), color: f.text_fg, wrap: TextWrap::NoWrap)
-                    })
-                } else {
-                    None
-                })
+                MixedText(contents: context_contents, wrap: TextWrap::NoWrap)
             }
             // Pipe separator
             Text(content: " \u{2502} ", color: f.separator_fg, wrap: TextWrap::NoWrap)

@@ -147,11 +147,14 @@ pub fn TextInput(props: &mut TextInputProps) -> impl Into<AnyElement<'static>> {
             padding_left: 1,
             padding_right: 1,
         ) {
-            View(flex_direction: FlexDirection::Row) {
-                Text(content: input.prompt, color: input.prompt_fg, wrap: TextWrap::NoWrap)
-                Text(content: " ", color: input.text_fg)
-                Text(content: input.text, color: input.text_fg, wrap: TextWrap::NoWrap)
-            }
+            MixedText(
+                contents: vec![
+                    MixedTextContent::new(&input.prompt).color(input.prompt_fg),
+                    MixedTextContent::new(" ").color(input.text_fg),
+                    MixedTextContent::new(&input.text).color(input.text_fg),
+                ],
+                wrap: TextWrap::NoWrap,
+            )
             #(if has_suggestions {
                 Some(element! {
                     View(flex_direction: FlexDirection::Column) {

@@ -234,6 +234,13 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
     let has_tabs = !sb.tab_labels.is_empty();
     let meta = sb.meta;
 
+    // Pre-build tab label contents for MixedText.
+    let tab_contents: Vec<MixedTextContent> = sb.tab_labels.into_iter().map(|(label, active)| {
+        let color = if active { sb.tab_active_fg } else { sb.tab_inactive_fg };
+        let weight = if active { Weight::Bold } else { Weight::Normal };
+        MixedTextContent::new(format!(" {label} ")).color(color).weight(weight)
+    }).collect();
+
     element! {
         View(
             flex_direction: FlexDirection::Column,
@@ -272,24 +279,20 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                 border_edges: Edges::Bottom,
                 border_color: sb.border_fg,
             ) {
-                #(sb.tab_labels.into_iter().map(|(label, active)| {
-                    let color = if active { sb.tab_active_fg } else { sb.tab_inactive_fg };
-                    let weight = if active { Weight::Bold } else { Weight::Normal };
-                    let text = format!(" {label} ");
-                    element! {
-                        Text(content: text, color, weight, wrap: TextWrap::NoWrap)
-                    }
-                }))
+                    MixedText(contents: tab_contents, wrap: TextWrap::NoWrap)
             }
 
             // Meta section (pill badge + author line, Overview tab only)
             #(meta.map(|m| {
                 let pill_label = format!(" {} {} ", m.pill_icon, m.pill_text);
                 let branch_label = format!(" {}", m.branch_text);
-                let author_line = format!(
-                    "{} {} {} {} {} {}",
-                    m.author_text, "\u{b7}", m.age_text, "\u{b7}", m.role_icon, m.role_text
-                );
+                let author_contents = vec![
+                    MixedTextContent::new(&m.author_text).color(m.author_fg),
+                    MixedTextContent::new(" \u{b7} ").color(m.separator_fg),
+                    MixedTextContent::new(&m.age_text).color(m.age_fg),
+                    MixedTextContent::new(" \u{b7} ").color(m.separator_fg),
+                    MixedTextContent::new(format!("{} {}", m.role_icon, m.role_text)).color(m.role_fg),
+                ];
                 let has_caps = !m.pill_left.is_empty();
                 element! {
                     View(margin_top: 1, margin_bottom: 1, flex_direction: FlexDirection::Column) {
@@ -331,7 +334,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                         }
                         // Line 2: by @author · age · role
                         View(margin_top: 1) {
-                            Text(content: author_line, color: m.author_fg, wrap: TextWrap::NoWrap)
+                            MixedText(contents: author_contents, wrap: TextWrap::NoWrap)
                         }
                     }
                 }

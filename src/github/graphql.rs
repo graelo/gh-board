@@ -18,6 +18,7 @@ use crate::github::types::{
 
 const SEARCH_PULL_REQUESTS_QUERY: &str = r"
 query SearchPullRequests($query: String!, $first: Int!, $after: String) {
+  rateLimit { limit remaining cost }
   search(query: $query, type: ISSUE, first: $first, after: $after) {
     pageInfo {
       hasNextPage
@@ -81,6 +82,7 @@ query SearchPullRequests($query: String!, $first: Int!, $after: String) {
 
 const PR_DETAIL_QUERY: &str = r"
 query PullRequestDetail($owner: String!, $repo: String!, $number: Int!) {
+  rateLimit { limit remaining cost }
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       body
@@ -114,6 +116,7 @@ query PullRequestDetail($owner: String!, $repo: String!, $number: Int!) {
 
 const REPOSITORY_LABELS_QUERY: &str = r"
 query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
+  rateLimit { limit remaining cost }
   repository(owner: $owner, name: $repo) {
     labels(first: $first, orderBy: { field: NAME, direction: ASC }) {
       nodes { name color description }
@@ -124,6 +127,7 @@ query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
 
 const SEARCH_ISSUES_QUERY: &str = r"
 query SearchIssues($query: String!, $first: Int!, $after: String) {
+  rateLimit { limit remaining cost }
   search(query: $query, type: ISSUE, first: $first, after: $after) {
     pageInfo { hasNextPage endCursor }
     nodes {
@@ -206,8 +210,25 @@ struct GraphQLError {
     message: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct RawRateLimit {
+    limit: u32,
+    remaining: u32,
+    cost: u32,
+}
+
+/// Public rate limit info extracted from GraphQL responses.
+#[derive(Debug, Clone)]
+pub struct RateLimitInfo {
+    pub limit: u32,
+    pub remaining: u32,
+    pub cost: u32,
+}
+
 #[derive(Debug, Deserialize)]
 struct SearchData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
     search: SearchResult,
 }
 
@@ -221,6 +242,8 @@ struct SearchResult {
 
 #[derive(Debug, Deserialize)]
 struct IssueSearchData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
     search: IssueSearchResult,
 }
 
@@ -247,6 +270,8 @@ pub struct PageInfo {
 
 #[derive(Debug, Deserialize)]
 struct PrDetailData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
     repository: Option<PrDetailRepo>,
 }
 
@@ -764,6 +789,7 @@ fn parse_reaction_groups(groups: &[RawReactionGroup]) -> ReactionGroups {
 pub struct SearchPrPage {
     pub pull_requests: Vec<PullRequest>,
     pub page_info: PageInfo,
+    pub rate_limit: Option<RateLimitInfo>,
 }
 
 /// Execute the `SearchPullRequests` GraphQL query for a single page.
@@ -800,6 +826,12 @@ pub async fn search_pull_requests(
         .data
         .context("GraphQL response missing data field")?;
 
+    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    });
+
     let pull_requests = data
         .search
         .nodes
@@ -811,6 +843,7 @@ pub async fn search_pull_requests(
     Ok(SearchPrPage {
         pull_requests,
         page_info: data.search.page_info,
+        rate_limit,
     })
 }
 
@@ -818,12 +851,14 @@ pub async fn search_pull_requests(
 ///
 /// When a `cache` is provided, results are served from the moka LRU cache
 /// if a fresh entry exists (TTL is set at client creation time).
+///
+/// Returns `(pull_requests, rate_limit)`. On cache hit, `rate_limit` is `None`.
 pub async fn search_pull_requests_all(
     octocrab: &Arc<Octocrab>,
     query: &str,
     limit: u32,
     cache: Option<&Cache<String, String>>,
-) -> Result<Vec<PullRequest>> {
+) -> Result<(Vec<PullRequest>, Option<RateLimitInfo>)> {
     let cache_key = format!("prs:{query}:{limit}");
 
     // Try cache first.
@@ -831,7 +866,7 @@ pub async fn search_pull_requests_all(
         if let Some(cached) = c.get(&cache_key).await {
             if let Ok(prs) = serde_json::from_str::<Vec<PullRequest>>(&cached) {
                 tracing::debug!("cache hit for {cache_key}");
-                return Ok(prs);
+                return Ok((prs, None));
             }
         }
     }
@@ -839,6 +874,7 @@ pub async fn search_pull_requests_all(
     let page_size = limit.min(100); // GitHub caps at 100 per page
     let mut all_prs = Vec::new();
     let mut cursor: Option<String> = None;
+    let mut last_rate_limit: Option<RateLimitInfo> = None;
 
     loop {
         let remaining = limit.saturating_sub(u32::try_from(all_prs.len()).unwrap_or(u32::MAX));
@@ -849,6 +885,9 @@ pub async fn search_pull_requests_all(
 
         let page = search_pull_requests(octocrab, query, fetch_count, cursor).await?;
         all_prs.extend(page.pull_requests);
+        if page.rate_limit.is_some() {
+            last_rate_limit = page.rate_limit;
+        }
 
         if !page.page_info.has_next_page || page.page_info.end_cursor.is_none() {
             break;
@@ -863,7 +902,7 @@ pub async fn search_pull_requests_all(
         }
     }
 
-    Ok(all_prs)
+    Ok((all_prs, last_rate_limit))
 }
 
 // ---------------------------------------------------------------------------
@@ -874,6 +913,7 @@ pub async fn search_pull_requests_all(
 pub struct SearchIssuePage {
     pub issues: Vec<Issue>,
     pub page_info: PageInfo,
+    pub rate_limit: Option<RateLimitInfo>,
 }
 
 /// Execute the `SearchIssues` GraphQL query for a single page.
@@ -910,6 +950,12 @@ pub async fn search_issues(
         .data
         .context("GraphQL response missing data field")?;
 
+    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    });
+
     let issues = data
         .search
         .nodes
@@ -921,6 +967,7 @@ pub async fn search_issues(
     Ok(SearchIssuePage {
         issues,
         page_info: data.search.page_info,
+        rate_limit,
     })
 }
 
@@ -928,19 +975,21 @@ pub async fn search_issues(
 ///
 /// When a `cache` is provided, results are served from the moka LRU cache
 /// if a fresh entry exists.
+///
+/// Returns `(issues, rate_limit)`. On cache hit, `rate_limit` is `None`.
 pub async fn search_issues_all(
     octocrab: &Arc<Octocrab>,
     query: &str,
     limit: u32,
     cache: Option<&Cache<String, String>>,
-) -> Result<Vec<Issue>> {
+) -> Result<(Vec<Issue>, Option<RateLimitInfo>)> {
     let cache_key = format!("issues:{query}:{limit}");
 
     if let Some(c) = cache {
         if let Some(cached) = c.get(&cache_key).await {
             if let Ok(issues) = serde_json::from_str::<Vec<Issue>>(&cached) {
                 tracing::debug!("cache hit for {cache_key}");
-                return Ok(issues);
+                return Ok((issues, None));
             }
         }
     }
@@ -948,6 +997,7 @@ pub async fn search_issues_all(
     let page_size = limit.min(100);
     let mut all_issues = Vec::new();
     let mut cursor: Option<String> = None;
+    let mut last_rate_limit: Option<RateLimitInfo> = None;
 
     loop {
         let remaining = limit.saturating_sub(u32::try_from(all_issues.len()).unwrap_or(u32::MAX));
@@ -958,6 +1008,9 @@ pub async fn search_issues_all(
 
         let page = search_issues(octocrab, query, fetch_count, cursor).await?;
         all_issues.extend(page.issues);
+        if page.rate_limit.is_some() {
+            last_rate_limit = page.rate_limit;
+        }
 
         if !page.page_info.has_next_page || page.page_info.end_cursor.is_none() {
             break;
@@ -971,7 +1024,7 @@ pub async fn search_issues_all(
         }
     }
 
-    Ok(all_issues)
+    Ok((all_issues, last_rate_limit))
 }
 
 // ---------------------------------------------------------------------------
@@ -1139,20 +1192,22 @@ impl RawPrDetail {
 ///
 /// When a `cache` is provided, results are served from the moka LRU cache
 /// if a fresh entry exists.
+///
+/// Returns `(detail, rate_limit)`. On cache hit, `rate_limit` is `None`.
 pub async fn fetch_pr_detail(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
     number: u64,
     cache: Option<&Cache<String, String>>,
-) -> Result<PrDetail> {
+) -> Result<(PrDetail, Option<RateLimitInfo>)> {
     let cache_key = format!("pr:{owner}/{repo}#{number}");
 
     if let Some(c) = cache {
         if let Some(cached) = c.get(&cache_key).await {
             if let Ok(detail) = serde_json::from_str::<PrDetail>(&cached) {
                 tracing::debug!("cache hit for {cache_key}");
-                return Ok(detail);
+                return Ok((detail, None));
             }
         }
     }
@@ -1180,6 +1235,12 @@ pub async fn fetch_pr_detail(
         .data
         .context("GraphQL response missing data field")?;
 
+    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    });
+
     let raw = data
         .repository
         .and_then(|r| r.pull_request)
@@ -1193,7 +1254,7 @@ pub async fn fetch_pr_detail(
         }
     }
 
-    Ok(detail)
+    Ok((detail, rate_limit))
 }
 
 // ---------------------------------------------------------------------------
@@ -1209,6 +1270,8 @@ struct RepoLabelsVariables {
 
 #[derive(Debug, Deserialize)]
 struct RepoLabelsData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
     repository: Option<RepoLabelsRepo>,
 }
 
@@ -1241,19 +1304,21 @@ pub struct RepoLabel {
 ///
 /// When a `cache` is provided, results are served from the moka LRU cache
 /// if a fresh entry exists.
+///
+/// Returns `(labels, rate_limit)`. On cache hit, `rate_limit` is `None`.
 pub async fn fetch_repo_labels(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
     cache: Option<&Cache<String, String>>,
-) -> Result<Vec<RepoLabel>> {
+) -> Result<(Vec<RepoLabel>, Option<RateLimitInfo>)> {
     let cache_key = format!("labels:{owner}/{repo}");
 
     if let Some(c) = cache {
         if let Some(cached) = c.get(&cache_key).await {
             if let Ok(labels) = serde_json::from_str::<Vec<RepoLabel>>(&cached) {
                 tracing::debug!("cache hit for {cache_key}");
-                return Ok(labels);
+                return Ok((labels, None));
             }
         }
     }
@@ -1281,6 +1346,12 @@ pub async fn fetch_repo_labels(
         .data
         .context("GraphQL response missing data field")?;
 
+    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    });
+
     let labels: Vec<RepoLabel> = data
         .repository
         .and_then(|r| r.labels)
@@ -1300,5 +1371,5 @@ pub async fn fetch_repo_labels(
         }
     }
 
-    Ok(labels)
+    Ok((labels, rate_limit))
 }

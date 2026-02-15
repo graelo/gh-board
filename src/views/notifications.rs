@@ -931,6 +931,7 @@ pub fn NotificationsView<'a>(
         &theme.icons,
         context_text,
         updated_text,
+        String::new(),
         depth,
         Some(theme.border_primary),
         Some(theme.text_faint),

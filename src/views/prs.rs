@@ -21,7 +21,7 @@ use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::PrSection;
 use crate::filter;
-use crate::github::graphql::{self, PrDetail};
+use crate::github::graphql::{self, PrDetail, RateLimitInfo};
 use crate::github::rate_limit;
 use crate::github::types::{AuthorAssociation, PullRequest};
 use crate::icons::ResolvedIcons;
@@ -429,6 +429,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     let mut help_visible = hooks.use_state(|| false);
 
+    // State: rate limit from last GraphQL response.
+    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+
     // State: per-section fetch tracking (lazy: only fetch the active section).
     let mut section_fetch_times =
         hooks.use_state(move || vec![Option::<std::time::Instant>::None; section_count]);
@@ -467,9 +470,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     spawned_gen = current_gen;
                     let api_cache = api_cache_for_detail.clone();
                     smol::spawn(Compat::new(async move {
-                        if let Ok(detail) =
+                        if let Ok((detail, rl)) =
                             graphql::fetch_pr_detail(&octocrab, &owner, &repo, pr_number, api_cache.as_ref()).await
                         {
+                            if rl.is_some() {
+                                rate_limit_state.set(rl);
+                            }
                             let mut cache = detail_cache.read().clone();
                             cache.insert(pr_number, detail);
                             detail_cache.set(cache);
@@ -553,7 +559,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         smol::spawn(Compat::new(async move {
             let section_data =
                 match graphql::search_pull_requests_all(&octocrab, &filters, limit, api_cache.as_ref()).await {
-                    Ok(prs) => {
+                    Ok((prs, rl)) => {
+                        if rl.is_some() {
+                            rate_limit_state.set(rl);
+                        }
                         let rows: Vec<Row> = prs
                             .iter()
                             .map(|pr| pr_to_row(pr, &theme_clone, &date_format_owned))
@@ -1483,11 +1492,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
 
+    let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
+
     let rendered_footer = RenderedFooter::build(
         ViewKind::Prs,
         &theme.icons,
         context_text,
         updated_text,
+        rate_limit_text,
         depth,
         Some(theme.border_primary),
         Some(theme.text_faint),

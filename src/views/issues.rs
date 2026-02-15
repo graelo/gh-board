@@ -20,7 +20,7 @@ use crate::components::text_input::{self, RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::IssueSection;
 use crate::filter;
-use crate::github::graphql;
+use crate::github::graphql::{self, RateLimitInfo};
 use crate::github::rate_limit;
 use crate::github::types::Issue;
 use crate::markdown::renderer::{self, StyledLine};
@@ -310,6 +310,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     let mut help_visible = hooks.use_state(|| false);
 
+    // State: rate limit from last GraphQL response.
+    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+
     // State: per-section fetch tracking (lazy: only fetch the active section).
     let mut section_fetch_times =
         hooks.use_state(move || vec![Option::<std::time::Instant>::None; section_count]);
@@ -404,7 +407,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         smol::spawn(Compat::new(async move {
             let section_data =
                 match graphql::search_issues_all(&octocrab, &filters, limit, api_cache.as_ref()).await {
-                    Ok(issues) => {
+                    Ok((issues, rl)) => {
+                        if rl.is_some() {
+                            rate_limit_state.set(rl);
+                        }
                         let rows: Vec<Row> = issues
                             .iter()
                             .map(|issue| issue_to_row(issue, &theme_clone, &date_format_owned))
@@ -573,6 +579,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             api_cache_for_actions.as_ref(),
                             section_fetch_times,
                             help_visible,
+                            rate_limit_state,
                         );
                     }
                 }
@@ -782,11 +789,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
 
+    let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
+
     let rendered_footer = RenderedFooter::build(
         ViewKind::Issues,
         &theme.icons,
         context_text,
         updated_text,
+        rate_limit_text,
         depth,
         Some(theme.border_primary),
         Some(theme.text_faint),
@@ -1114,6 +1124,7 @@ fn handle_normal_input(
     api_cache: Option<&Cache<String, String>>,
     mut section_fetch_times: State<Vec<Option<std::time::Instant>>>,
     mut help_visible: State<bool>,
+    mut rate_limit_state: State<Option<RateLimitInfo>>,
 ) {
     match code {
         KeyCode::Char('q') => {
@@ -1159,9 +1170,12 @@ fn handle_normal_input(
                     let octocrab = Arc::clone(octocrab);
                     let api_cache = api_cache.cloned();
                     smol::spawn(Compat::new(async move {
-                        if let Ok(labels) =
+                        if let Ok((labels, rl)) =
                             graphql::fetch_repo_labels(&octocrab, &owner, &repo, api_cache.as_ref()).await
                         {
+                            if rl.is_some() {
+                                rate_limit_state.set(rl);
+                            }
                             let names: Vec<String> = labels.into_iter().map(|l| l.name).collect();
                             label_candidates.set(names);
                         }

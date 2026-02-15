@@ -4,6 +4,7 @@ use iocraft::prelude::*;
 
 use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
+use crate::github::graphql::RateLimitInfo;
 use crate::icons::ResolvedIcons;
 
 // ---------------------------------------------------------------------------
@@ -21,6 +22,7 @@ pub struct RenderedFooter {
     pub inactive_fg: Color,
     pub context_text: String,
     pub updated_text: String,
+    pub rate_limit_text: String,
     pub help_hint: String,
     pub text_fg: Color,
     pub border_fg: Color,
@@ -34,6 +36,7 @@ impl RenderedFooter {
         icons: &ResolvedIcons,
         context_text: String,
         updated_text: String,
+        rate_limit_text: String,
         depth: ColorDepth,
         active_color: Option<AppColor>,
         inactive_color: Option<AppColor>,
@@ -60,11 +63,20 @@ impl RenderedFooter {
             inactive_fg,
             context_text,
             updated_text,
+            rate_limit_text,
             help_hint: "? help".to_owned(),
             text_fg,
             border_fg,
             separator_fg,
         }
+    }
+}
+
+/// Format rate limit info as "API remaining/limit".
+pub fn format_rate_limit(info: Option<&RateLimitInfo>) -> String {
+    match info {
+        Some(rl) => format!("API {}/{}", rl.remaining, rl.limit),
+        None => String::new(),
     }
 }
 
@@ -96,6 +108,7 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
 
     let has_context = !f.context_text.is_empty();
     let has_updated = !f.updated_text.is_empty();
+    let has_rate_limit = !f.rate_limit_text.is_empty();
 
     // Pre-build context area contents for MixedText.
     let mut context_contents = Vec::new();
@@ -107,6 +120,12 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
     }
     if has_updated {
         context_contents.push(MixedTextContent::new(&f.updated_text).color(f.text_fg));
+    }
+    if (has_context || has_updated) && has_rate_limit {
+        context_contents.push(MixedTextContent::new("  \u{2022}  ").color(f.separator_fg));
+    }
+    if has_rate_limit {
+        context_contents.push(MixedTextContent::new(&f.rate_limit_text).color(f.text_fg));
     }
 
     element! {

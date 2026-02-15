@@ -1,4 +1,4 @@
-use crate::color::Color as AppColor;
+use crate::color::{Color as AppColor, ColorDepth};
 use crate::github::graphql::PrDetail;
 use crate::github::types::{
     CheckConclusion, CheckStatus, FileChangeType, PullRequest, ReviewState, TimelineEvent,
@@ -64,7 +64,7 @@ pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<
 // ---------------------------------------------------------------------------
 
 /// Render the Activity tab: chronological timeline events.
-pub fn render_activity(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine> {
+pub fn render_activity(detail: &PrDetail, theme: &ResolvedTheme, depth: ColorDepth) -> Vec<StyledLine> {
     if detail.timeline_events.is_empty() {
         return vec![StyledLine::from_span(StyledSpan::text(
             "(no timeline events)",
@@ -74,7 +74,7 @@ pub fn render_activity(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLi
 
     let mut lines = Vec::new();
     for event in &detail.timeline_events {
-        render_timeline_event(event, theme, &mut lines);
+        render_timeline_event(event, theme, depth, &mut lines);
     }
     lines
 }
@@ -82,6 +82,7 @@ pub fn render_activity(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLi
 fn render_timeline_event(
     event: &TimelineEvent,
     theme: &ResolvedTheme,
+    depth: ColorDepth,
     lines: &mut Vec<StyledLine>,
 ) {
     match event {
@@ -98,7 +99,7 @@ fn render_timeline_event(
                 created_at,
                 theme,
             );
-            push_body_preview(lines, body, theme);
+            push_body_markdown(lines, body, theme, depth);
         }
         TimelineEvent::Review {
             author,
@@ -120,7 +121,7 @@ fn render_timeline_event(
                 submitted_at,
                 theme,
             );
-            push_body_preview(lines, body, theme);
+            push_body_markdown(lines, body, theme, depth);
         }
         TimelineEvent::Merged { actor, created_at } => {
             push_event_header(
@@ -186,14 +187,26 @@ fn push_event_header(
     ]));
 }
 
-fn push_body_preview(lines: &mut Vec<StyledLine>, body: &str, theme: &ResolvedTheme) {
-    if let Some(first_line) = body.lines().next()
-        && !first_line.is_empty()
-    {
-        lines.push(StyledLine::from_span(StyledSpan::text(
-            format!("  {first_line}"),
-            theme.text_primary,
-        )));
+fn push_body_markdown(
+    lines: &mut Vec<StyledLine>,
+    body: &str,
+    theme: &ResolvedTheme,
+    depth: ColorDepth,
+) {
+    if body.trim().is_empty() {
+        lines.push(StyledLine::blank());
+        return;
+    }
+    let rendered = crate::markdown::renderer::render_markdown(body, theme, depth);
+    for mut line in rendered {
+        // Indent each line by 2 spaces to nest under the event header
+        if line.spans.is_empty() {
+            // Blank lines from the markdown renderer — keep as separator
+            line.spans.push(StyledSpan::text("  ", theme.md_text));
+        } else {
+            line.spans[0].text = format!("  {}", line.spans[0].text);
+        }
+        lines.push(line);
     }
     lines.push(StyledLine::blank());
 }

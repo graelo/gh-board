@@ -1,3 +1,4 @@
+use gh_board::color::ColorDepth;
 use gh_board::components::sidebar::SidebarTab;
 use gh_board::components::sidebar_tabs;
 use gh_board::github::graphql::PrDetail;
@@ -225,7 +226,7 @@ fn overview_metadata_excludes_author_state_branch() {
 fn activity_renders_timeline_events() {
     let detail = test_detail();
     let theme = test_theme();
-    let lines = sidebar_tabs::render_activity(&detail, &theme);
+    let lines = sidebar_tabs::render_activity(&detail, &theme, ColorDepth::TrueColor);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())
@@ -250,7 +251,7 @@ fn activity_empty_shows_placeholder() {
         files: Vec::new(),
     };
     let theme = test_theme();
-    let lines = sidebar_tabs::render_activity(&detail, &theme);
+    let lines = sidebar_tabs::render_activity(&detail, &theme, ColorDepth::TrueColor);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())

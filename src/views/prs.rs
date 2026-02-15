@@ -299,6 +299,9 @@ enum PendingAction {
     Close,
     Reopen,
     Merge,
+    Approve,
+    UpdateBranch,
+    ReadyForReview,
 }
 
 // ---------------------------------------------------------------------------
@@ -738,6 +741,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         PendingAction::Close => "Closed",
                                         PendingAction::Reopen => "Reopened",
                                         PendingAction::Merge => "Merged",
+                                        PendingAction::Approve => "Approved",
+                                        PendingAction::UpdateBranch => "Updated branch for",
+                                        PendingAction::ReadyForReview => "Marked",
                                     };
                                     let action_label = action_name.to_owned();
                                     smol::spawn(Compat::new(async move {
@@ -754,10 +760,29 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                 pr_actions::merge(&octocrab, &owner, &repo, number)
                                                     .await
                                             }
+                                            PendingAction::Approve => {
+                                                pr_actions::approve(&octocrab, &owner, &repo, number, None)
+                                                    .await
+                                            }
+                                            PendingAction::UpdateBranch => {
+                                                pr_actions::update_branch(&octocrab, &owner, &repo, number)
+                                                    .await
+                                            }
+                                            PendingAction::ReadyForReview => {
+                                                pr_actions::ready_for_review(&octocrab, &owner, &repo, number)
+                                                    .await
+                                            }
                                         };
                                         match result {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("{action_label} PR #{number}"))),
+                                            Ok(()) => {
+                                                let msg = match action {
+                                                    PendingAction::ReadyForReview => {
+                                                        format!("{action_label} PR #{number} ready for review")
+                                                    }
+                                                    _ => format!("{action_label} PR #{number}"),
+                                                };
+                                                action_status.set(Some(msg));
+                                            }
                                             Err(e) => action_status
                                                 .set(Some(format!("{action_label} failed: {e}"))),
                                         }
@@ -828,31 +853,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             preview_scroll.set(0);
                         }
                         // --- PR Actions (T061) ---
-                        // Approve
+                        // Approve (with confirmation)
                         KeyCode::Char('v') => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_section_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    smol::spawn(Compat::new(async move {
-                                        match pr_actions::approve(
-                                            &octocrab, &owner, &repo, number, None,
-                                        )
-                                        .await
-                                        {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Approved PR #{number}"))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Approve failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                }
-                            }
+                            input_mode.set(InputMode::Confirm(PendingAction::Approve));
+                            action_status.set(None);
                         }
                         // Comment
                         KeyCode::Char('c') => {
@@ -875,59 +879,15 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             input_mode.set(InputMode::Confirm(PendingAction::Merge));
                             action_status.set(None);
                         }
-                        // Update branch (plain u, not Ctrl+u)
+                        // Update branch (with confirmation, plain u, not Ctrl+u)
                         KeyCode::Char('u') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_section_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    smol::spawn(Compat::new(async move {
-                                        match pr_actions::update_branch(
-                                            &octocrab, &owner, &repo, number,
-                                        )
-                                        .await
-                                        {
-                                            Ok(()) => action_status.set(Some(format!(
-                                                "Updated PR #{number} from base"
-                                            ))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Update failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                }
-                            }
+                            input_mode.set(InputMode::Confirm(PendingAction::UpdateBranch));
+                            action_status.set(None);
                         }
-                        // Ready for review
+                        // Ready for review (with confirmation)
                         KeyCode::Char('W') => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_section_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    smol::spawn(Compat::new(async move {
-                                        match pr_actions::ready_for_review(
-                                            &octocrab, &owner, &repo, number,
-                                        )
-                                        .await
-                                        {
-                                            Ok(()) => action_status.set(Some(format!(
-                                                "PR #{number} marked ready for review"
-                                            ))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Mark ready failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                }
-                            }
+                            input_mode.set(InputMode::Confirm(PendingAction::ReadyForReview));
+                            action_status.set(None);
                         }
                         // Diff (plain d, not Ctrl+d)
                         KeyCode::Char('d') if !modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1449,6 +1409,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 PendingAction::Close => "Close this PR? (y/n)",
                 PendingAction::Reopen => "Reopen this PR? (y/n)",
                 PendingAction::Merge => "Merge this PR? (y/n)",
+                PendingAction::Approve => "Approve this PR? (y/n)",
+                PendingAction::UpdateBranch => "Update branch from base? (y/n)",
+                PendingAction::ReadyForReview => "Mark this draft PR ready for review? (y/n)",
             };
             Some(RenderedTextInput::build(
                 prompt,

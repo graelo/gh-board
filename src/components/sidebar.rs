@@ -144,6 +144,7 @@ impl RenderedSidebar {
             None,
             None,
             None,
+            None,
         )
     }
 
@@ -162,6 +163,7 @@ impl RenderedSidebar {
         active_tab: Option<SidebarTab>,
         icons: Option<&ResolvedIcons>,
         meta: Option<SidebarMeta>,
+        visible_tabs: Option<&[SidebarTab]>,
     ) -> Self {
         let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
@@ -181,8 +183,9 @@ impl RenderedSidebar {
 
         let markdown = RenderedMarkdown::build(lines, scroll_offset, visible_lines, depth);
 
+        let tabs_to_show = visible_tabs.unwrap_or(SidebarTab::ALL);
         let tab_labels = if let Some(current) = active_tab {
-            SidebarTab::ALL
+            tabs_to_show
                 .iter()
                 .map(|&t| {
                     let label = if let Some(ic) = icons {

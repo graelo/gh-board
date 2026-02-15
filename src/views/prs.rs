@@ -1406,6 +1406,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(current_tab),
             Some(&theme.icons),
             sidebar_meta,
+            None, // Show all tabs for PRs
         ))
     } else {
         None

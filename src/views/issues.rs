@@ -11,20 +11,27 @@ use crate::app::ViewKind;
 use crate::color::ColorDepth;
 use crate::components::footer::{self, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar};
+use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
+use crate::components::{sidebar_tabs};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::IssueSection;
 use crate::filter;
-use crate::github::graphql::{self, RateLimitInfo};
+use crate::github::graphql::{self, IssueDetail, RateLimitInfo};
 use crate::github::rate_limit;
 use crate::github::types::Issue;
-use crate::markdown::renderer::{self, StyledLine};
+use crate::markdown::renderer::{self, StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
+
+/// Issue sidebar only shows Overview and Activity tabs.
+const ISSUE_TABS: &[SidebarTab] = &[SidebarTab::Overview, SidebarTab::Activity];
+
+/// Pending detail fetch request: (octocrab, owner, repo, number).
+type DetailRequest = Option<(Arc<Octocrab>, String, String, u64)>;
 
 // ---------------------------------------------------------------------------
 // Issue-specific column definitions (FR-021)
@@ -304,6 +311,15 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let preview_open = hooks.use_state(|| false);
     let preview_scroll = hooks.use_state(|| 0usize);
 
+    // State: sidebar tab.
+    let sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
+
+    // State: cached issue detail data for sidebar tabs (HashMap cache + debounce).
+    let mut detail_cache = hooks.use_state(HashMap::<u64, IssueDetail>::new);
+    let mut pending_detail =
+        hooks.use_state(|| DetailRequest::None);
+    let mut debounce_gen = hooks.use_state(|| 0u64);
+
     // Action state.
     let input_mode = hooks.use_state(|| InputMode::Normal);
     let input_buffer = hooks.use_state(String::new);
@@ -346,6 +362,41 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         loop {
             smol::Timer::after(std::time::Duration::from_secs(60)).await;
             tick.set(tick.get() + 1);
+        }
+    });
+
+    // Debounce future: waits for cursor to settle, then spawns the detail fetch.
+    let api_cache_for_detail = props.api_cache.cloned();
+    hooks.use_future(async move {
+        let mut last_gen = 0u64;
+        let mut spawned_gen = 0u64;
+        loop {
+            smol::Timer::after(std::time::Duration::from_millis(300)).await;
+            let current_gen = debounce_gen.get();
+            if current_gen != last_gen {
+                // Generation changed during this cycle — not stable yet.
+                last_gen = current_gen;
+            } else if current_gen > 0 && current_gen != spawned_gen {
+                // Stable for one full cycle and not yet spawned — fetch now.
+                let req = pending_detail.read().clone();
+                if let Some((octocrab, owner, repo, issue_number)) = req {
+                    spawned_gen = current_gen;
+                    let api_cache = api_cache_for_detail.clone();
+                    smol::spawn(Compat::new(async move {
+                        if let Ok((detail, rl)) =
+                            graphql::fetch_issue_detail(&octocrab, &owner, &repo, issue_number, api_cache.as_ref()).await
+                        {
+                            if rl.is_some() {
+                                rate_limit_state.set(rl);
+                            }
+                            let mut cache = detail_cache.read().clone();
+                            cache.insert(issue_number, detail);
+                            detail_cache.set(cache);
+                        }
+                    }))
+                    .detach();
+                }
+            }
         }
     });
 
@@ -604,6 +655,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             section_fetch_times,
                             help_visible,
                             rate_limit_state,
+                            sidebar_tab,
+                            pending_detail,
                         );
                     }
                 }
@@ -681,24 +734,88 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         row_separator: true,
     });
 
+    // Request issue detail when sidebar is open and current issue is not cached.
+    if is_preview_open {
+        let cursor_idx = cursor.get();
+        let current_issue = current_data.and_then(|d| d.issues.get(cursor_idx));
+        if let Some(issue) = current_issue {
+            let issue_number = issue.number;
+            let already_cached = detail_cache.read().contains_key(&issue_number);
+            let already_pending = {
+                let guard = pending_detail.read();
+                match *guard {
+                    Some((_, _, _, n)) => n == issue_number,
+                    None => false,
+                }
+            };
+
+            if !already_cached
+                && !already_pending
+                && let Some(repo_ref) = &issue.repo
+                && let Some(octocrab) = props.octocrab
+            {
+                pending_detail.set(Some((
+                    Arc::clone(octocrab),
+                    repo_ref.owner.clone(),
+                    repo_ref.name.clone(),
+                    issue_number,
+                )));
+                debounce_gen.set(debounce_gen.get() + 1);
+            }
+        }
+    }
+
+    // Pre-render sidebar (preview pane with tabs).
     let rendered_sidebar = if is_preview_open {
         let cursor_idx = cursor.get();
-        let body = current_data
-            .and_then(|d| d.bodies.get(cursor_idx))
-            .map_or("", String::as_str);
         let title = current_data
             .and_then(|d| d.titles.get(cursor_idx))
             .map_or("Preview", String::as_str);
 
-        let md_lines: Vec<StyledLine> = if body.is_empty() {
-            Vec::new()
-        } else {
-            renderer::render_markdown(body, &theme, depth)
+        let current_tab = sidebar_tab.get();
+        let current_issue = current_data.and_then(|d| d.issues.get(cursor_idx));
+        let cache_ref = detail_cache.read();
+        let detail_for_issue = current_issue.and_then(|i| cache_ref.get(&i.number));
+
+        let md_lines: Vec<StyledLine> = match current_tab {
+            SidebarTab::Overview => {
+                let body = current_data
+                    .and_then(|d| d.bodies.get(cursor_idx))
+                    .map_or("", String::as_str);
+                let mut lines = Vec::new();
+                if let Some(issue) = current_issue {
+                    lines.extend(sidebar_tabs::render_issue_overview_metadata(issue, &theme));
+                }
+                if !body.is_empty() {
+                    lines.extend(renderer::render_markdown(body, &theme, depth));
+                }
+                lines
+            }
+            SidebarTab::Activity => {
+                if let Some(detail) = detail_for_issue {
+                    sidebar_tabs::render_issue_activity(detail, &theme, depth)
+                } else {
+                    vec![StyledLine::from_span(StyledSpan::text(
+                        "Loading...",
+                        theme.text_faint,
+                    ))]
+                }
+            }
+            _ => Vec::new(),
         };
 
-        let sidebar_visible_lines = props.height.saturating_sub(7) as usize;
+        // Build meta header for Overview tab.
+        let sidebar_meta = if current_tab == SidebarTab::Overview {
+            current_issue.map(|issue| build_issue_sidebar_meta(issue, &theme, depth))
+        } else {
+            None
+        };
 
-        Some(RenderedSidebar::build(
+        // Account for tab bar (2 extra lines) + meta (3 lines) in sidebar height.
+        let meta_lines = if sidebar_meta.is_some() { 4 } else { 0 };
+        let sidebar_visible_lines = props.height.saturating_sub(9 + meta_lines) as usize;
+
+        Some(RenderedSidebar::build_tabbed(
             title,
             &md_lines,
             preview_scroll.get(),
@@ -708,6 +825,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(theme.text_primary),
             Some(theme.border_faint),
             Some(theme.text_faint),
+            Some(current_tab),
+            Some(&theme.icons),
+            sidebar_meta,
+            Some(ISSUE_TABS),
         ))
     } else {
         None
@@ -1160,6 +1281,8 @@ fn handle_normal_input(
     mut section_fetch_times: State<Vec<Option<std::time::Instant>>>,
     mut help_visible: State<bool>,
     mut rate_limit_state: State<Option<RateLimitInfo>>,
+    mut sidebar_tab: State<SidebarTab>,
+    mut pending_detail: State<DetailRequest>,
 ) {
     match code {
         KeyCode::Char('q') => {
@@ -1315,6 +1438,7 @@ fn handle_normal_input(
                 times[idx] = None;
             }
             section_fetch_times.set(times);
+            pending_detail.set(None);
             cursor.set(0);
             scroll_offset.set(0);
         }
@@ -1394,6 +1518,19 @@ fn handle_normal_input(
                 }
             }
         }
+        // Sidebar tab cycling
+        KeyCode::Char(']') => {
+            let current = sidebar_tab.get();
+            let idx = ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
+            sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
+            preview_scroll.set(0);
+        }
+        KeyCode::Char('[') => {
+            let current = sidebar_tab.get();
+            let idx = ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
+            sidebar_tab.set(ISSUE_TABS[if idx == 0 { ISSUE_TABS.len() - 1 } else { idx - 1 }]);
+            preview_scroll.set(0);
+        }
         // Section switching
         KeyCode::Char('h') | KeyCode::Left => {
             if section_count > 0 {
@@ -1406,6 +1543,7 @@ fn handle_normal_input(
                 cursor.set(0);
                 scroll_offset.set(0);
                 preview_scroll.set(0);
+                pending_detail.set(None);
             }
         }
         KeyCode::Char('l') | KeyCode::Right => {
@@ -1414,6 +1552,7 @@ fn handle_normal_input(
                 cursor.set(0);
                 scroll_offset.set(0);
                 preview_scroll.set(0);
+                pending_detail.set(None);
             }
         }
         KeyCode::Char('?') => {
@@ -1437,6 +1576,57 @@ fn get_current_issue_info(
     let issue = section.issues.get(cursor)?;
     let repo_ref = issue.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), issue.number))
+}
+
+fn build_issue_sidebar_meta(
+    issue: &Issue,
+    theme: &ResolvedTheme,
+    depth: ColorDepth,
+) -> SidebarMeta {
+    let icons = &theme.icons;
+
+    // Pill: Open (green) / Closed (red)
+    let (pill_icon, pill_text, pill_bg_app) = match issue.state {
+        crate::github::types::IssueState::Open => (
+            icons.issue_open.clone(),
+            "Open".to_owned(),
+            theme.pill_open_bg,
+        ),
+        crate::github::types::IssueState::Closed | crate::github::types::IssueState::Unknown => (
+            icons.issue_closed.clone(),
+            "Closed".to_owned(),
+            theme.pill_closed_bg,
+        ),
+    };
+
+    // Branch text: author login (issues have no branch)
+    let branch_text = issue
+        .author
+        .as_ref()
+        .map_or_else(|| "unknown".to_owned(), |a| format!("@{}", a.login));
+
+    // Participants: assignee logins
+    let participants: Vec<String> = issue
+        .assignees
+        .iter()
+        .map(|a| format!("@{}", a.login))
+        .collect();
+
+    SidebarMeta {
+        pill_icon,
+        pill_text,
+        pill_bg: pill_bg_app.to_crossterm_color(depth),
+        pill_fg: theme.pill_fg.to_crossterm_color(depth),
+        pill_left: icons.pill_left.clone(),
+        pill_right: icons.pill_right.clone(),
+        branch_text,
+        branch_fg: theme.pill_branch.to_crossterm_color(depth),
+        role_icon: String::new(),
+        role_text: String::new(),
+        role_fg: theme.pill_role.to_crossterm_color(depth),
+        participants,
+        participants_fg: theme.text_actor.to_crossterm_color(depth),
+    }
 }
 
 fn default_theme() -> ResolvedTheme {

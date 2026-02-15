@@ -1,7 +1,7 @@
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::github::graphql::PrDetail;
+use crate::github::graphql::{IssueDetail, PrDetail};
 use crate::github::types::{
-    CheckConclusion, CheckStatus, FileChangeType, PullRequest, ReviewState, TimelineEvent,
+    CheckConclusion, CheckStatus, FileChangeType, Issue, PullRequest, ReviewState, TimelineEvent,
 };
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
@@ -352,5 +352,112 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
         ]));
     }
 
+    lines
+}
+
+// ---------------------------------------------------------------------------
+// Issue Overview tab
+// ---------------------------------------------------------------------------
+
+/// Render the Overview tab metadata for an issue: labels, assignees, reactions.
+pub fn render_issue_overview_metadata(issue: &Issue, theme: &ResolvedTheme) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+
+    // Labels
+    if !issue.labels.is_empty() {
+        let label_text = issue
+            .labels
+            .iter()
+            .map(|l| l.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::bold("Labels: ", theme.text_secondary),
+            StyledSpan::text(label_text, theme.text_primary),
+        ]));
+    }
+
+    // Assignees
+    if !issue.assignees.is_empty() {
+        let assignee_text = issue
+            .assignees
+            .iter()
+            .map(|a| a.login.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::bold("Assign: ", theme.text_secondary),
+            StyledSpan::text(assignee_text, theme.text_actor),
+        ]));
+    }
+
+    // Blank line between metadata and reactions
+    lines.push(StyledLine::blank());
+
+    // Reactions
+    let r = &issue.reactions;
+    let total = r.total();
+    if total > 0 {
+        let mut parts = Vec::new();
+        if r.thumbs_up > 0 {
+            parts.push(format!("\u{1f44d} {}", r.thumbs_up));
+        }
+        if r.thumbs_down > 0 {
+            parts.push(format!("\u{1f44e} {}", r.thumbs_down));
+        }
+        if r.laugh > 0 {
+            parts.push(format!("\u{1f604} {}", r.laugh));
+        }
+        if r.hooray > 0 {
+            parts.push(format!("\u{1f389} {}", r.hooray));
+        }
+        if r.confused > 0 {
+            parts.push(format!("\u{1f615} {}", r.confused));
+        }
+        if r.heart > 0 {
+            parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
+        }
+        if r.rocket > 0 {
+            parts.push(format!("\u{1f680} {}", r.rocket));
+        }
+        if r.eyes > 0 {
+            parts.push(format!("\u{1f440} {}", r.eyes));
+        }
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::bold("React:  ", theme.text_secondary),
+            StyledSpan::text(parts.join("  "), theme.text_primary),
+        ]));
+    }
+
+    // Horizontal rule separator before body
+    lines.push(StyledLine::from_span(StyledSpan::text(
+        "\u{2500}".repeat(20),
+        theme.md_horizontal_rule,
+    )));
+
+    lines
+}
+
+// ---------------------------------------------------------------------------
+// Issue Activity tab
+// ---------------------------------------------------------------------------
+
+/// Render the Activity tab for an issue: chronological timeline events.
+pub fn render_issue_activity(
+    detail: &IssueDetail,
+    theme: &ResolvedTheme,
+    depth: ColorDepth,
+) -> Vec<StyledLine> {
+    if detail.timeline_events.is_empty() {
+        return vec![StyledLine::from_span(StyledSpan::text(
+            "(no timeline events)",
+            theme.text_faint,
+        ))];
+    }
+
+    let mut lines = Vec::new();
+    for event in &detail.timeline_events {
+        render_timeline_event(event, theme, depth, &mut lines);
+    }
     lines
 }

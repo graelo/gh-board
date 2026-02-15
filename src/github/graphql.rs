@@ -114,6 +114,25 @@ query PullRequestDetail($owner: String!, $repo: String!, $number: Int!) {
 }
 ";
 
+const ISSUE_DETAIL_QUERY: &str = r"
+query IssueDetail($owner: String!, $repo: String!, $number: Int!) {
+  rateLimit { limit remaining cost }
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      body
+      timelineItems(last: 100) {
+        nodes {
+          __typename
+          ... on IssueComment { author { login } body createdAt }
+          ... on ClosedEvent { actor { login } createdAt }
+          ... on ReopenedEvent { actor { login } createdAt }
+        }
+      }
+    }
+  }
+}
+";
+
 const REPOSITORY_LABELS_QUERY: &str = r"
 query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
   rateLimit { limit remaining cost }
@@ -1040,6 +1059,37 @@ pub struct PrDetail {
     pub files: Vec<File>,
 }
 
+/// Detailed Issue data fetched for the sidebar tabs.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct IssueDetail {
+    pub body: String,
+    pub timeline_events: Vec<TimelineEvent>,
+}
+
+// ---------------------------------------------------------------------------
+// Issue detail response types
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct IssueDetailData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
+    repository: Option<IssueDetailRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct IssueDetailRepo {
+    issue: Option<RawIssueDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawIssueDetail {
+    #[serde(default)]
+    body: String,
+    #[serde(rename = "timelineItems")]
+    timeline_items: Option<Connection<RawTimelineItem>>,
+}
+
 fn raw_actor_login(a: Option<RawActor>) -> Option<String> {
     a.map(|a| a.login)
 }
@@ -1244,6 +1294,92 @@ pub async fn fetch_pr_detail(
         .context("PR not found")?;
 
     let detail = raw.into_domain();
+
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&detail)
+    {
+        c.insert(cache_key, json).await;
+    }
+
+    Ok((detail, rate_limit))
+}
+
+// ---------------------------------------------------------------------------
+// Issue detail API (sidebar tabs)
+// ---------------------------------------------------------------------------
+
+/// Fetch detailed Issue data for sidebar tabs.
+///
+/// When a `cache` is provided, results are served from the moka LRU cache
+/// if a fresh entry exists.
+///
+/// Returns `(detail, rate_limit)`. On cache hit, `rate_limit` is `None`.
+pub async fn fetch_issue_detail(
+    octocrab: &Arc<Octocrab>,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    cache: Option<&Cache<String, String>>,
+) -> Result<(IssueDetail, Option<RateLimitInfo>)> {
+    let cache_key = format!("issue:{owner}/{repo}#{number}");
+
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok(detail) = serde_json::from_str::<IssueDetail>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((detail, None));
+    }
+
+    let payload = GraphQLPayload {
+        query: ISSUE_DETAIL_QUERY,
+        variables: PrDetailVariables {
+            owner: owner.to_owned(),
+            repo: repo.to_owned(),
+            number: i64::try_from(number).context("Issue number too large")?,
+        },
+    };
+
+    let response: GraphQLResponse<IssueDetailData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL issue detail request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    });
+
+    let raw = data
+        .repository
+        .and_then(|r| r.issue)
+        .context("Issue not found")?;
+
+    let timeline_events = raw
+        .timeline_items
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .filter_map(convert_timeline_item)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let detail = IssueDetail {
+        body: raw.body,
+        timeline_events,
+    };
 
     if let Some(c) = cache
         && let Ok(json) = serde_json::to_string(&detail)

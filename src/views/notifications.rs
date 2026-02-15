@@ -146,6 +146,7 @@ enum PendingAction {
     MarkAllDone,
     MarkAllRead,
     Unsubscribe,
+    MarkDone,
 }
 
 /// Input modes for the notifications view.
@@ -511,6 +512,38 @@ pub fn NotificationsView<'a>(
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
+                                    PendingAction::MarkDone => {
+                                        let notif = get_current_notification(
+                                            &notif_state,
+                                            current_section_idx,
+                                            cursor.get(),
+                                        );
+                                        if let Some(n) = notif {
+                                            let octocrab = Arc::clone(octocrab);
+                                            let id = n.id.clone();
+                                            smol::spawn(Compat::new(async move {
+                                                match notifications::mark_as_done(&octocrab, &id).await {
+                                                    Ok(()) => {
+                                                        action_status
+                                                            .set(Some("Marked as done".to_owned()));
+                                                    }
+                                                    Err(e) => action_status
+                                                        .set(Some(format!("Mark done failed: {e}"))),
+                                                }
+                                            }))
+                                            .detach();
+                                            remove_notification(
+                                                notif_state,
+                                                current_section_idx,
+                                                cursor.get(),
+                                            );
+                                            clamp_cursor(
+                                                cursor,
+                                                scroll_offset,
+                                                total_rows.saturating_sub(1),
+                                            );
+                                        }
+                                    }
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -630,40 +663,10 @@ pub fn NotificationsView<'a>(
                         // Notification actions
                         // -------------------------------------------------------
 
-                        // Mark as done (d) — immediate, no confirm
+                        // Mark as done (d) — with confirmation
                         KeyCode::Char('d') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let notif = get_current_notification(
-                                    &notif_state,
-                                    current_section_idx,
-                                    cursor.get(),
-                                );
-                                if let Some(n) = notif {
-                                    let octocrab = Arc::clone(octocrab);
-                                    let id = n.id.clone();
-                                    smol::spawn(Compat::new(async move {
-                                        match notifications::mark_as_done(&octocrab, &id).await {
-                                            Ok(()) => {
-                                                action_status
-                                                    .set(Some("Marked as done".to_owned()));
-                                            }
-                                            Err(e) => action_status
-                                                .set(Some(format!("Mark done failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                    remove_notification(
-                                        notif_state,
-                                        current_section_idx,
-                                        cursor.get(),
-                                    );
-                                    clamp_cursor(
-                                        cursor,
-                                        scroll_offset,
-                                        total_rows.saturating_sub(1),
-                                    );
-                                }
-                            }
+                            input_mode.set(InputMode::Confirm(PendingAction::MarkDone));
+                            action_status.set(None);
                         }
                         // Mark as read (m) — immediate, no confirm
                         KeyCode::Char('m') => {
@@ -883,6 +886,7 @@ pub fn NotificationsView<'a>(
                 PendingAction::Unsubscribe => {
                     "Unsubscribe from this thread? This is irreversible. (y/n)"
                 }
+                PendingAction::MarkDone => "Mark this notification as done? (y/n)",
             };
             Some(RenderedTextInput::build(
                 prompt,

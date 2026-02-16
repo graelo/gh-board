@@ -45,6 +45,7 @@ impl RenderedTextInput {
             None,
             None,
             None,
+            None,
         )
     }
 
@@ -60,11 +61,14 @@ impl RenderedTextInput {
         selected_index: Option<usize>,
         highlight_color: Option<AppColor>,
         _highlight_bg_color: Option<AppColor>,
+        suggestion_color: Option<AppColor>,
     ) -> Self {
         let text_fg = text_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let prompt_fg = prompt_color.map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let highlight_fg = highlight_color.map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
+        let suggestion_fg =
+            suggestion_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
 
         let rendered_suggestions: Vec<RenderedSuggestion> = suggestions
             .iter()
@@ -74,7 +78,7 @@ impl RenderedTextInput {
                 RenderedSuggestion {
                     text: s.clone(),
                     is_selected,
-                    fg: text_fg,
+                    fg: suggestion_fg,
                     selected_fg: highlight_fg,
                     selected_bg: Color::Reset,
                 }
@@ -130,9 +134,13 @@ pub fn TextInput(props: &mut TextInputProps) -> impl Into<AnyElement<'static>> {
         .suggestions
         .iter()
         .map(|s| {
-            let color = if s.is_selected { s.selected_fg } else { s.fg };
+            let (color, weight) = if s.is_selected {
+                (s.selected_fg, Weight::Bold)
+            } else {
+                (s.fg, Weight::Normal)
+            };
             let prefix = if s.is_selected { "> " } else { "  " };
-            (format!("{prefix}{}", s.text), color)
+            (format!("{prefix}{}", s.text), color, weight)
         })
         .collect();
 
@@ -147,6 +155,20 @@ pub fn TextInput(props: &mut TextInputProps) -> impl Into<AnyElement<'static>> {
             padding_left: 1,
             padding_right: 1,
         ) {
+            // Render suggestions ABOVE the input field
+            #(if has_suggestions {
+                Some(element! {
+                    View(flex_direction: FlexDirection::Column) {
+                        #(suggestion_elements.into_iter().map(|(text, fg, weight)| {
+                            element! {
+                                Text(content: text, color: fg, weight, wrap: TextWrap::NoWrap)
+                            }.into_any()
+                        }))
+                    }
+                })
+            } else {
+                None
+            })
             MixedText(
                 contents: vec![
                     MixedTextContent::new(&input.prompt).color(input.prompt_fg),
@@ -155,19 +177,6 @@ pub fn TextInput(props: &mut TextInputProps) -> impl Into<AnyElement<'static>> {
                 ],
                 wrap: TextWrap::NoWrap,
             )
-            #(if has_suggestions {
-                Some(element! {
-                    View(flex_direction: FlexDirection::Column) {
-                        #(suggestion_elements.into_iter().map(|(text, fg)| {
-                            element! {
-                                Text(content: text, color: fg, wrap: TextWrap::NoWrap)
-                            }.into_any()
-                        }))
-                    }
-                })
-            } else {
-                None
-            })
         }
     }
     .into_any()

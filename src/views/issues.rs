@@ -899,8 +899,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 Some(theme.border_faint),
                 &filtered,
                 selected_idx,
-                Some(theme.text_inverted),
+                Some(theme.text_primary),
                 Some(theme.bg_selected),
+                Some(theme.text_faint),
             ))
         }
         InputMode::Label => {
@@ -922,8 +923,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 Some(theme.border_faint),
                 &filtered,
                 selected_idx,
-                Some(theme.text_inverted),
+                Some(theme.text_primary),
                 Some(theme.bg_selected),
+                Some(theme.text_faint),
             ))
         }
         InputMode::Confirm(action) => {

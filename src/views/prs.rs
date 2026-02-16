@@ -1522,8 +1522,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 Some(theme.border_faint),
                 &filtered,
                 selected_idx,
-                Some(theme.text_inverted),
+                Some(theme.text_primary),
                 Some(theme.bg_selected),
+                Some(theme.text_faint),
             ))
         }
         InputMode::Comment => Some(RenderedTextInput::build(

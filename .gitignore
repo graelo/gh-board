@@ -5,6 +5,14 @@ specs/
 
 debug.log
 
+# CI artifacts
+*.zip
+*.tar.xz
+CHANGELOG.md
+convco
+convco-*.zip
+panic.log
+
 # Added by cargo
 
 /target

@@ -2,6 +2,12 @@
 name = "gh-board"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85.0"
+license = "MIT"
+repository = "https://github.com/graelo/gh-board"
+description = "A blazingly fast terminal dashboard for GitHub pull requests, issues, and notifications"
+keywords = ["github", "tui", "dashboard", "cli"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 # TUI framework

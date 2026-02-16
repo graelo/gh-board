@@ -718,13 +718,7 @@ impl RawPullRequest {
             author_association: self.author_association,
             participants: self
                 .participants
-                .map(|c| {
-                    c.nodes
-                        .into_iter()
-                        .flatten()
-                        .map(|a| a.login)
-                        .collect()
-                })
+                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
                 .unwrap_or_default(),
         }
     }
@@ -1611,7 +1605,9 @@ pub async fn fetch_repo_collaborators(
         .collect();
 
     // Cache the result
-    if let Some(c) = cache && let Ok(json) = serde_json::to_string(&logins) {
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&logins)
+    {
         c.insert(cache_key, json).await;
     }
 

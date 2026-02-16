@@ -1026,8 +1026,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             assignee_selection.set(0);
                             action_status.set(None);
 
-                            // Pre-fill with current assignees (editable)
-                            let current_assignees = {
+                            // Get current PR and build candidates from its data
+                            let (current_assignees, candidates) = {
                                 let pr_info = get_current_pr_info(&prs_state, current_section_idx, cursor.get());
                                 if let Some((_owner, _repo, number)) = pr_info {
                                     let state = prs_state.read();
@@ -1035,49 +1035,34 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         .get(current_section_idx)
                                         .and_then(|s| s.prs.iter().find(|p| p.number == number));
 
-                                    pr.map(|p| {
-                                        p.assignees
+                                    if let Some(pr) = pr {
+                                        let assignees = pr.assignees
                                             .iter()
                                             .map(|a| a.login.as_str())
                                             .collect::<Vec<_>>()
-                                            .join(", ")
-                                    })
-                                    .unwrap_or_default()
+                                            .join(", ");
+
+                                        // Add trailing ", " to show all suggestions immediately
+                                        let assignees_str = if assignees.is_empty() {
+                                            String::new()
+                                        } else {
+                                            format!("{assignees}, ")
+                                        };
+
+                                        // Build candidates from PR data (instant, no API call)
+                                        let candidates = build_pr_assignee_candidates(pr);
+
+                                        (assignees_str, candidates)
+                                    } else {
+                                        (String::new(), Vec::new())
+                                    }
                                 } else {
-                                    String::new()
+                                    (String::new(), Vec::new())
                                 }
                             };
 
                             input_buffer.set(current_assignees);
-
-                            // Fetch collaborators for autocomplete
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_section_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, _)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    let api_cache = api_cache_for_refresh.clone();
-                                    smol::spawn(Compat::new(async move {
-                                        if let Ok((logins, rl)) = graphql::fetch_repo_collaborators(
-                                            &octocrab,
-                                            &owner,
-                                            &repo,
-                                            api_cache.as_ref(),
-                                        )
-                                        .await
-                                        {
-                                            if rl.is_some() {
-                                                rate_limit_state.set(rl);
-                                            }
-                                            assignee_candidates.set(logins);
-                                        }
-                                    }))
-                                    .detach();
-                                }
-                            }
+                            assignee_candidates.set(candidates);  // Set immediately, no async fetch
                         }
                         // Unassign (self)
                         KeyCode::Char('A') => {
@@ -1718,8 +1703,34 @@ fn extract_current_word(input: &str) -> (&str, &str, usize) {
     }
 }
 
+/// Build autocomplete candidates from PR data (participants, reviewers, assignees).
+/// Returns a deduplicated, sorted list of usernames.
+fn build_pr_assignee_candidates(pr: &PullRequest) -> Vec<String> {
+    let mut pool = Vec::new();
+
+    // Add participants (already deduplicated by GitHub)
+    pool.extend(pr.participants.iter().cloned());
+
+    // Add review requests
+    pool.extend(pr.review_requests.iter().map(|a| a.login.clone()));
+
+    // Add current assignees
+    pool.extend(pr.assignees.iter().map(|a| a.login.clone()));
+
+    // Add author
+    if let Some(author) = &pr.author {
+        pool.push(author.login.clone());
+    }
+
+    // Deduplicate and sort
+    pool.sort();
+    pool.dedup();
+
+    pool
+}
+
 /// Handle text input for assigning PRs to users.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_assign_input(
     code: KeyCode,
     modifiers: KeyModifiers,

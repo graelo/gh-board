@@ -161,7 +161,11 @@ impl ResolvedTheme {
             // Footer
             footer_prs: theme.colors.footer.prs.unwrap_or(d.footer_prs),
             footer_issues: theme.colors.footer.issues.unwrap_or(d.footer_issues),
-            footer_notifications: theme.colors.footer.notifications.unwrap_or(d.footer_notifications),
+            footer_notifications: theme
+                .colors
+                .footer
+                .notifications
+                .unwrap_or(d.footer_notifications),
             footer_repo: theme.colors.footer.repo.unwrap_or(d.footer_repo),
             icons: ResolvedIcons::resolve(&theme.icons),
         }
@@ -242,10 +246,10 @@ impl Defaults {
                 syn_punctuation: Color::Ansi256(245),
                 syn_name_builtin: Color::Ansi256(6),
                 // Footer
-                footer_prs: Color::Ansi256(4),            // blue
-                footer_issues: Color::Ansi256(2),         // green
-                footer_notifications: Color::Ansi256(5),  // magenta
-                footer_repo: Color::Ansi256(13),          // bright magenta/violet
+                footer_prs: Color::Ansi256(4),           // blue
+                footer_issues: Color::Ansi256(2),        // green
+                footer_notifications: Color::Ansi256(5), // magenta
+                footer_repo: Color::Ansi256(13),         // bright magenta/violet
             },
             Background::Light => Self {
                 text_primary: Color::Ansi256(0),
@@ -279,10 +283,10 @@ impl Defaults {
                 syn_punctuation: Color::Ansi256(240),
                 syn_name_builtin: Color::Ansi256(6),
                 // Footer
-                footer_prs: Color::Ansi256(4),            // blue
-                footer_issues: Color::Ansi256(2),         // green
-                footer_notifications: Color::Ansi256(5),  // magenta
-                footer_repo: Color::Ansi256(13),          // bright magenta/violet
+                footer_prs: Color::Ansi256(4),           // blue
+                footer_issues: Color::Ansi256(2),        // green
+                footer_notifications: Color::Ansi256(5), // magenta
+                footer_repo: Color::Ansi256(13),         // bright magenta/violet
             },
         }
     }

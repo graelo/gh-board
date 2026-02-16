@@ -1129,7 +1129,35 @@ fn extract_current_word(input: &str) -> (&str, &str, usize) {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Build autocomplete candidates from Issue data (author, assignees, comment authors).
+/// Returns a deduplicated, sorted list of usernames.
+fn build_issue_assignee_candidates(issue: &Issue) -> Vec<String> {
+    let mut pool = Vec::new();
+
+    // Add author
+    if let Some(author) = &issue.author {
+        pool.push(author.login.clone());
+    }
+
+    // Add current assignees
+    pool.extend(issue.assignees.iter().map(|a| a.login.clone()));
+
+    // Add comment authors
+    pool.extend(
+        issue
+            .comments
+            .iter()
+            .filter_map(|c| c.author.as_ref().map(|a| a.login.clone())),
+    );
+
+    // Deduplicate and sort
+    pool.sort();
+    pool.dedup();
+
+    pool
+}
+
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_assign_input(
     code: KeyCode,
     modifiers: KeyModifiers,
@@ -1352,7 +1380,7 @@ fn handle_text_input(
                                 if let Ok(user) = octocrab.current().user().await {
                                     for username in &mut usernames {
                                         if username == "@me" {
-                                            *username = user.login.clone();
+                                            username.clone_from(&user.login);
                                         }
                                     }
                                 }
@@ -1691,59 +1719,40 @@ fn handle_normal_input(
             assignee_selection.set(0);
             action_status.set(None);
 
-            // Pre-fill with current assignees (editable)
-            let current_assignees = {
+            // Get current issue and build candidates from its data
+            let (current_assignees, candidates) = {
                 let state = issues_state.read();
                 let issue = state
                     .sections
                     .get(current_section_idx)
                     .and_then(|s| s.issues.get(cursor.get()));
 
-                issue
-                    .map(|i| {
-                        i.assignees
-                            .iter()
-                            .map(|a| a.login.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    })
-                    .unwrap_or_default()
+                if let Some(issue) = issue {
+                    let assignees = issue
+                        .assignees
+                        .iter()
+                        .map(|a| a.login.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    // Add trailing ", " to show all suggestions immediately
+                    let assignees_str = if assignees.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{assignees}, ")
+                    };
+
+                    // Build candidates from Issue data (instant, no API call)
+                    let candidates = build_issue_assignee_candidates(issue);
+
+                    (assignees_str, candidates)
+                } else {
+                    (String::new(), Vec::new())
+                }
             };
 
             input_buffer.set(current_assignees);
-
-            // Fetch collaborators for autocomplete
-            if let Some(octocrab) = octocrab_for_actions {
-                let state = issues_state.read();
-                let issue = state
-                    .sections
-                    .get(current_section_idx)
-                    .and_then(|s| s.issues.get(cursor.get()));
-                if let Some(issue) = issue
-                    && let Some(repo_ref) = &issue.repo
-                {
-                    let owner = repo_ref.owner.clone();
-                    let repo = repo_ref.name.clone();
-                    let octocrab = Arc::clone(octocrab);
-                    let api_cache = api_cache_for_refresh.cloned();
-                    smol::spawn(Compat::new(async move {
-                        if let Ok((logins, rl)) = graphql::fetch_repo_collaborators(
-                            &octocrab,
-                            &owner,
-                            &repo,
-                            api_cache.as_ref(),
-                        )
-                        .await
-                        {
-                            if rl.is_some() {
-                                rate_limit_state.set(rl);
-                            }
-                            assignee_candidates.set(logins);
-                        }
-                    }))
-                    .detach();
-                }
-            }
+            assignee_candidates.set(candidates); // Set immediately, no async fetch
         }
         KeyCode::Char('A') => {
             // Unassign: fire immediately for the first assignee.

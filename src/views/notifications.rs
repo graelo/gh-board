@@ -284,9 +284,7 @@ pub fn NotificationsView<'a>(
     });
 
     // Compute active section index early (needed by fetch logic below).
-    let current_section_idx = active_section
-        .get()
-        .min(section_count.saturating_sub(1));
+    let current_section_idx = active_section.get().min(section_count.saturating_sub(1));
 
     // Auto-refetch: only reset the active section when its interval has elapsed.
     let refetch_interval = props.refetch_interval_minutes;
@@ -303,8 +301,7 @@ pub fn NotificationsView<'a>(
             .copied()
             .flatten()
             .is_some_and(|last| {
-                last.elapsed()
-                    >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
+                last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
             });
     if needs_refetch {
         let mut state = notif_state.read().clone();
@@ -356,37 +353,36 @@ pub fn NotificationsView<'a>(
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
         smol::spawn(Compat::new(async move {
-            let section_data =
-                match notifications::fetch_notifications(&octocrab, &filter).await {
-                    Ok(notifs) => {
-                        let rows: Vec<Row> = notifs
-                            .iter()
-                            .map(|n| notification_to_row(n, &theme_clone, &date_format_owned))
-                            .collect();
-                        let ids: Vec<String> = notifs.iter().map(|n| n.id.clone()).collect();
-                        let notification_count = notifs.len();
-                        SectionData {
-                            rows,
-                            ids,
-                            notifications: notifs,
-                            notification_count,
-                            loading: false,
-                            error: None,
-                        }
+            let section_data = match notifications::fetch_notifications(&octocrab, &filter).await {
+                Ok(notifs) => {
+                    let rows: Vec<Row> = notifs
+                        .iter()
+                        .map(|n| notification_to_row(n, &theme_clone, &date_format_owned))
+                        .collect();
+                    let ids: Vec<String> = notifs.iter().map(|n| n.id.clone()).collect();
+                    let notification_count = notifs.len();
+                    SectionData {
+                        rows,
+                        ids,
+                        notifications: notifs,
+                        notification_count,
+                        loading: false,
+                        error: None,
                     }
-                    Err(e) => {
-                        let error_msg = if rate_limit::is_rate_limited(&e) {
-                            rate_limit::format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        };
-                        SectionData {
-                            loading: false,
-                            error: Some(error_msg),
-                            ..SectionData::default()
-                        }
+                }
+                Err(e) => {
+                    let error_msg = if rate_limit::is_rate_limited(&e) {
+                        rate_limit::format_rate_limit_message(&e)
+                    } else {
+                        e.to_string()
+                    };
+                    SectionData {
+                        loading: false,
+                        error: Some(error_msg),
+                        ..SectionData::default()
                     }
-                };
+                }
+            };
 
             let mut state = notif_state.read().clone();
             if section_idx < state.sections.len() {
@@ -545,13 +541,16 @@ pub fn NotificationsView<'a>(
                                             let octocrab = Arc::clone(octocrab);
                                             let id = n.id.clone();
                                             smol::spawn(Compat::new(async move {
-                                                match notifications::mark_as_done(&octocrab, &id).await {
+                                                match notifications::mark_as_done(&octocrab, &id)
+                                                    .await
+                                                {
                                                     Ok(()) => {
                                                         action_status
                                                             .set(Some("Marked as done".to_owned()));
                                                     }
-                                                    Err(e) => action_status
-                                                        .set(Some(format!("Mark done failed: {e}"))),
+                                                    Err(e) => action_status.set(Some(format!(
+                                                        "Mark done failed: {e}"
+                                                    ))),
                                                 }
                                             }))
                                             .detach();

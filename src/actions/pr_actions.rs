@@ -130,20 +130,20 @@ pub async fn ready_for_review(
     Ok(())
 }
 
-/// Assign a user to a PR.
+/// Assign users to a PR.
 pub async fn assign(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
     number: u64,
-    login: &str,
+    logins: &[String],
 ) -> Result<()> {
     let route = format!("/repos/{owner}/{repo}/issues/{number}/assignees");
-    let payload = serde_json::json!({ "assignees": [login] });
+    let payload = serde_json::json!({ "assignees": logins });
     let _: serde_json::Value = octocrab
         .post(route, Some(&payload))
         .await
-        .context("assigning user")?;
+        .context("assigning users")?;
     Ok(())
 }
 

@@ -12,12 +12,12 @@ use crate::color::ColorDepth;
 use crate::components::footer::{self, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
+use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
-use crate::components::{sidebar_tabs};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::IssueSection;
 use crate::filter;
@@ -316,8 +316,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     // State: cached issue detail data for sidebar tabs (HashMap cache + debounce).
     let mut detail_cache = hooks.use_state(HashMap::<u64, IssueDetail>::new);
-    let mut pending_detail =
-        hooks.use_state(|| DetailRequest::None);
+    let mut pending_detail = hooks.use_state(|| DetailRequest::None);
     let mut debounce_gen = hooks.use_state(|| 0u64);
 
     // Action state.
@@ -385,8 +384,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                     spawned_gen = current_gen;
                     let api_cache = api_cache_for_detail.clone();
                     smol::spawn(Compat::new(async move {
-                        if let Ok((detail, rl)) =
-                            graphql::fetch_issue_detail(&octocrab, &owner, &repo, issue_number, api_cache.as_ref()).await
+                        if let Ok((detail, rl)) = graphql::fetch_issue_detail(
+                            &octocrab,
+                            &owner,
+                            &repo,
+                            issue_number,
+                            api_cache.as_ref(),
+                        )
+                        .await
                         {
                             if rl.is_some() {
                                 rate_limit_state.set(rl);
@@ -403,9 +408,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     });
 
     // Compute active section index early (needed by fetch logic below).
-    let current_section_idx = active_section
-        .get()
-        .min(section_count.saturating_sub(1));
+    let current_section_idx = active_section.get().min(section_count.saturating_sub(1));
 
     // Auto-refetch: only reset the active section when its interval has elapsed.
     let refetch_interval = props.refetch_interval_minutes;
@@ -422,8 +425,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             .copied()
             .flatten()
             .is_some_and(|last| {
-                last.elapsed()
-                    >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
+                last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
             });
     if needs_refetch {
         let mut state = issues_state.read().clone();
@@ -482,7 +484,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
         smol::spawn(Compat::new(async move {
             let section_data =
-                match graphql::search_issues_all(&octocrab, &filters, limit, api_cache.as_ref()).await {
+                match graphql::search_issues_all(&octocrab, &filters, limit, api_cache.as_ref())
+                    .await
+                {
                     Ok((issues, rl)) => {
                         if rl.is_some() {
                             rate_limit_state.set(rl);
@@ -877,8 +881,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         )),
         InputMode::Assign => {
             let buf = input_buffer.read().clone();
+            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            let filtered = text_input::filter_suggestions(&candidates, current_word);
             let sel = assignee_selection.get();
             let selected_idx = if filtered.is_empty() {
                 None
@@ -886,7 +891,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
             Some(RenderedTextInput::build_with_suggestions(
-                "Assign user:",
+                "Assign users (comma-separated):",
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1069,6 +1074,61 @@ fn handle_search_input(
     }
 }
 
+/// Parse comma-separated usernames from input string.
+/// - Splits on commas
+/// - Trims whitespace
+/// - Strips @ prefix if present
+/// - Handles @me syntax (replaces with current user login)
+/// - Deduplicates usernames
+/// - Filters empty strings
+///
+/// Returns: `(parsed_usernames, needs_current_user_fetch)`
+/// The bool indicates if @me was found and we need to fetch `current().user()`
+fn parse_assignee_input(input: &str) -> (Vec<String>, bool) {
+    let mut needs_me = false;
+    let usernames: Vec<String> = input
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let cleaned = s.strip_prefix('@').unwrap_or(s);
+            if cleaned.eq_ignore_ascii_case("me") {
+                needs_me = true;
+                "@me".to_string() // Placeholder, will be replaced
+            } else {
+                cleaned.to_string()
+            }
+        })
+        .collect();
+
+    // Deduplicate while preserving order
+    let mut seen = std::collections::HashSet::new();
+    let deduped: Vec<String> = usernames
+        .into_iter()
+        .filter(|u| seen.insert(u.clone()))
+        .collect();
+
+    (deduped, needs_me)
+}
+
+/// Extract the "current word" being typed for autocomplete.
+///
+/// Example: `"alice, bob, ch"` → `("alice, bob, ", "ch", 2)`
+///          Returns: `(prefix, current_word, word_index)`
+///
+/// Used for filtering autocomplete suggestions based only on the last username.
+fn extract_current_word(input: &str) -> (&str, &str, usize) {
+    if let Some(last_comma_pos) = input.rfind(',') {
+        let prefix = &input[..=last_comma_pos]; // "alice, bob, "
+        let current = input[last_comma_pos + 1..].trim_start(); // "ch"
+        let word_count = input[..=last_comma_pos].matches(',').count();
+        (prefix, current, word_count)
+    } else {
+        // No comma yet - entire input is one word
+        ("", input.trim(), 0)
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn handle_assign_input(
     code: KeyCode,
@@ -1087,16 +1147,20 @@ fn handle_assign_input(
         // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
+            let (_prefix, current_word, _word_idx) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
             if !filtered.is_empty() {
                 assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
             }
         }
         KeyCode::Up | KeyCode::BackTab => {
             let buf = input_buffer.read().clone();
+            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
             if !filtered.is_empty() {
                 let sel = assignee_selection.get();
                 assignee_selection.set(if sel == 0 {
@@ -1108,38 +1172,55 @@ fn handle_assign_input(
         }
         KeyCode::Enter => {
             let buf = input_buffer.read().clone();
+            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
 
-            // Use selected suggestion if available, otherwise use typed text
-            let username = if filtered.is_empty() {
-                buf.clone()
+            // If user selected from suggestions, replace current word with selection
+            // Otherwise, keep the buffer as-is
+            let final_input = if filtered.is_empty() {
+                buf.clone() // No suggestions, use typed input
             } else {
-                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
-                filtered[sel].clone()
+                let sel = assignee_selection
+                    .get()
+                    .min(filtered.len().saturating_sub(1));
+                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
             };
 
-            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+            if !final_input.trim().is_empty()
+                && let Some(octocrab) = octocrab_for_actions
+            {
                 let info = get_current_issue_info(issues_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
+                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
+
                     smol::spawn(Compat::new(async move {
                         let result = async {
-                            // Handle @me syntax
-                            let login = if username == "@me" {
+                            // Replace @me with current user
+                            if needs_me {
                                 let user = octocrab.current().user().await?;
-                                user.login
-                            } else {
-                                // Strip @ prefix if present
-                                username.strip_prefix('@')
-                                    .unwrap_or(&username)
-                                    .to_string()
-                            };
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                                for username in &mut usernames {
+                                    if username == "@me" {
+                                        username.clone_from(&user.login);
+                                    }
+                                }
+                            }
+
+                            issue_actions::assign(&octocrab, &owner, &repo, number, &usernames)
+                                .await
                         }
                         .await;
+
+                        let count = usernames.len();
                         match result {
-                            Ok(()) => action_status.set(Some(format!("Assigned to issue #{number}"))),
+                            Ok(()) if count == 1 => action_status.set(Some(format!(
+                                "Assigned {} to issue #{number}",
+                                usernames[0]
+                            ))),
+                            Ok(()) => action_status
+                                .set(Some(format!("Assigned {count} users to issue #{number}"))),
                             Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
                         }
                     }))
@@ -1170,38 +1251,55 @@ fn handle_assign_input(
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
             // Backward compatibility: keep Ctrl+D working
             let buf = input_buffer.read().clone();
+            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
 
-            // Use selected suggestion if available, otherwise use typed text
-            let username = if filtered.is_empty() {
-                buf.clone()
+            // If user selected from suggestions, replace current word with selection
+            // Otherwise, keep the buffer as-is
+            let final_input = if filtered.is_empty() {
+                buf.clone() // No suggestions, use typed input
             } else {
-                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
-                filtered[sel].clone()
+                let sel = assignee_selection
+                    .get()
+                    .min(filtered.len().saturating_sub(1));
+                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
             };
 
-            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+            if !final_input.trim().is_empty()
+                && let Some(octocrab) = octocrab_for_actions
+            {
                 let info = get_current_issue_info(issues_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
+                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
+
                     smol::spawn(Compat::new(async move {
                         let result = async {
-                            // Handle @me syntax
-                            let login = if username == "@me" {
+                            // Replace @me with current user
+                            if needs_me {
                                 let user = octocrab.current().user().await?;
-                                user.login
-                            } else {
-                                // Strip @ prefix if present
-                                username.strip_prefix('@')
-                                    .unwrap_or(&username)
-                                    .to_string()
-                            };
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                                for username in &mut usernames {
+                                    if username == "@me" {
+                                        username.clone_from(&user.login);
+                                    }
+                                }
+                            }
+
+                            issue_actions::assign(&octocrab, &owner, &repo, number, &usernames)
+                                .await
                         }
                         .await;
+
+                        let count = usernames.len();
                         match result {
-                            Ok(()) => action_status.set(Some(format!("Assigned to issue #{number}"))),
+                            Ok(()) if count == 1 => action_status.set(Some(format!(
+                                "Assigned {} to issue #{number}",
+                                usernames[0]
+                            ))),
+                            Ok(()) => action_status
+                                .set(Some(format!("Assigned {count} users to issue #{number}"))),
                             Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
                         }
                     }))
@@ -1239,22 +1337,46 @@ fn handle_text_input(
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let is_comment = *current_mode == InputMode::Comment;
+                    let (mut usernames, needs_me) = if is_comment {
+                        (vec![], false)
+                    } else {
+                        parse_assignee_input(&text)
+                    };
                     smol::spawn(Compat::new(async move {
                         let result = if is_comment {
                             issue_actions::add_comment(&octocrab, &owner, &repo, number, &text)
                                 .await
                         } else {
+                            // Replace @me with current user
+                            if needs_me {
+                                if let Ok(user) = octocrab.current().user().await {
+                                    for username in &mut usernames {
+                                        if username == "@me" {
+                                            *username = user.login.clone();
+                                        }
+                                    }
+                                }
+                            }
                             // Assign mode
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &text).await
+                            issue_actions::assign(&octocrab, &owner, &repo, number, &usernames)
+                                .await
                         };
+                        let count = usernames.len();
                         match result {
+                            Ok(()) if is_comment => {
+                                action_status
+                                    .set(Some(format!("Comment added on issue #{number}")));
+                            }
+                            Ok(()) if count == 1 => {
+                                action_status.set(Some(format!(
+                                    "Assigned {} to issue #{number}",
+                                    usernames[0]
+                                )));
+                            }
                             Ok(()) => {
-                                let action = if is_comment {
-                                    "Comment added"
-                                } else {
-                                    "Assigned"
-                                };
-                                action_status.set(Some(format!("{action} on issue #{number}")));
+                                action_status.set(Some(format!(
+                                    "Assigned {count} users to issue #{number}"
+                                )));
                             }
                             Err(e) => action_status.set(Some(format!("Action failed: {e}"))),
                         }
@@ -1517,7 +1639,8 @@ fn handle_normal_input(
                     let api_cache = api_cache_for_refresh.cloned();
                     smol::spawn(Compat::new(async move {
                         if let Ok((labels, rl)) =
-                            graphql::fetch_repo_labels(&octocrab, &owner, &repo, api_cache.as_ref()).await
+                            graphql::fetch_repo_labels(&octocrab, &owner, &repo, api_cache.as_ref())
+                                .await
                         {
                             if rl.is_some() {
                                 rate_limit_state.set(rl);
@@ -1538,7 +1661,9 @@ fn handle_normal_input(
                     .sections
                     .get(current_section_idx)
                     .and_then(|s| s.issues.get(cursor.get()));
-                if let Some(issue) = issue && let Some(repo_ref) = &issue.repo {
+                if let Some(issue) = issue
+                    && let Some(repo_ref) = &issue.repo
+                {
                     let owner = repo_ref.owner.clone();
                     let repo = repo_ref.name.clone();
                     let number = issue.number;
@@ -1546,11 +1671,14 @@ fn handle_normal_input(
                     smol::spawn(Compat::new(async move {
                         let result = async {
                             let user = octocrab.current().user().await?;
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &user.login).await
+                            issue_actions::assign(&octocrab, &owner, &repo, number, &[user.login])
+                                .await
                         }
                         .await;
                         match result {
-                            Ok(()) => action_status.set(Some(format!("Assigned to issue #{number}"))),
+                            Ok(()) => {
+                                action_status.set(Some(format!("Assigned to issue #{number}")));
+                            }
                             Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
                         }
                     }))
@@ -1560,9 +1688,29 @@ fn handle_normal_input(
         }
         KeyCode::Char('a') => {
             input_mode.set(InputMode::Assign);
-            input_buffer.set(String::new());
             assignee_selection.set(0);
             action_status.set(None);
+
+            // Pre-fill with current assignees (editable)
+            let current_assignees = {
+                let state = issues_state.read();
+                let issue = state
+                    .sections
+                    .get(current_section_idx)
+                    .and_then(|s| s.issues.get(cursor.get()));
+
+                issue
+                    .map(|i| {
+                        i.assignees
+                            .iter()
+                            .map(|a| a.login.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    })
+                    .unwrap_or_default()
+            };
+
+            input_buffer.set(current_assignees);
 
             // Fetch collaborators for autocomplete
             if let Some(octocrab) = octocrab_for_actions {
@@ -1571,7 +1719,9 @@ fn handle_normal_input(
                     .sections
                     .get(current_section_idx)
                     .and_then(|s| s.issues.get(cursor.get()));
-                if let Some(issue) = issue && let Some(repo_ref) = &issue.repo {
+                if let Some(issue) = issue
+                    && let Some(repo_ref) = &issue.repo
+                {
                     let owner = repo_ref.owner.clone();
                     let repo = repo_ref.name.clone();
                     let octocrab = Arc::clone(octocrab);
@@ -1771,7 +1921,13 @@ fn handle_normal_input(
         KeyCode::Char('[') => {
             let current = sidebar_tab.get();
             let idx = ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
-            sidebar_tab.set(ISSUE_TABS[if idx == 0 { ISSUE_TABS.len() - 1 } else { idx - 1 }]);
+            sidebar_tab.set(
+                ISSUE_TABS[if idx == 0 {
+                    ISSUE_TABS.len() - 1
+                } else {
+                    idx - 1
+                }],
+            );
             preview_scroll.set(0);
         }
         // Section switching

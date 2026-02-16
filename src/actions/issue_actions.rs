@@ -73,20 +73,20 @@ pub(crate) async fn add_labels(
     Ok(())
 }
 
-/// Assign a user to an issue.
+/// Assign users to an issue.
 pub(crate) async fn assign(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
     number: u64,
-    login: &str,
+    logins: &[String],
 ) -> Result<()> {
     let route = format!("/repos/{owner}/{repo}/issues/{number}/assignees");
-    let payload = serde_json::json!({ "assignees": [login] });
+    let payload = serde_json::json!({ "assignees": logins });
     let _: serde_json::Value = octocrab
         .post(route, Some(&payload))
         .await
-        .context("assigning user to issue")?;
+        .context("assigning users to issue")?;
     Ok(())
 }
 

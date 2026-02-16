@@ -497,8 +497,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     spawned_gen = current_gen;
                     let api_cache = api_cache_for_detail.clone();
                     smol::spawn(Compat::new(async move {
-                        if let Ok((detail, rl)) =
-                            graphql::fetch_pr_detail(&octocrab, &owner, &repo, pr_number, api_cache.as_ref()).await
+                        if let Ok((detail, rl)) = graphql::fetch_pr_detail(
+                            &octocrab,
+                            &owner,
+                            &repo,
+                            pr_number,
+                            api_cache.as_ref(),
+                        )
+                        .await
                         {
                             if rl.is_some() {
                                 rate_limit_state.set(rl);
@@ -515,9 +521,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     });
 
     // Compute active section index early (needed by fetch logic below).
-    let current_section_idx = active_section
-        .get()
-        .min(section_count.saturating_sub(1));
+    let current_section_idx = active_section.get().min(section_count.saturating_sub(1));
 
     // Auto-refetch: only reset the active section when its interval has elapsed.
     let refetch_interval = props.refetch_interval_minutes;
@@ -534,8 +538,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             .copied()
             .flatten()
             .is_some_and(|last| {
-                last.elapsed()
-                    >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
+                last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
             });
     if needs_refetch {
         let mut state = prs_state.read().clone();
@@ -590,42 +593,48 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
         smol::spawn(Compat::new(async move {
-            let section_data =
-                match graphql::search_pull_requests_all(&octocrab, &filters, limit, api_cache.as_ref()).await {
-                    Ok((prs, rl)) => {
-                        if rl.is_some() {
-                            rate_limit_state.set(rl);
-                        }
-                        let rows: Vec<Row> = prs
-                            .iter()
-                            .map(|pr| pr_to_row(pr, &theme_clone, &date_format_owned))
-                            .collect();
-                        let bodies: Vec<String> = prs.iter().map(|pr| pr.body.clone()).collect();
-                        let titles: Vec<String> = prs.iter().map(|pr| pr.title.clone()).collect();
-                        let pr_count = prs.len();
-                        SectionData {
-                            rows,
-                            bodies,
-                            titles,
-                            prs,
-                            pr_count,
-                            loading: false,
-                            error: None,
-                        }
+            let section_data = match graphql::search_pull_requests_all(
+                &octocrab,
+                &filters,
+                limit,
+                api_cache.as_ref(),
+            )
+            .await
+            {
+                Ok((prs, rl)) => {
+                    if rl.is_some() {
+                        rate_limit_state.set(rl);
                     }
-                    Err(e) => {
-                        let error_msg = if rate_limit::is_rate_limited(&e) {
-                            rate_limit::format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        };
-                        SectionData {
-                            loading: false,
-                            error: Some(error_msg),
-                            ..SectionData::default()
-                        }
+                    let rows: Vec<Row> = prs
+                        .iter()
+                        .map(|pr| pr_to_row(pr, &theme_clone, &date_format_owned))
+                        .collect();
+                    let bodies: Vec<String> = prs.iter().map(|pr| pr.body.clone()).collect();
+                    let titles: Vec<String> = prs.iter().map(|pr| pr.title.clone()).collect();
+                    let pr_count = prs.len();
+                    SectionData {
+                        rows,
+                        bodies,
+                        titles,
+                        prs,
+                        pr_count,
+                        loading: false,
+                        error: None,
                     }
-                };
+                }
+                Err(e) => {
+                    let error_msg = if rate_limit::is_rate_limited(&e) {
+                        rate_limit::format_rate_limit_message(&e)
+                    } else {
+                        e.to_string()
+                    };
+                    SectionData {
+                        loading: false,
+                        error: Some(error_msg),
+                        ..SectionData::default()
+                    }
+                }
+            };
 
             // Update only this section.
             let mut state = prs_state.read().clone();
@@ -995,7 +1004,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                 &owner,
                                                 &repo,
                                                 number,
-                                                &user.login,
+                                                &[user.login],
                                             )
                                             .await
                                         }
@@ -1014,9 +1023,32 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Assign (text input for any user)
                         KeyCode::Char('a') => {
                             input_mode.set(InputMode::Assign);
-                            input_buffer.set(String::new());
                             assignee_selection.set(0);
                             action_status.set(None);
+
+                            // Pre-fill with current assignees (editable)
+                            let current_assignees = {
+                                let pr_info = get_current_pr_info(&prs_state, current_section_idx, cursor.get());
+                                if let Some((_owner, _repo, number)) = pr_info {
+                                    let state = prs_state.read();
+                                    let pr = state.sections
+                                        .get(current_section_idx)
+                                        .and_then(|s| s.prs.iter().find(|p| p.number == number));
+
+                                    pr.map(|p| {
+                                        p.assignees
+                                            .iter()
+                                            .map(|a| a.login.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ")
+                                    })
+                                    .unwrap_or_default()
+                                } else {
+                                    String::new()
+                                }
+                            };
+
+                            input_buffer.set(current_assignees);
 
                             // Fetch collaborators for autocomplete
                             if let Some(ref octocrab) = octocrab_for_actions {
@@ -1486,8 +1518,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let rendered_text_input = match &current_mode {
         InputMode::Assign => {
             let buf = input_buffer.read().clone();
+            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
             let sel = assignee_selection.get();
             let selected_idx = if filtered.is_empty() {
                 None
@@ -1495,7 +1529,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
             Some(RenderedTextInput::build_with_suggestions(
-                "Assign user:",
+                "Assign users (comma-separated):",
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1629,6 +1663,61 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     .into_any()
 }
 
+/// Parse comma-separated usernames from input string.
+/// - Splits on commas
+/// - Trims whitespace
+/// - Strips @ prefix if present
+/// - Handles @me syntax (replaces with current user login)
+/// - Deduplicates usernames
+/// - Filters empty strings
+///
+/// Returns: `(parsed_usernames, needs_current_user_fetch)`
+/// The bool indicates if @me was found and we need to fetch `current().user()`
+fn parse_assignee_input(input: &str) -> (Vec<String>, bool) {
+    let mut needs_me = false;
+    let usernames: Vec<String> = input
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            let cleaned = s.strip_prefix('@').unwrap_or(s);
+            if cleaned.eq_ignore_ascii_case("me") {
+                needs_me = true;
+                "@me".to_string() // Placeholder, will be replaced
+            } else {
+                cleaned.to_string()
+            }
+        })
+        .collect();
+
+    // Deduplicate while preserving order
+    let mut seen = std::collections::HashSet::new();
+    let deduped: Vec<String> = usernames
+        .into_iter()
+        .filter(|u| seen.insert(u.clone()))
+        .collect();
+
+    (deduped, needs_me)
+}
+
+/// Extract the "current word" being typed for autocomplete.
+///
+/// Example: `"alice, bob, ch"` → `("alice, bob, ", "ch", 2)`
+///          Returns: `(prefix, current_word, word_index)`
+///
+/// Used for filtering autocomplete suggestions based only on the last username.
+fn extract_current_word(input: &str) -> (&str, &str, usize) {
+    if let Some(last_comma_pos) = input.rfind(',') {
+        let prefix = &input[..=last_comma_pos]; // "alice, bob, "
+        let current = input[last_comma_pos + 1..].trim_start(); // "ch"
+        let word_count = input[..=last_comma_pos].matches(',').count();
+        (prefix, current, word_count)
+    } else {
+        // No comma yet - entire input is one word
+        ("", input.trim(), 0)
+    }
+}
+
 /// Handle text input for assigning PRs to users.
 #[allow(clippy::too_many_arguments)]
 fn handle_assign_input(
@@ -1648,16 +1737,20 @@ fn handle_assign_input(
         // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
+            let (_prefix, current_word, _word_idx) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
             if !filtered.is_empty() {
                 assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
             }
         }
         KeyCode::Up | KeyCode::BackTab => {
             let buf = input_buffer.read().clone();
+            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
             if !filtered.is_empty() {
                 let sel = assignee_selection.get();
                 assignee_selection.set(if sel == 0 {
@@ -1669,38 +1762,52 @@ fn handle_assign_input(
         }
         KeyCode::Enter => {
             let buf = input_buffer.read().clone();
+            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
 
-            // Use selected suggestion if available, otherwise use typed text
-            let username = if filtered.is_empty() {
-                buf.clone()
+            // If user selected from suggestions, replace current word with selection
+            // Otherwise, keep the buffer as-is
+            let final_input = if filtered.is_empty() {
+                buf.clone() // No suggestions, use typed input
             } else {
-                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
-                filtered[sel].clone()
+                let sel = assignee_selection
+                    .get()
+                    .min(filtered.len().saturating_sub(1));
+                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
             };
 
-            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+            if !final_input.trim().is_empty()
+                && let Some(octocrab) = octocrab_for_actions
+            {
                 let info = get_current_pr_info(prs_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
+                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
+
                     smol::spawn(Compat::new(async move {
                         let result = async {
-                            // Handle @me syntax
-                            let login = if username == "@me" {
+                            // Replace @me with current user
+                            if needs_me {
                                 let user = octocrab.current().user().await?;
-                                user.login
-                            } else {
-                                // Strip @ prefix if present
-                                username.strip_prefix('@')
-                                    .unwrap_or(&username)
-                                    .to_string()
-                            };
-                            pr_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                                for username in &mut usernames {
+                                    if username == "@me" {
+                                        username.clone_from(&user.login);
+                                    }
+                                }
+                            }
+
+                            pr_actions::assign(&octocrab, &owner, &repo, number, &usernames).await
                         }
                         .await;
+
+                        let count = usernames.len();
                         match result {
-                            Ok(()) => action_status.set(Some(format!("Assigned to PR #{number}"))),
+                            Ok(()) if count == 1 => action_status
+                                .set(Some(format!("Assigned {} to PR #{number}", usernames[0]))),
+                            Ok(()) => action_status
+                                .set(Some(format!("Assigned {count} users to PR #{number}"))),
                             Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
                         }
                     }))
@@ -1731,36 +1838,52 @@ fn handle_assign_input(
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
             // Backward compatibility: Ctrl+D also submits
             let buf = input_buffer.read().clone();
+            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, current_word);
 
-            // Use selected suggestion if available, otherwise use typed text
-            let username = if filtered.is_empty() {
-                buf.clone()
+            // If user selected from suggestions, replace current word with selection
+            // Otherwise, keep the buffer as-is
+            let final_input = if filtered.is_empty() {
+                buf.clone() // No suggestions, use typed input
             } else {
-                let sel = assignee_selection.get().min(filtered.len().saturating_sub(1));
-                filtered[sel].clone()
+                let sel = assignee_selection
+                    .get()
+                    .min(filtered.len().saturating_sub(1));
+                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
             };
 
-            if !username.is_empty() && let Some(octocrab) = octocrab_for_actions {
+            if !final_input.trim().is_empty()
+                && let Some(octocrab) = octocrab_for_actions
+            {
                 let info = get_current_pr_info(prs_state, section_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
+                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
+
                     smol::spawn(Compat::new(async move {
                         let result = async {
-                            let login = if username == "@me" {
+                            // Replace @me with current user
+                            if needs_me {
                                 let user = octocrab.current().user().await?;
-                                user.login
-                            } else {
-                                username.strip_prefix('@')
-                                    .unwrap_or(&username)
-                                    .to_string()
-                            };
-                            pr_actions::assign(&octocrab, &owner, &repo, number, &login).await
+                                for username in &mut usernames {
+                                    if username == "@me" {
+                                        username.clone_from(&user.login);
+                                    }
+                                }
+                            }
+
+                            pr_actions::assign(&octocrab, &owner, &repo, number, &usernames).await
                         }
                         .await;
+
+                        let count = usernames.len();
                         match result {
-                            Ok(()) => action_status.set(Some(format!("Assigned to PR #{number}"))),
+                            Ok(()) if count == 1 => action_status
+                                .set(Some(format!("Assigned {} to PR #{number}", usernames[0]))),
+                            Ok(()) => action_status
+                                .set(Some(format!("Assigned {count} users to PR #{number}"))),
                             Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
                         }
                     }))

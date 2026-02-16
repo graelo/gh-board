@@ -57,6 +57,12 @@ fn main() -> Result<()> {
     let theme = ResolvedTheme::resolve(&config.theme, background);
     let keybindings = MergedBindings::from_config(&config.keybindings);
 
+    // Install the rustls CryptoProvider before any TLS client is constructed.
+    // reqwest 0.13 / rustls 0.23 no longer auto-installs a provider.
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("failed to install default CryptoProvider");
+
     // Build a Tokio runtime. Octocrab (via tower's BufferLayer) requires a
     // Tokio reactor to be active when constructing its HTTP service, so we
     // enter the runtime context before creating the client.

@@ -174,6 +174,7 @@ query SearchIssues($query: String!, $first: Int!, $after: String) {
         labels(first: 10) { nodes { name color } }
         comments { totalCount }
         reactionGroups { content users { totalCount } }
+        participants(first: 30) { nodes { login } }
         repository { nameWithOwner }
       }
     }
@@ -549,6 +550,7 @@ struct RawIssue {
     comments: Option<TotalCount>,
     #[serde(rename = "reactionGroups", default)]
     reaction_groups: Vec<RawReactionGroup>,
+    participants: Option<Connection<RawAssignee>>,
     repository: Option<RawRepository>,
 }
 
@@ -782,6 +784,10 @@ impl RawIssue {
             url: self.url,
             repo,
             comment_count,
+            participants: self
+                .participants
+                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
+                .unwrap_or_default(),
         }
     }
 }

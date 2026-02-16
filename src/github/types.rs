@@ -374,6 +374,9 @@ pub struct Issue {
     pub repo: Option<RepoRef>,
     #[serde(default)]
     pub comment_count: u32,
+    /// Deduplicated participant logins (from GitHub's `participants` connection).
+    #[serde(default)]
+    pub participants: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

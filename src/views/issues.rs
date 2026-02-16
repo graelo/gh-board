@@ -1129,26 +1129,21 @@ fn extract_current_word(input: &str) -> (&str, &str, usize) {
     }
 }
 
-/// Build autocomplete candidates from Issue data (author, assignees, comment authors).
+/// Build autocomplete candidates from Issue data (participants, assignees, author).
 /// Returns a deduplicated, sorted list of usernames.
 fn build_issue_assignee_candidates(issue: &Issue) -> Vec<String> {
     let mut pool = Vec::new();
 
-    // Add author
-    if let Some(author) = &issue.author {
-        pool.push(author.login.clone());
-    }
+    // Add participants (already deduplicated by GitHub)
+    pool.extend(issue.participants.iter().cloned());
 
     // Add current assignees
     pool.extend(issue.assignees.iter().map(|a| a.login.clone()));
 
-    // Add comment authors
-    pool.extend(
-        issue
-            .comments
-            .iter()
-            .filter_map(|c| c.author.as_ref().map(|a| a.login.clone())),
-    );
+    // Add author (in case not in participants)
+    if let Some(author) = &issue.author {
+        pool.push(author.login.clone());
+    }
 
     // Deduplicate and sort
     pool.sort();

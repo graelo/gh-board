@@ -185,7 +185,7 @@ mod tests {
             } else {
                 Some(RepoRef {
                     owner: parts[0].to_owned(),
-                    name: parts.get(1).unwrap_or(&"").to_string(),
+                    name: (*parts.get(1).unwrap_or(&"")).to_string(),
                 })
             },
             url: String::new(),

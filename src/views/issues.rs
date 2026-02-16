@@ -15,7 +15,7 @@ use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarT
 use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
-    Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
+    Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
@@ -24,6 +24,7 @@ use crate::filter;
 use crate::github::graphql::{self, IssueDetail, RateLimitInfo};
 use crate::github::rate_limit;
 use crate::github::types::Issue;
+use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 
@@ -37,68 +38,54 @@ type DetailRequest = Option<(Arc<Octocrab>, String, String, u64)>;
 // Issue-specific column definitions (FR-021)
 // ---------------------------------------------------------------------------
 
-fn issue_columns() -> Vec<Column> {
+fn issue_columns(icons: &ResolvedIcons) -> Vec<Column> {
     vec![
         Column {
             id: "state".to_owned(),
-            header: " ".to_owned(),
+            header: icons.header_state.clone(),
             default_width_pct: 0.03,
             align: TextAlign::Center,
             fixed_width: Some(3),
         },
         Column {
-            id: "title".to_owned(),
+            id: "info".to_owned(),
             header: "Title".to_owned(),
-            default_width_pct: 0.30,
-            align: TextAlign::Left,
-            fixed_width: None,
-        },
-        Column {
-            id: "repo".to_owned(),
-            header: "Repo".to_owned(),
-            default_width_pct: 0.14,
-            align: TextAlign::Left,
-            fixed_width: None,
-        },
-        Column {
-            id: "creator".to_owned(),
-            header: "Creator".to_owned(),
-            default_width_pct: 0.10,
-            align: TextAlign::Left,
-            fixed_width: None,
-        },
-        Column {
-            id: "assignees".to_owned(),
-            header: "Assignees".to_owned(),
-            default_width_pct: 0.12,
+            default_width_pct: 0.35,
             align: TextAlign::Left,
             fixed_width: None,
         },
         Column {
             id: "comments".to_owned(),
-            header: "Cmt".to_owned(),
+            header: icons.header_comments.clone(),
+            default_width_pct: 0.04,
+            align: TextAlign::Right,
+            fixed_width: Some(4),
+        },
+        Column {
+            id: "reactions".to_owned(),
+            header: "React".to_owned(),
             default_width_pct: 0.05,
             align: TextAlign::Right,
             fixed_width: Some(6),
         },
         Column {
-            id: "reactions".to_owned(),
-            header: "React".to_owned(),
-            default_width_pct: 0.06,
-            align: TextAlign::Right,
-            fixed_width: Some(7),
+            id: "assignees".to_owned(),
+            header: "Assign".to_owned(),
+            default_width_pct: 0.12,
+            align: TextAlign::Left,
+            fixed_width: None,
         },
         Column {
             id: "updated".to_owned(),
-            header: "Updated".to_owned(),
-            default_width_pct: 0.10,
+            header: icons.header_time.clone(),
+            default_width_pct: 0.06,
             align: TextAlign::Right,
             fixed_width: Some(8),
         },
         Column {
             id: "created".to_owned(),
-            header: "Created".to_owned(),
-            default_width_pct: 0.10,
+            header: icons.header_time.clone(),
+            default_width_pct: 0.06,
             align: TextAlign::Right,
             fixed_width: Some(8),
         },
@@ -122,39 +109,45 @@ fn issue_to_row(issue: &Issue, theme: &ResolvedTheme, date_format: &str) -> Row 
         Cell::colored(state_icon.clone(), state_color),
     );
 
-    // Title
-    row.insert("title".to_owned(), Cell::plain(&issue.title));
-
-    // Repo
+    // Info line: repo/name #N by @author
     let repo_name = issue
         .repo
         .as_ref()
         .map_or_else(String::new, crate::github::types::RepoRef::full_name);
-    row.insert(
-        "repo".to_owned(),
-        Cell::colored(repo_name, theme.text_secondary),
-    );
-
-    // Creator
-    let creator = issue
+    let author = issue
         .author
         .as_ref()
         .map_or("unknown", |a| a.login.as_str());
     row.insert(
-        "creator".to_owned(),
-        Cell::colored(creator, theme.text_actor),
+        "info".to_owned(),
+        Cell::from_spans(vec![
+            Span {
+                text: repo_name,
+                color: Some(theme.text_secondary),
+                bold: false,
+            },
+            Span {
+                text: format!(" #{}", issue.number),
+                color: Some(theme.text_primary),
+                bold: false,
+            },
+            Span {
+                text: " by ".to_owned(),
+                color: Some(theme.text_faint),
+                bold: false,
+            },
+            Span {
+                text: format!("@{author}"),
+                color: Some(theme.text_actor),
+                bold: false,
+            },
+        ]),
     );
 
-    // Assignees
-    let assignees_text: String = issue
-        .assignees
-        .iter()
-        .map(|a| a.login.as_str())
-        .collect::<Vec<_>>()
-        .join(", ");
+    // Subtitle: issue title (extracted by subtitle_column)
     row.insert(
-        "assignees".to_owned(),
-        Cell::colored(assignees_text, theme.text_faint),
+        "subtitle".to_owned(),
+        Cell::colored(&issue.title, theme.text_primary),
     );
 
     // Comments
@@ -178,6 +171,18 @@ fn issue_to_row(issue: &Issue, theme: &ResolvedTheme, date_format: &str) -> Row 
     row.insert(
         "reactions".to_owned(),
         Cell::colored(reactions, theme.text_secondary),
+    );
+
+    // Assignees
+    let assignees_text: String = issue
+        .assignees
+        .iter()
+        .map(|a| a.login.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    row.insert(
+        "assignees".to_owned(),
+        Cell::colored(assignees_text, theme.text_faint),
     );
 
     // Updated
@@ -557,7 +562,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             .map_or(0, |s| filter::filter_rows(&s.rows, &search_q).len())
     };
 
-    let visible_rows = props.height.saturating_sub(5) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
 
     // Keyboard handling.
     hooks.use_terminal_events({
@@ -707,7 +712,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         .collect();
 
     let current_data = state_ref.sections.get(current_section_idx);
-    let columns = issue_columns();
+    let columns = issue_columns(&theme.icons);
 
     let layout = sections_cfg
         .get(current_section_idx)
@@ -753,7 +758,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         } else {
             Some("No issues match this filter")
         },
-        subtitle_column: None,
+        subtitle_column: Some("subtitle"),
         row_separator: true,
     });
 

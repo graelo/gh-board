@@ -898,8 +898,8 @@ pub fn NotificationsView<'a>(
         current_section_idx,
         props.show_section_count,
         depth,
-        Some(theme.border_primary),
-        Some(theme.text_faint),
+        Some(theme.footer_notifications),
+        Some(theme.footer_notifications),
         Some(theme.border_faint),
         &theme.icons.tab_section,
     );

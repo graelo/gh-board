@@ -604,8 +604,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         0,
         true,
         depth,
-        Some(theme.border_primary),
-        Some(theme.text_faint),
+        Some(theme.footer_repo),
+        Some(theme.footer_repo),
         Some(theme.border_faint),
         &theme.icons.tab_section,
     );

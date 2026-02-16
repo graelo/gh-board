@@ -1491,8 +1491,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         current_section_idx,
         props.show_section_count,
         depth,
-        Some(theme.border_primary),
-        Some(theme.text_faint),
+        Some(theme.footer_prs),
+        Some(theme.footer_prs),
         Some(theme.border_faint),
         &theme.icons.tab_section,
     );

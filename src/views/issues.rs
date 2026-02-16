@@ -867,8 +867,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         current_section_idx,
         props.show_section_count,
         depth,
-        Some(theme.border_primary),
-        Some(theme.text_faint),
+        Some(theme.footer_issues),
+        Some(theme.footer_issues),
         Some(theme.border_faint),
         &theme.icons.tab_section,
     );

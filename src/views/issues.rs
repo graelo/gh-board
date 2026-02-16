@@ -1378,12 +1378,10 @@ fn handle_text_input(
                                 .await
                         } else {
                             // Replace @me with current user
-                            if needs_me {
-                                if let Ok(user) = octocrab.current().user().await {
-                                    for username in &mut usernames {
-                                        if username == "@me" {
-                                            username.clone_from(&user.login);
-                                        }
+                            if needs_me && let Ok(user) = octocrab.current().user().await {
+                                for username in &mut usernames {
+                                    if username == "@me" {
+                                        username.clone_from(&user.login);
                                     }
                                 }
                             }

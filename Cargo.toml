@@ -33,7 +33,8 @@ octocrab = "0.49"
 #
 # Markdown
 pulldown-cmark = "0.13"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.13", features = ["json"] }
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 #
 # Serialization / Config
 serde = { version = "1", features = ["derive"] }

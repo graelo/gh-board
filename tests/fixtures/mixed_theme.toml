@@ -1,7 +1,7 @@
 # T042: Mixed ANSI+hex theme fixture.
 # Demonstrates coexistence of ANSI-256 indices and hex values.
 
-[[pr_sections]]
+[[pr_filters]]
 title = "My PRs"
 filters = "is:open author:@me"
 

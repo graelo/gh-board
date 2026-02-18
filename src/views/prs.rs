@@ -19,7 +19,7 @@ use crate::components::table::{
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
-use crate::config::types::PrSection;
+use crate::config::types::PrFilter;
 use crate::filter;
 use crate::github::graphql::{self, PrDetail, RateLimitInfo};
 use crate::github::rate_limit;
@@ -307,12 +307,12 @@ enum PendingAction {
 }
 
 // ---------------------------------------------------------------------------
-// Section state
+// Filter state
 // ---------------------------------------------------------------------------
 
-/// State for a single PR section.
+/// State for a single filter.
 #[derive(Debug, Clone)]
-struct SectionData {
+struct FilterData {
     rows: Vec<Row>,
     /// PR bodies for preview (indexed same as rows).
     bodies: Vec<String>,
@@ -325,7 +325,7 @@ struct SectionData {
     error: Option<String>,
 }
 
-impl Default for SectionData {
+impl Default for FilterData {
     fn default() -> Self {
         Self {
             rows: Vec::new(),
@@ -339,10 +339,10 @@ impl Default for SectionData {
     }
 }
 
-/// Shared state across all sections (stored in a single State handle).
+/// Shared state across all filters (stored in a single State handle).
 #[derive(Debug, Clone)]
 struct PrsState {
-    sections: Vec<SectionData>,
+    filters: Vec<FilterData>,
 }
 
 // ---------------------------------------------------------------------------
@@ -351,8 +351,8 @@ struct PrsState {
 
 #[derive(Default, Props)]
 pub struct PrsViewProps<'a> {
-    /// PR section configs.
-    pub sections: Option<&'a [PrSection]>,
+    /// PR filter configs.
+    pub filters: Option<&'a [PrFilter]>,
     /// Octocrab instance for fetching.
     pub octocrab: Option<&'a Arc<Octocrab>>,
     /// Moka API response cache.
@@ -369,8 +369,8 @@ pub struct PrsViewProps<'a> {
     pub height: u16,
     /// Preview pane width fraction (from config defaults.preview.width).
     pub preview_width_pct: f64,
-    /// Whether section counts are shown in tabs.
-    pub show_section_count: bool,
+    /// Whether filter counts are shown in tabs.
+    pub show_filter_count: bool,
     /// Whether table separators are shown.
     pub show_separator: bool,
     /// Signal to exit the app.
@@ -396,7 +396,7 @@ pub struct PrsViewProps<'a> {
 #[component]
 #[allow(clippy::too_many_lines)]
 pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
-    let sections_cfg = props.sections.unwrap_or(&[]);
+    let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
     let depth = props.color_depth;
     let should_exit = props.should_exit;
@@ -404,7 +404,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let switch_view_back = props.switch_view_back;
     let scope_toggle = props.scope_toggle;
     let scope_repo = &props.scope_repo;
-    let section_count = sections_cfg.len();
+    let filter_count = filters_cfg.len();
     let is_active = props.is_active;
     let preview_pct = if props.preview_width_pct > 0.0 {
         props.preview_width_pct
@@ -412,8 +412,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         0.45
     };
 
-    // State: active section index, cursor, scroll offset.
-    let mut active_section = hooks.use_state(|| 0usize);
+    // State: active filter index, cursor, scroll offset.
+    let mut active_filter = hooks.use_state(|| 0usize);
     let mut cursor = hooks.use_state(|| 0usize);
     let mut scroll_offset = hooks.use_state(|| 0usize);
 
@@ -447,27 +447,27 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: rate limit from last GraphQL response.
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
 
-    // State: per-section fetch tracking (lazy: only fetch the active section).
-    let mut section_fetch_times =
-        hooks.use_state(move || vec![Option::<std::time::Instant>::None; section_count]);
-    let mut section_in_flight = hooks.use_state(move || vec![false; section_count]);
+    // State: per-filter fetch tracking (lazy: only fetch the active filter).
+    let mut filter_fetch_times =
+        hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
+    let mut filter_in_flight = hooks.use_state(move || vec![false; filter_count]);
 
-    // State: loaded section data (non-Copy, use .read()/.set()).
-    let initial_sections = vec![SectionData::default(); section_count];
+    // State: loaded filter data (non-Copy, use .read()/.set()).
+    let initial_filters = vec![FilterData::default(); filter_count];
     let mut prs_state = hooks.use_state(move || PrsState {
-        sections: initial_sections,
+        filters: initial_filters,
     });
 
-    // Track scope changes: when scope_repo changes, invalidate all sections.
+    // Track scope changes: when scope_repo changes, invalidate all filters.
     let mut last_scope = hooks.use_state(|| scope_repo.clone());
     if *last_scope.read() != *scope_repo {
         last_scope.set(scope_repo.clone());
-        // Reset all sections to trigger refetch with new scope.
+        // Reset all filters to trigger refetch with new scope.
         prs_state.set(PrsState {
-            sections: vec![SectionData::default(); section_count],
+            filters: vec![FilterData::default(); filter_count],
         });
-        section_fetch_times.set(vec![None; section_count]);
-        section_in_flight.set(vec![false; section_count]);
+        filter_fetch_times.set(vec![None; filter_count]);
+        filter_in_flight.set(vec![false; filter_count]);
     }
 
     // Timer tick for periodic re-renders (supports auto-refetch).
@@ -520,21 +520,21 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         }
     });
 
-    // Compute active section index early (needed by fetch logic below).
-    let current_section_idx = active_section.get().min(section_count.saturating_sub(1));
+    // Compute active filter index early (needed by fetch logic below).
+    let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
 
-    // Auto-refetch: only reset the active section when its interval has elapsed.
+    // Auto-refetch: only reset the active filter when its interval has elapsed.
     let refetch_interval = props.refetch_interval_minutes;
     let needs_refetch = is_active
         && refetch_interval > 0
-        && !section_in_flight
+        && !filter_in_flight
             .read()
-            .get(current_section_idx)
+            .get(current_filter_idx)
             .copied()
             .unwrap_or(false)
-        && section_fetch_times
+        && filter_fetch_times
             .read()
-            .get(current_section_idx)
+            .get(current_filter_idx)
             .copied()
             .flatten()
             .is_some_and(|last| {
@@ -542,45 +542,45 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             });
     if needs_refetch {
         let mut state = prs_state.read().clone();
-        if current_section_idx < state.sections.len() {
-            state.sections[current_section_idx] = SectionData::default();
+        if current_filter_idx < state.filters.len() {
+            state.filters[current_filter_idx] = FilterData::default();
         }
         prs_state.set(state);
-        let mut times = section_fetch_times.read().clone();
-        if current_section_idx < times.len() {
-            times[current_section_idx] = None;
+        let mut times = filter_fetch_times.read().clone();
+        if current_filter_idx < times.len() {
+            times[current_filter_idx] = None;
         }
-        section_fetch_times.set(times);
+        filter_fetch_times.set(times);
     }
 
-    // Lazy fetch: only fetch the active section when it needs data.
+    // Lazy fetch: only fetch the active filter when it needs data.
     let active_needs_fetch = prs_state
         .read()
-        .sections
-        .get(current_section_idx)
+        .filters
+        .get(current_filter_idx)
         .is_some_and(|s| s.loading);
-    let active_in_flight = section_in_flight
+    let active_in_flight = filter_in_flight
         .read()
-        .get(current_section_idx)
+        .get(current_filter_idx)
         .copied()
         .unwrap_or(false);
 
     if active_needs_fetch
         && !active_in_flight
         && is_active
-        && let Some(cfg) = sections_cfg.get(current_section_idx)
+        && let Some(cfg) = filters_cfg.get(current_filter_idx)
         && let Some(octocrab) = props.octocrab
     {
-        // Mark this section as in-flight.
-        let mut in_flight = section_in_flight.read().clone();
-        if current_section_idx < in_flight.len() {
-            in_flight[current_section_idx] = true;
+        // Mark this filter as in-flight.
+        let mut in_flight = filter_in_flight.read().clone();
+        if current_filter_idx < in_flight.len() {
+            in_flight[current_filter_idx] = true;
         }
-        section_in_flight.set(in_flight);
+        filter_in_flight.set(in_flight);
 
         let octocrab = Arc::clone(octocrab);
         let api_cache = props.api_cache.cloned();
-        let section_idx = current_section_idx;
+        let filter_idx = current_filter_idx;
         let mut filters = cfg.filters.clone();
         // Inject repo scope if active and not already present.
         if let Some(ref repo) = *scope_repo
@@ -593,7 +593,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
         smol::spawn(Compat::new(async move {
-            let section_data = match graphql::search_pull_requests_all(
+            let filter_data = match graphql::search_pull_requests_all(
                 &octocrab,
                 &filters,
                 limit,
@@ -612,7 +612,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     let bodies: Vec<String> = prs.iter().map(|pr| pr.body.clone()).collect();
                     let titles: Vec<String> = prs.iter().map(|pr| pr.title.clone()).collect();
                     let pr_count = prs.len();
-                    SectionData {
+                    FilterData {
                         rows,
                         bodies,
                         titles,
@@ -628,32 +628,32 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     } else {
                         e.to_string()
                     };
-                    SectionData {
+                    FilterData {
                         loading: false,
                         error: Some(error_msg),
-                        ..SectionData::default()
+                        ..FilterData::default()
                     }
                 }
             };
 
-            // Update only this section.
+            // Update only this filter.
             let mut state = prs_state.read().clone();
-            if section_idx < state.sections.len() {
-                state.sections[section_idx] = section_data;
+            if filter_idx < state.filters.len() {
+                state.filters[filter_idx] = filter_data;
             }
             prs_state.set(state);
 
             // Record fetch time and clear in-flight.
-            let mut times = section_fetch_times.read().clone();
-            if section_idx < times.len() {
-                times[section_idx] = Some(std::time::Instant::now());
+            let mut times = filter_fetch_times.read().clone();
+            if filter_idx < times.len() {
+                times[filter_idx] = Some(std::time::Instant::now());
             }
-            section_fetch_times.set(times);
-            let mut in_flight = section_in_flight.read().clone();
-            if section_idx < in_flight.len() {
-                in_flight[section_idx] = false;
+            filter_fetch_times.set(times);
+            let mut in_flight = filter_in_flight.read().clone();
+            if filter_idx < in_flight.len() {
+                in_flight[filter_idx] = false;
             }
-            section_in_flight.set(in_flight);
+            filter_in_flight.set(in_flight);
         }))
         .detach();
     }
@@ -661,16 +661,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Read current state for rendering.
     let state_ref = prs_state.read();
     let all_rows_count = state_ref
-        .sections
-        .get(current_section_idx)
+        .filters
+        .get(current_filter_idx)
         .map_or(0, |s| s.rows.len());
     let search_q = search_query.read().clone();
     let total_rows = if search_q.is_empty() {
         all_rows_count
     } else {
         state_ref
-            .sections
-            .get(current_section_idx)
+            .filters
+            .get(current_filter_idx)
             .map_or(0, |s| filter::filter_rows(&s.rows, &search_q).len())
     };
 
@@ -715,7 +715,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             input_buffer,
                             action_status,
                             &prs_state,
-                            current_section_idx,
+                            current_filter_idx,
                             cursor.get(),
                             octocrab_for_actions.as_ref(),
                             assignee_candidates,
@@ -731,7 +731,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             {
                                 let pr_info = get_current_pr_info(
                                     &prs_state,
-                                    current_section_idx,
+                                    current_filter_idx,
                                     cursor.get(),
                                 );
                                 if let Some((owner, repo, number)) = pr_info {
@@ -785,7 +785,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             if let Some(ref octocrab) = octocrab_for_actions {
                                 let pr_info = get_current_pr_info(
                                     &prs_state,
-                                    current_section_idx,
+                                    current_filter_idx,
                                     cursor.get(),
                                 );
                                 if let Some((owner, repo, number)) = pr_info {
@@ -952,7 +952,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Diff (plain d, not Ctrl+d)
                         KeyCode::Char('d') if !modifiers.contains(KeyModifiers::CONTROL) => {
                             let pr_info =
-                                get_current_pr_info(&prs_state, current_section_idx, cursor.get());
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
                             if let Some((owner, repo, number)) = pr_info {
                                 match pr_actions::open_diff(&owner, &repo, number) {
                                     Ok(msg) => action_status.set(Some(msg)),
@@ -965,7 +965,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Checkout
                         KeyCode::Char(' ') => {
                             let current_data =
-                                prs_state.read().sections.get(current_section_idx).cloned();
+                                prs_state.read().filters.get(current_filter_idx).cloned();
                             if let Some(data) = current_data
                                 && let Some(pr) = data.prs.get(cursor.get())
                             {
@@ -991,7 +991,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             if let Some(ref octocrab) = octocrab_for_actions {
                                 let pr_info = get_current_pr_info(
                                     &prs_state,
-                                    current_section_idx,
+                                    current_filter_idx,
                                     cursor.get(),
                                 );
                                 if let Some((owner, repo, number)) = pr_info {
@@ -1028,11 +1028,11 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
                             // Get current PR and build candidates from its data
                             let (current_assignees, candidates) = {
-                                let pr_info = get_current_pr_info(&prs_state, current_section_idx, cursor.get());
+                                let pr_info = get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
                                 if let Some((_owner, _repo, number)) = pr_info {
                                     let state = prs_state.read();
-                                    let pr = state.sections
-                                        .get(current_section_idx)
+                                    let pr = state.filters
+                                        .get(current_filter_idx)
                                         .and_then(|s| s.prs.iter().find(|p| p.number == number));
 
                                     if let Some(pr) = pr {
@@ -1069,7 +1069,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             if let Some(ref octocrab) = octocrab_for_actions {
                                 let pr_info = get_current_pr_info(
                                     &prs_state,
-                                    current_section_idx,
+                                    current_filter_idx,
                                     cursor.get(),
                                 );
                                 if let Some((owner, repo, number)) = pr_info {
@@ -1102,7 +1102,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Copy issue number
                         KeyCode::Char('y') => {
                             let pr_info =
-                                get_current_pr_info(&prs_state, current_section_idx, cursor.get());
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
                             if let Some((_, _, number)) = pr_info {
                                 let text = number.to_string();
                                 match clipboard::copy_to_clipboard(&text) {
@@ -1114,7 +1114,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Copy PR URL
                         KeyCode::Char('Y') => {
                             let pr_info =
-                                get_current_pr_info(&prs_state, current_section_idx, cursor.get());
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
                             if let Some((owner, repo, number)) = pr_info {
                                 let url =
                                     format!("https://github.com/{owner}/{repo}/pull/{number}");
@@ -1130,7 +1130,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Open in browser
                         KeyCode::Char('o') => {
                             let pr_info =
-                                get_current_pr_info(&prs_state, current_section_idx, cursor.get());
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
                             if let Some((owner, repo, number)) = pr_info {
                                 let url =
                                     format!("https://github.com/{owner}/{repo}/pull/{number}");
@@ -1140,22 +1140,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 }
                             }
                         }
-                        // Retry / refresh (active section only)
+                        // Retry / refresh (active filter only)
                         KeyCode::Char('r') => {
                             if let Some(c) = &api_cache_for_refresh {
                                 c.invalidate_all();
                             }
-                            let idx = active_section.get();
+                            let idx = active_filter.get();
                             let mut state = prs_state.read().clone();
-                            if idx < state.sections.len() {
-                                state.sections[idx] = SectionData::default();
+                            if idx < state.filters.len() {
+                                state.filters[idx] = FilterData::default();
                             }
                             prs_state.set(state);
-                            let mut times = section_fetch_times.read().clone();
+                            let mut times = filter_fetch_times.read().clone();
                             if idx < times.len() {
                                 times[idx] = None;
                             }
-                            section_fetch_times.set(times);
+                            filter_fetch_times.set(times);
                             pending_detail.set(None);
                             cursor.set(0);
                             scroll_offset.set(0);
@@ -1259,10 +1259,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         // Section switching
                         KeyCode::Char('h') | KeyCode::Left => {
-                            if section_count > 0 {
-                                let current = active_section.get();
-                                active_section.set(if current == 0 {
-                                    section_count.saturating_sub(1)
+                            if filter_count > 0 {
+                                let current = active_filter.get();
+                                active_filter.set(if current == 0 {
+                                    filter_count.saturating_sub(1)
                                 } else {
                                     current - 1
                                 });
@@ -1272,8 +1272,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             }
                         }
                         KeyCode::Char('l') | KeyCode::Right => {
-                            if section_count > 0 {
-                                active_section.set((active_section.get() + 1) % section_count);
+                            if filter_count > 0 {
+                                active_filter.set((active_filter.get() + 1) % filter_count);
                                 cursor.set(0);
                                 scroll_offset.set(0);
                                 preview_scroll.set(0);
@@ -1296,22 +1296,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     }
 
     // Build tabs.
-    let tabs: Vec<Tab> = sections_cfg
+    let tabs: Vec<Tab> = filters_cfg
         .iter()
         .enumerate()
         .map(|(i, s)| Tab {
             title: s.title.clone(),
-            count: state_ref.sections.get(i).map(|d| d.pr_count),
+            count: state_ref.filters.get(i).map(|d| d.pr_count),
         })
         .collect();
 
-    // Current section data.
-    let current_data = state_ref.sections.get(current_section_idx);
+    // Current filter data.
+    let current_data = state_ref.filters.get(current_filter_idx);
     let columns = pr_columns(&theme.icons);
 
     // Layout config for hidden/width overrides.
-    let layout = sections_cfg
-        .get(current_section_idx)
+    let layout = filters_cfg
+        .get(current_filter_idx)
         .and_then(|s| s.layout.as_ref());
     let hidden_set: HashSet<String> = layout
         .map(|l| l.hidden.iter().cloned().collect())
@@ -1488,13 +1488,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
-        current_section_idx,
-        props.show_section_count,
+        current_filter_idx,
+        props.show_filter_count,
         depth,
         Some(theme.footer_prs),
         Some(theme.footer_prs),
         Some(theme.border_faint),
-        &theme.icons.tab_section,
+        &theme.icons.tab_filter,
     );
 
     // Build footer or input area based on mode.
@@ -1579,9 +1579,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             format!("PR {cursor_pos}/{total_rows} (filtered from {total})")
         }
     };
-    let active_fetch_time = section_fetch_times
+    let active_fetch_time = filter_fetch_times
         .read()
-        .get(current_section_idx)
+        .get(current_filter_idx)
         .copied()
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
@@ -1739,7 +1739,7 @@ fn handle_assign_input(
     mut input_buffer: State<String>,
     mut action_status: State<Option<String>>,
     prs_state: &State<PrsState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
     assignee_candidates: State<Vec<String>>,
@@ -1793,7 +1793,7 @@ fn handle_assign_input(
             if !final_input.trim().is_empty()
                 && let Some(octocrab) = octocrab_for_actions
             {
-                let info = get_current_pr_info(prs_state, section_idx, cursor);
+                let info = get_current_pr_info(prs_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let (mut usernames, needs_me) = parse_assignee_input(&final_input);
@@ -1869,7 +1869,7 @@ fn handle_assign_input(
             if !final_input.trim().is_empty()
                 && let Some(octocrab) = octocrab_for_actions
             {
-                let info = get_current_pr_info(prs_state, section_idx, cursor);
+                let info = get_current_pr_info(prs_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let (mut usernames, needs_me) = parse_assignee_input(&final_input);
@@ -1913,12 +1913,12 @@ fn handle_assign_input(
 /// Extract (owner, repo, number) from the current PR at cursor position.
 fn get_current_pr_info(
     prs_state: &State<PrsState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
 ) -> Option<(String, String, u64)> {
     let state = prs_state.read();
-    let section = state.sections.get(section_idx)?;
-    let pr = section.prs.get(cursor)?;
+    let filter = state.filters.get(filter_idx)?;
+    let pr = filter.prs.get(cursor)?;
     let repo_ref = pr.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), pr.number))
 }

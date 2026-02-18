@@ -24,7 +24,7 @@ struct ThemeFile {
 ///
 /// If both a global and a repo-local config exist, repo-local sections replace
 /// their global counterparts entirely (defaults, theme, keybindings are taken
-/// from the local config; section lists are replaced if non-empty; `repo_paths`
+/// from the local config; filter lists are replaced if non-empty; `repo_paths`
 /// are merged). Users should duplicate all needed settings in repo-local configs.
 pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
     // If an explicit path was given, just load that.
@@ -109,26 +109,26 @@ fn apply_theme_file(config: &mut AppConfig) -> Result<()> {
 
 /// Merge repo-local config on top of global config.
 ///
-/// Section lists (`pr_sections`, `issues_sections`, `notifications_sections`) from
+/// Filter lists (`pr_filters`, `issues_filters`, `notifications_filters`) from
 /// local replace global entirely when non-empty. Defaults, theme, and
 /// keybindings from local replace global wholesale. Repo paths are merged
 /// (local entries override matching global keys).
 fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
     AppConfig {
-        pr_sections: if local.pr_sections.is_empty() {
-            global.pr_sections
+        pr_filters: if local.pr_filters.is_empty() {
+            global.pr_filters
         } else {
-            local.pr_sections
+            local.pr_filters
         },
-        issues_sections: if local.issues_sections.is_empty() {
-            global.issues_sections
+        issues_filters: if local.issues_filters.is_empty() {
+            global.issues_filters
         } else {
-            local.issues_sections
+            local.issues_filters
         },
-        notifications_sections: if local.notifications_sections.is_empty() {
-            global.notifications_sections
+        notifications_filters: if local.notifications_filters.is_empty() {
+            global.notifications_filters
         } else {
-            local.notifications_sections
+            local.notifications_filters
         },
         github: local.github,
         defaults: local.defaults,

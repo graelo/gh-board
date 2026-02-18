@@ -3,7 +3,7 @@
 unknown_global_key = "ignored"
 another_unknown = 42
 
-[[pr_sections]]
+[[pr_filters]]
 title = "PRs with Unknown"
 filters = "is:open"
 unknown_section_key = "also ignored"

@@ -1,11 +1,11 @@
 # Global config fixture for integration tests.
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Global PRs"
 filters = "author:@me is:open"
 limit = 20
 
-[[issues_sections]]
+[[issues_filters]]
 title = "Global Issues"
 filters = "assignee:@me is:open"
 limit = 10

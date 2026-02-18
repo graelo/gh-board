@@ -1,4 +1,4 @@
 # Invalid TOML — unclosed string value.
-[[pr_sections]]
+[[pr_filters]]
 title = "Broken
 filters = "is:open"

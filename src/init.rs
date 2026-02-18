@@ -94,34 +94,34 @@ date_format = "relative"
 [defaults.preview]
 width = 0.45
 
-[[pr_sections]]
+[[pr_filters]]
 title = "My PRs"
 filters = "is:open author:@me"
 limit = 50
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Needs My Review"
 filters = "is:open review-requested:@me"
 limit = 50
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Recently Merged"
 filters = "is:merged author:@me sort:updated-desc"
 limit = 20
 
-[[issues_sections]]
+[[issues_filters]]
 title = "Assigned to Me"
 filters = "is:open assignee:@me"
 
-[[issues_sections]]
+[[issues_filters]]
 title = "Created by Me"
 filters = "is:open author:@me"
 
-[[notifications_sections]]
+[[notifications_filters]]
 title = "Unread"
 filters = "is:unread"
 
-[[notifications_sections]]
+[[notifications_filters]]
 title = "Review Requests"
 filters = "is:unread reason:review_requested"
 "#

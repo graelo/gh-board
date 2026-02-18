@@ -37,12 +37,12 @@ pub(crate) mod color_de {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct AppConfig {
-    #[serde(default, rename = "pr_sections")]
-    pub pr_sections: Vec<PrSection>,
-    #[serde(default, rename = "issues_sections")]
-    pub issues_sections: Vec<IssueSection>,
-    #[serde(default, rename = "notifications_sections")]
-    pub notifications_sections: Vec<NotificationSection>,
+    #[serde(default, rename = "pr_filters")]
+    pub pr_filters: Vec<PrFilter>,
+    #[serde(default, rename = "issues_filters")]
+    pub issues_filters: Vec<IssueFilter>,
+    #[serde(default, rename = "notifications_filters")]
+    pub notifications_filters: Vec<NotificationFilter>,
     pub github: GitHubConfig,
     pub defaults: Defaults,
     pub theme: Theme,
@@ -76,11 +76,11 @@ impl Default for GitHubConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Sections
+// Filters
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct PrSection {
+pub struct PrFilter {
     pub title: String,
     pub filters: String,
     pub limit: Option<u32>,
@@ -89,7 +89,7 @@ pub struct PrSection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct IssueSection {
+pub struct IssueFilter {
     pub title: String,
     pub filters: String,
     pub limit: Option<u32>,
@@ -98,7 +98,7 @@ pub struct IssueSection {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct NotificationSection {
+pub struct NotificationFilter {
     pub title: String,
     pub filters: String,
     pub limit: Option<u32>,
@@ -187,10 +187,7 @@ impl Theme {
     pub fn merge(base: Theme, overlay: Theme) -> Theme {
         Theme {
             ui: UiTheme {
-                sections_show_count: overlay
-                    .ui
-                    .sections_show_count
-                    .or(base.ui.sections_show_count),
+                filters_show_count: overlay.ui.filters_show_count.or(base.ui.filters_show_count),
                 table: TableTheme {
                     show_separator: overlay
                         .ui
@@ -364,11 +361,11 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         role_member: overlay.role_member.or(base.role_member),
         role_owner: overlay.role_owner.or(base.role_owner),
         role_unknown: overlay.role_unknown.or(base.role_unknown),
-        section_prs: overlay.section_prs.or(base.section_prs),
-        section_issues: overlay.section_issues.or(base.section_issues),
-        section_notifications: overlay.section_notifications.or(base.section_notifications),
-        section_repo: overlay.section_repo.or(base.section_repo),
-        tab_section: overlay.tab_section.or(base.tab_section),
+        view_prs: overlay.view_prs.or(base.view_prs),
+        view_issues: overlay.view_issues.or(base.view_issues),
+        view_notifications: overlay.view_notifications.or(base.view_notifications),
+        view_repo: overlay.view_repo.or(base.view_repo),
+        tab_filter: overlay.tab_filter.or(base.tab_filter),
         pill_left: overlay.pill_left.or(base.pill_left),
         pill_right: overlay.pill_right.or(base.pill_right),
     }
@@ -377,7 +374,7 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct UiTheme {
-    pub sections_show_count: Option<bool>,
+    pub filters_show_count: Option<bool>,
     pub table: TableTheme,
 }
 
@@ -658,13 +655,13 @@ pub struct IconConfig {
     pub role_member: Option<String>,
     pub role_owner: Option<String>,
     pub role_unknown: Option<String>,
-    // Status bar sections
-    pub section_prs: Option<String>,
-    pub section_issues: Option<String>,
-    pub section_notifications: Option<String>,
-    pub section_repo: Option<String>,
-    // Tab section marker
-    pub tab_section: Option<String>,
+    // Status bar views
+    pub view_prs: Option<String>,
+    pub view_issues: Option<String>,
+    pub view_notifications: Option<String>,
+    pub view_repo: Option<String>,
+    // Tab filter marker
+    pub tab_filter: Option<String>,
     // Pill caps (rounded edges)
     pub pill_left: Option<String>,
     pub pill_right: Option<String>,

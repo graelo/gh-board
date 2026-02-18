@@ -51,60 +51,60 @@ date_format = "relative"
 width = 0.45
 
 # ==============================================================================
-# PR SECTIONS
+# PR FILTERS
 # ==============================================================================
 
-[[pr_sections]]
+[[pr_filters]]
 title = "My PRs"
 filters = "is:open author:@me"
 limit = 50  # Optional: max items to fetch
 # host = "github.acme.com"  # Optional: GitHub Enterprise hostname (default: github.com)
 
-# Optional: override column visibility/width for this section
-# [pr_sections.layout]
+# Optional: override column visibility/width for this filter
+# [pr_filters.layout]
 # hidden = ["assignees", "created_at"]
 # widths = { title = 60, repo = 30 }
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Needs My Review"
 filters = "is:open review-requested:@me"
 limit = 50
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Waiting on CI"
 filters = "is:open author:@me status:pending"
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Recently Merged"
 filters = "is:merged author:@me sort:updated-desc"
 limit = 20
 
 # ==============================================================================
-# ISSUE SECTIONS
+# ISSUE FILTERS
 # ==============================================================================
 
-[[issues_sections]]
+[[issues_filters]]
 title = "Assigned to Me"
 filters = "is:open assignee:@me"
 
-[[issues_sections]]
+[[issues_filters]]
 title = "Created by Me"
 filters = "is:open author:@me"
 
-[[issues_sections]]
+[[issues_filters]]
 title = "Mentions"
 filters = "is:open mentions:@me"
 
-[[issues_sections]]
+[[issues_filters]]
 title = "All Repo Issues"
 filters = "is:open"
 limit = 50
 
 # ==============================================================================
-# NOTIFICATION SECTIONS
+# NOTIFICATION FILTERS
 # ==============================================================================
 
-[[notifications_sections]]
+[[notifications_filters]]
 title = "Unread"
 # Supported filters:
 #   repo:<owner/name>
@@ -113,7 +113,7 @@ title = "Unread"
 #   is:unread, is:read, is:done, is:all
 filters = "is:unread"
 
-[[notifications_sections]]
+[[notifications_filters]]
 title = "Review Requests"
 filters = "is:unread reason:review_requested"
 
@@ -131,8 +131,8 @@ filters = "is:unread reason:review_requested"
 # ==============================================================================
 
 [theme.ui]
-# Show item count in section tabs (e.g., "My PRs (5)")
-sections_show_count = true
+# Show item count in filter tabs (e.g., "My PRs (5)")
+filters_show_count = true
 
 [theme.ui.table]
 # Show separators between table rows
@@ -223,7 +223,7 @@ role      = "#a6adc8"  # Catppuccin subtext0
 separator = "#6c7086"  # Catppuccin overlay0
 
 # ------------------------------------------------------------------------------
-# Colors: Footer (per-view active section background)
+# Colors: Footer (per-view active filter background)
 # ------------------------------------------------------------------------------
 
 [theme.colors.footer]
@@ -474,21 +474,21 @@ builtin = "page_up"
 
 [[keybindings.universal]]
 key = "h"
-builtin = "prev_section"
-name = "Previous section"
+builtin = "prev_filter"
+name = "Previous filter"
 
 [[keybindings.universal]]
 key = "left"
-builtin = "prev_section"
+builtin = "prev_filter"
 
 [[keybindings.universal]]
 key = "l"
-builtin = "next_section"
-name = "Next section"
+builtin = "next_filter"
+name = "Next filter"
 
 [[keybindings.universal]]
 key = "right"
-builtin = "next_section"
+builtin = "next_filter"
 
 [[keybindings.universal]]
 key = "p"
@@ -503,12 +503,12 @@ name = "Open in browser"
 [[keybindings.universal]]
 key = "r"
 builtin = "refresh"
-name = "Refresh current section"
+name = "Refresh current filter"
 
 [[keybindings.universal]]
 key = "R"
 builtin = "refresh_all"
-name = "Refresh all sections (clear cache)"
+name = "Refresh all filters (clear cache)"
 
 [[keybindings.universal]]
 key = "/"

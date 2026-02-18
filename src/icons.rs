@@ -58,13 +58,13 @@ pub struct ResolvedIcons {
     pub role_member: String,
     pub role_owner: String,
     pub role_unknown: String,
-    // Status bar sections (4)
-    pub section_prs: String,
-    pub section_issues: String,
-    pub section_notifications: String,
-    pub section_repo: String,
-    // Tab section marker (1)
-    pub tab_section: String,
+    // Status bar views (4)
+    pub view_prs: String,
+    pub view_issues: String,
+    pub view_notifications: String,
+    pub view_repo: String,
+    // Tab filter marker (1)
+    pub tab_filter: String,
     // Pill caps (rounded edges, 2)
     pub pill_left: String,
     pub pill_right: String,
@@ -128,13 +128,13 @@ impl ResolvedIcons {
             role_member: "\u{25cf}".to_owned(),         // ●
             role_owner: "\u{2605}".to_owned(),          // ★
             role_unknown: "?".to_owned(),
-            // Status bar sections
-            section_prs: "\u{2195}".to_owned(),            // ↕
-            section_issues: "\u{2299}".to_owned(),         // ⊙
-            section_notifications: "\u{1f514}".to_owned(), // 🔔
-            section_repo: "\u{2387}".to_owned(),           // ⎇
-            // Tab section marker
-            tab_section: "\u{25c6}".to_owned(), // ◆
+            // Status bar views
+            view_prs: "\u{2195}".to_owned(),            // ↕
+            view_issues: "\u{2299}".to_owned(),         // ⊙
+            view_notifications: "\u{1f514}".to_owned(), // 🔔
+            view_repo: "\u{2387}".to_owned(),           // ⎇
+            // Tab filter marker
+            tab_filter: "\u{25c6}".to_owned(), // ◆
             // Pill caps (no rounded edges in unicode preset)
             pill_left: String::new(),
             pill_right: String::new(),
@@ -199,13 +199,13 @@ impl ResolvedIcons {
             role_member: "\u{f42b}".to_owned(),          //  nf-oct-organization
             role_owner: "\u{f511}".to_owned(),           //  nf-oct-shield_lock
             role_unknown: "\u{f0b59}".to_owned(),        // 󰭙 nf-md-account_question
-            // Status bar sections
-            section_prs: "\u{f407}".to_owned(), //  nf-oct-git_pull_request
-            section_issues: "\u{f41b}".to_owned(), //  nf-oct-issue_opened
-            section_notifications: "\u{eaa2}".to_owned(), //  nf-cod-bell
-            section_repo: "\u{e727}".to_owned(), //  nf-dev-git_branch
-            // Tab section marker
-            tab_section: "\u{f02b}".to_owned(), //  nf-fa-tag
+            // Status bar views
+            view_prs: "\u{f407}".to_owned(), //  nf-oct-git_pull_request
+            view_issues: "\u{f41b}".to_owned(), //  nf-oct-issue_opened
+            view_notifications: "\u{eaa2}".to_owned(), //  nf-cod-bell
+            view_repo: "\u{e727}".to_owned(), //  nf-dev-git_branch
+            // Tab filter marker
+            tab_filter: "\u{f02b}".to_owned(), //  nf-fa-tag
             // Pill caps (Powerline half-circles for rounded edges)
             pill_left: "\u{e0b6}".to_owned(), //  nf-pl-right_half_circle_thick
             pill_right: "\u{e0b4}".to_owned(), //  nf-pl-left_half_circle_thick
@@ -269,13 +269,13 @@ impl ResolvedIcons {
             role_member: "@".to_owned(),
             role_owner: "!".to_owned(),
             role_unknown: "?".to_owned(),
-            // Status bar sections
-            section_prs: "PR".to_owned(),
-            section_issues: "I".to_owned(),
-            section_notifications: "N".to_owned(),
-            section_repo: "R".to_owned(),
-            // Tab section marker
-            tab_section: "#".to_owned(),
+            // Status bar views
+            view_prs: "PR".to_owned(),
+            view_issues: "I".to_owned(),
+            view_notifications: "N".to_owned(),
+            view_repo: "R".to_owned(),
+            // Tab filter marker
+            tab_filter: "#".to_owned(),
             // Pill caps (no rounded edges in ascii preset)
             pill_left: String::new(),
             pill_right: String::new(),
@@ -365,14 +365,14 @@ impl ResolvedIcons {
             role_member: config.role_member.clone().unwrap_or(base.role_member),
             role_owner: config.role_owner.clone().unwrap_or(base.role_owner),
             role_unknown: config.role_unknown.clone().unwrap_or(base.role_unknown),
-            section_prs: config.section_prs.clone().unwrap_or(base.section_prs),
-            section_issues: config.section_issues.clone().unwrap_or(base.section_issues),
-            section_notifications: config
-                .section_notifications
+            view_prs: config.view_prs.clone().unwrap_or(base.view_prs),
+            view_issues: config.view_issues.clone().unwrap_or(base.view_issues),
+            view_notifications: config
+                .view_notifications
                 .clone()
-                .unwrap_or(base.section_notifications),
-            section_repo: config.section_repo.clone().unwrap_or(base.section_repo),
-            tab_section: config.tab_section.clone().unwrap_or(base.tab_section),
+                .unwrap_or(base.view_notifications),
+            view_repo: config.view_repo.clone().unwrap_or(base.view_repo),
+            tab_filter: config.tab_filter.clone().unwrap_or(base.tab_filter),
             pill_left: config.pill_left.clone().unwrap_or(base.pill_left),
             pill_right: config.pill_right.clone().unwrap_or(base.pill_right),
         }

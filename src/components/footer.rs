@@ -11,14 +11,14 @@ use crate::icons::ResolvedIcons;
 // Footer component — structured status bar
 // ---------------------------------------------------------------------------
 
-pub struct FooterSection {
+pub struct FooterView {
     pub label: String,
     pub is_active: bool,
     pub color: Color,
 }
 
 pub struct RenderedFooter {
-    pub sections: Vec<FooterSection>,
+    pub views: Vec<FooterView>,
     pub inactive_fg: Color,
     pub scope_label: String,
     pub context_text: String,
@@ -40,7 +40,7 @@ impl RenderedFooter {
         updated_text: String,
         rate_limit_text: String,
         depth: ColorDepth,
-        section_colors: [Option<AppColor>; 4],
+        view_colors: [Option<AppColor>; 4],
         inactive_color: Option<AppColor>,
         text_color: Option<AppColor>,
         border_color: Option<AppColor>,
@@ -50,10 +50,10 @@ impl RenderedFooter {
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let separator_fg = text_fg;
 
-        let sections = ViewKind::ALL
+        let views = ViewKind::ALL
             .iter()
-            .zip(section_colors.iter())
-            .map(|(v, color)| FooterSection {
+            .zip(view_colors.iter())
+            .map(|(v, color)| FooterView {
                 label: v.icon_label(icons),
                 is_active: *v == active_view,
                 color: color.map_or(Color::White, |c| c.to_crossterm_color(depth)),
@@ -61,7 +61,7 @@ impl RenderedFooter {
             .collect();
 
         Self {
-            sections,
+            views,
             inactive_fg,
             scope_label,
             context_text,
@@ -146,8 +146,8 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
             padding_left: 1,
             padding_right: 1,
         ) {
-            // Left: section indicators
-            #(f.sections.iter().map(|s| {
+            // Left: view indicators
+            #(f.views.iter().map(|s| {
                 let (fg, bg, weight) = if s.is_active {
                     (Color::White, Some(s.color), Weight::Bold)
                 } else {

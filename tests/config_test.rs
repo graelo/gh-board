@@ -6,14 +6,14 @@ use gh_board::config::types::AppConfig;
 #[test]
 fn parse_minimal_config() {
     let toml = r#"
-[[pr_sections]]
+[[pr_filters]]
 title = "My PRs"
 filters = "author:@me is:open"
 "#;
     let config: AppConfig = toml::from_str(toml).unwrap();
-    assert_eq!(config.pr_sections.len(), 1);
-    assert_eq!(config.pr_sections[0].title, "My PRs");
-    assert_eq!(config.pr_sections[0].filters, "author:@me is:open");
+    assert_eq!(config.pr_filters.len(), 1);
+    assert_eq!(config.pr_filters[0].title, "My PRs");
+    assert_eq!(config.pr_filters[0].filters, "author:@me is:open");
 }
 
 #[test]
@@ -21,12 +21,12 @@ fn parse_unknown_keys_ignored() {
     let toml = r#"
 unknown_top_level = "should be ignored"
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Test"
 filters = "is:open"
 "#;
     let config: AppConfig = toml::from_str(toml).unwrap();
-    assert_eq!(config.pr_sections.len(), 1);
+    assert_eq!(config.pr_filters.len(), 1);
 }
 
 #[test]
@@ -163,8 +163,8 @@ fn parse_repo_paths() {
 fn load_global_fixture() {
     let path = Path::new("tests/fixtures/global_config.toml");
     let config = load_config(Some(path)).unwrap();
-    assert_eq!(config.pr_sections.len(), 1);
-    assert_eq!(config.pr_sections[0].title, "Global PRs");
+    assert_eq!(config.pr_filters.len(), 1);
+    assert_eq!(config.pr_filters[0].title, "Global PRs");
     assert_eq!(config.github.refetch_interval_minutes, 15);
     assert!((config.defaults.preview.width - 0.5).abs() < f64::EPSILON);
     assert!(config.repo_paths.contains_key("org/global-repo"));
@@ -174,9 +174,9 @@ fn load_global_fixture() {
 fn load_local_override_fixture() {
     let path = Path::new("tests/fixtures/local_override.toml");
     let config = load_config(Some(path)).unwrap();
-    assert_eq!(config.pr_sections.len(), 1);
-    assert_eq!(config.pr_sections[0].title, "Local PRs");
-    assert_eq!(config.pr_sections[0].limit, Some(50));
+    assert_eq!(config.pr_filters.len(), 1);
+    assert_eq!(config.pr_filters[0].title, "Local PRs");
+    assert_eq!(config.pr_filters[0].limit, Some(50));
     assert_eq!(config.defaults.view, gh_board::config::types::View::Issues);
     assert_eq!(config.github.refetch_interval_minutes, 5);
     assert!((config.defaults.preview.width - 0.3).abs() < f64::EPSILON);
@@ -199,8 +199,8 @@ fn invalid_toml_produces_error() {
 fn unknown_keys_in_fixture_tolerated() {
     let path = Path::new("tests/fixtures/unknown_keys_config.toml");
     let config = load_config(Some(path)).unwrap();
-    assert_eq!(config.pr_sections.len(), 1);
-    assert_eq!(config.pr_sections[0].title, "PRs with Unknown");
+    assert_eq!(config.pr_filters.len(), 1);
+    assert_eq!(config.pr_filters[0].title, "PRs with Unknown");
 }
 
 #[test]
@@ -208,7 +208,7 @@ fn config_flag_overrides_discovery() {
     // When an explicit path is given, it should be loaded directly.
     let path = Path::new("tests/fixtures/global_config.toml");
     let config = load_config(Some(path)).unwrap();
-    assert_eq!(config.pr_sections[0].title, "Global PRs");
+    assert_eq!(config.pr_filters[0].title, "Global PRs");
 }
 
 #[test]

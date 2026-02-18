@@ -1,7 +1,7 @@
 # T041: ANSI-only theme fixture.
 # Every color slot uses an ANSI-256 index (0-255), no hex values.
 
-[[pr_sections]]
+[[pr_filters]]
 title = "My PRs"
 filters = "is:open author:@me"
 
@@ -12,7 +12,7 @@ view = "prs"
 width = 0.45
 
 [theme.ui]
-sections_show_count = true
+filters_show_count = true
 
 [theme.ui.table]
 show_separator = true

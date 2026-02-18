@@ -141,9 +141,9 @@ document maps each configuration field to the exact UI elements it affects.
 
 ## UI Behavior — `[theme.ui]`
 
-### `sections_show_count`
+### `filters_show_count`
 
-Controls whether section tabs display the item count in parentheses,
+Controls whether filter tabs display the item count in parentheses,
 e.g. `My PRs (5)` vs just `My PRs`.
 
 **Default:** `true`
@@ -191,8 +191,8 @@ state pill, branch info, and the `by @author · age · role` line.
 
 ## Footer Colors — `[theme.colors.footer]`
 
-Per-view background colors for the active section indicator in the footer bar.
-The foreground text is always white and bold for the active section.
+Per-view background colors for the active filter indicator in the footer bar.
+The foreground text is always white and bold for the active filter.
 
 | Field           | Default       | Element                                   |
 | --------------- | ------------- | ----------------------------------------- |

@@ -85,6 +85,19 @@ fn parse_reason(s: &str) -> NotificationReason {
     }
 }
 
+fn api_url_to_html_url(api_url: &str, subject_type: &str, owner: &str, repo_name: &str) -> String {
+    if api_url.is_empty() {
+        return String::new();
+    }
+    match subject_type {
+        "Release" => format!("https://github.com/{owner}/{repo_name}/releases"),
+        "PullRequest" => api_url
+            .replace("https://api.github.com/repos/", "https://github.com/")
+            .replace("/pulls/", "/pull/"),
+        _ => api_url.replace("https://api.github.com/repos/", "https://github.com/"),
+    }
+}
+
 fn parse_subject_type(s: &str) -> SubjectType {
     match s {
         "PullRequest" => SubjectType::PullRequest,
@@ -107,7 +120,9 @@ fn into_domain(n: octocrab::models::activity::Notification) -> Notification {
         name: n.repository.name.clone(),
     };
     let reason = parse_reason(&n.reason);
-    let url = n.subject.url.map_or_else(String::new, |u| u.to_string());
+    let url = n.subject.url.map_or_else(String::new, |u| {
+        api_url_to_html_url(u.as_str(), &n.subject.r#type, &repo.owner, &repo.name)
+    });
 
     Notification {
         id: n.id.0.to_string(),
@@ -310,6 +325,63 @@ mod tests {
             NotificationReason::SecurityAlert
         );
         assert_eq!(parse_reason("unknown_thing"), NotificationReason::Unknown);
+    }
+
+    #[test]
+    fn api_url_issue_conversion() {
+        assert_eq!(
+            api_url_to_html_url(
+                "https://api.github.com/repos/owner/repo/issues/123",
+                "Issue",
+                "owner",
+                "repo",
+            ),
+            "https://github.com/owner/repo/issues/123"
+        );
+    }
+
+    #[test]
+    fn api_url_pull_request_conversion() {
+        assert_eq!(
+            api_url_to_html_url(
+                "https://api.github.com/repos/owner/repo/pulls/42",
+                "PullRequest",
+                "owner",
+                "repo",
+            ),
+            "https://github.com/owner/repo/pull/42"
+        );
+    }
+
+    #[test]
+    fn api_url_discussion_conversion() {
+        assert_eq!(
+            api_url_to_html_url(
+                "https://api.github.com/repos/owner/repo/discussions/7",
+                "Discussion",
+                "owner",
+                "repo",
+            ),
+            "https://github.com/owner/repo/discussions/7"
+        );
+    }
+
+    #[test]
+    fn api_url_release_falls_back_to_listing() {
+        assert_eq!(
+            api_url_to_html_url(
+                "https://api.github.com/repos/owner/repo/releases/99999999",
+                "Release",
+                "owner",
+                "repo",
+            ),
+            "https://github.com/owner/repo/releases"
+        );
+    }
+
+    #[test]
+    fn api_url_empty_passthrough() {
+        assert_eq!(api_url_to_html_url("", "Issue", "owner", "repo"), "");
     }
 
     #[test]

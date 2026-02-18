@@ -1,0 +1,100 @@
+[theme.ui]
+sections_show_count = true
+
+[theme.ui.table]
+show_separator = true
+compact = false
+
+[theme.colors.text]
+primary = "#cdd6f4"
+secondary = "#a6adc8"
+inverted = "#1e1e2e"
+faint = "#6c7086"
+warning = "#f9e2af"
+success = "#a6e3a1"
+error = "#f38ba8"
+actor = "#89b4fa"
+
+[theme.colors.background]
+selected = "#45475a"
+
+[theme.colors.border]
+primary = "#6c7086"
+secondary = "#45475a"
+faint = "#313244"
+
+[theme.colors.icon]
+newcontributor = "#f9e2af"
+contributor = "#a6e3a1"
+collaborator = "#89b4fa"
+member = "#cba6f7"
+owner = "#fab387"
+unknownrole = "#6c7086"
+
+[theme.colors.pill]
+draft_bg  = "#6c7086"
+open_bg   = "#a6e3a1"
+closed_bg = "#f38ba8"
+merged_bg = "#89b4fa"
+fg        = "#1e1e2e"
+branch    = "#cdd6f4"
+author    = "#89b4fa"
+age       = "#6c7086"
+role      = "#a6adc8"
+separator = "#6c7086"
+
+[theme.colors.footer]
+prs           = "#89b4fa"
+issues        = "#a6e3a1"
+notifications = "#cba6f7"
+repo          = "#b4befe"
+
+[theme.colors.markdown]
+text = "#cdd6f4"
+heading = "#89b4fa"
+h1 = "#f38ba8"
+h2 = "#fab387"
+h3 = "#f9e2af"
+h4 = "#a6e3a1"
+h5 = "#89b4fa"
+h6 = "#cba6f7"
+code = "#f5c2e7"
+code_block = "#45475a"
+link = "#89dceb"
+link_text = "#89b4fa"
+image = "#89dceb"
+image_text = "#a6e3a1"
+horizontal_rule = "#6c7086"
+strikethrough = "#6c7086"
+emph = "#f5c2e7"
+strong = "#fab387"
+
+[theme.colors.markdown.syntax]
+text = "#cdd6f4"
+background = "#1e1e2e"
+error = "#f38ba8"
+error_background = "#45475a"
+comment = "#6c7086"
+comment_preproc = "#a6e3a1"
+keyword = "#cba6f7"
+keyword_reserved = "#f38ba8"
+keyword_namespace = "#89b4fa"
+keyword_type = "#f9e2af"
+operator = "#89dceb"
+punctuation = "#cdd6f4"
+name = "#cdd6f4"
+name_builtin = "#f5c2e7"
+name_tag = "#89b4fa"
+name_attribute = "#f9e2af"
+name_class = "#f9e2af"
+name_decorator = "#f5c2e7"
+name_function = "#89b4fa"
+number = "#fab387"
+string = "#a6e3a1"
+string_escape = "#f5c2e7"
+deleted = "#f38ba8"
+inserted = "#a6e3a1"
+subheading = "#fab387"
+
+[theme.icons]
+preset = "unicode"

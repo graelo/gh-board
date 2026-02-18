@@ -1,8 +1,17 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use serde::Deserialize;
 
-use crate::config::types::AppConfig;
+use crate::config::builtin_themes;
+use crate::config::types::{AppConfig, Theme};
+
+/// Wrapper used to parse a theme-only TOML file (contains only `[theme.*]`).
+#[derive(Deserialize, Default)]
+struct ThemeFile {
+    #[serde(default)]
+    theme: Theme,
+}
 
 /// Discover and load the app config.
 ///
@@ -22,15 +31,17 @@ pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
     if let Some(path) = explicit_path {
         let contents =
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-        let config: AppConfig = toml::from_str(&contents)
+        let mut config: AppConfig = toml::from_str(&contents)
             .with_context(|| format!("parsing TOML from {}", path.display()))?;
+        config.repo_paths = expand_repo_paths(std::mem::take(&mut config.repo_paths));
+        apply_theme_file(&mut config)?;
         return Ok(config);
     }
 
     let global_path = find_global_config();
     let local_path = find_repo_local_config();
 
-    match (global_path, local_path) {
+    let mut config = match (global_path, local_path) {
         (Some(global), Some(local)) => {
             // Parse global first, then overlay local.
             let global_str = std::fs::read_to_string(&global)
@@ -43,20 +54,57 @@ pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
             let local_cfg: AppConfig = toml::from_str(&local_str)
                 .with_context(|| format!("parsing TOML from {}", local.display()))?;
 
-            Ok(merge_configs(global_cfg, local_cfg))
+            merge_configs(global_cfg, local_cfg)
         }
         (Some(path), None) | (None, Some(path)) => {
             let contents = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
             let config: AppConfig = toml::from_str(&contents)
                 .with_context(|| format!("parsing TOML from {}", path.display()))?;
-            Ok(config)
+            config
         }
         (None, None) => {
             // No config found — use defaults.
-            Ok(AppConfig::default())
+            AppConfig::default()
         }
-    }
+    };
+
+    config.repo_paths = expand_repo_paths(std::mem::take(&mut config.repo_paths));
+    apply_theme_file(&mut config)?;
+    Ok(config)
+}
+
+/// If `config.theme_file` is set, load and merge it as the base theme.
+///
+/// Inline `[theme.*]` in the config always wins over the file theme.
+fn apply_theme_file(config: &mut AppConfig) -> Result<()> {
+    let Some(ref theme_file) = config.theme_file.clone() else {
+        return Ok(());
+    };
+
+    let toml_src = if let Some(name) = theme_file.strip_prefix("builtin:") {
+        builtin_themes::get(name).with_context(|| {
+            let names = builtin_themes::list().join(", ");
+            format!("unknown built-in theme {name:?}; available: {names}")
+        })?
+    } else {
+        // Filesystem path — expand leading `~`.
+        let path = expand_tilde(theme_file);
+        // We need a static str but we have a runtime String — store it in
+        // a Box and leak it so we can treat it as `&'static str`.
+        // This happens at most once per run so the tiny leak is acceptable.
+        let contents = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading theme file {}", path.display()))?;
+        Box::leak(contents.into_boxed_str())
+    };
+
+    let file_theme: ThemeFile =
+        toml::from_str(toml_src).with_context(|| format!("parsing theme file {theme_file:?}"))?;
+
+    // The file provides the base; inline [theme.*] is the overlay.
+    let inline = std::mem::take(&mut config.theme);
+    config.theme = Theme::merge(file_theme.theme, inline);
+    Ok(())
 }
 
 /// Merge repo-local config on top of global config.
@@ -82,6 +130,7 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
         } else {
             local.notifications_sections
         },
+        github: local.github,
         defaults: local.defaults,
         theme: local.theme,
         keybindings: local.keybindings,
@@ -90,6 +139,7 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
             paths.extend(local.repo_paths);
             paths
         },
+        theme_file: local.theme_file,
     }
 }
 
@@ -141,4 +191,29 @@ fn find_global_config() -> Option<PathBuf> {
 
 fn dirs_fallback() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
+}
+
+fn expand_tilde(path: &str) -> PathBuf {
+    if let Some(rest) = path.strip_prefix("~/")
+        && let Some(home) = dirs_fallback()
+    {
+        return home.join(rest);
+    }
+    PathBuf::from(path)
+}
+
+fn expand_repo_paths(
+    paths: std::collections::HashMap<String, PathBuf>,
+) -> std::collections::HashMap<String, PathBuf> {
+    paths
+        .into_iter()
+        .map(|(k, v)| {
+            let expanded = v.to_str().map(std::borrow::ToOwned::to_owned);
+            let expanded = match expanded {
+                Some(s) => expand_tilde(&s),
+                None => v,
+            };
+            (k, expanded)
+        })
+        .collect()
 }

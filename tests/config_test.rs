@@ -32,9 +32,11 @@ filters = "is:open"
 #[test]
 fn parse_defaults() {
     let toml = r#"
+[github]
+refetch_interval_minutes = 5
+
 [defaults]
 view = "issues"
-refetch_interval_minutes = 5
 date_format = "%d/%m/%Y"
 
 [defaults.preview]
@@ -42,7 +44,7 @@ width = 0.6
 "#;
     let config: AppConfig = toml::from_str(toml).unwrap();
     assert_eq!(config.defaults.view, gh_board::config::types::View::Issues);
-    assert_eq!(config.defaults.refetch_interval_minutes, 5);
+    assert_eq!(config.github.refetch_interval_minutes, 5);
     assert!((config.defaults.preview.width - 0.6).abs() < f64::EPSILON);
 }
 
@@ -116,7 +118,7 @@ primary = "not_a_color"
 fn default_config_has_sane_defaults() {
     let config = AppConfig::default();
     assert_eq!(config.defaults.view, gh_board::config::types::View::Prs);
-    assert_eq!(config.defaults.refetch_interval_minutes, 10);
+    assert_eq!(config.github.refetch_interval_minutes, 10);
     assert!((config.defaults.preview.width - 0.45).abs() < f64::EPSILON);
 }
 
@@ -163,7 +165,7 @@ fn load_global_fixture() {
     let config = load_config(Some(path)).unwrap();
     assert_eq!(config.pr_sections.len(), 1);
     assert_eq!(config.pr_sections[0].title, "Global PRs");
-    assert_eq!(config.defaults.refetch_interval_minutes, 15);
+    assert_eq!(config.github.refetch_interval_minutes, 15);
     assert!((config.defaults.preview.width - 0.5).abs() < f64::EPSILON);
     assert!(config.repo_paths.contains_key("org/global-repo"));
 }
@@ -176,7 +178,7 @@ fn load_local_override_fixture() {
     assert_eq!(config.pr_sections[0].title, "Local PRs");
     assert_eq!(config.pr_sections[0].limit, Some(50));
     assert_eq!(config.defaults.view, gh_board::config::types::View::Issues);
-    assert_eq!(config.defaults.refetch_interval_minutes, 5);
+    assert_eq!(config.github.refetch_interval_minutes, 5);
     assert!((config.defaults.preview.width - 0.3).abs() < f64::EPSILON);
 }
 

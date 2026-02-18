@@ -12,6 +12,7 @@ pub mod filter;
 pub mod git;
 pub mod github;
 pub mod icons;
+pub mod init;
 pub mod markdown;
 pub mod theme;
 pub mod util;

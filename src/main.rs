@@ -1,11 +1,12 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use iocraft::prelude::*;
 
 use gh_board::app::App;
 use gh_board::color::ColorDepth;
+use gh_board::config::builtin_themes;
 use gh_board::config::keybindings::MergedBindings;
 use gh_board::config::loader;
 use gh_board::github::client::GitHubClient;
@@ -21,6 +22,17 @@ struct Cli {
     /// Enable debug logging to debug.log.
     #[arg(long)]
     debug: bool,
+
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    /// Initialize a new configuration file interactively.
+    Init,
+    /// List available built-in themes.
+    Themes,
 }
 
 fn main() -> Result<()> {
@@ -34,6 +46,20 @@ fn main() -> Result<()> {
     }));
 
     let cli = Cli::parse();
+
+    // Handle subcommands that don't need the TUI.
+    match cli.command {
+        Some(Commands::Themes) => {
+            for name in builtin_themes::list() {
+                println!("{name}");
+            }
+            return Ok(());
+        }
+        Some(Commands::Init) => {
+            return gh_board::init::run();
+        }
+        None => {}
+    }
 
     // Set up tracing.
     if cli.debug {
@@ -70,7 +96,7 @@ fn main() -> Result<()> {
     let _guard = tokio_rt.enter();
 
     // Create GitHub client and get the default host octocrab instance.
-    let mut gh_client = GitHubClient::new(config.defaults.refetch_interval_minutes);
+    let mut gh_client = GitHubClient::new(config.github.refetch_interval_minutes);
     let default_host = "github.com";
     let octocrab = gh_client.octocrab_for(default_host)?;
     let api_cache = gh_client.cache();

@@ -1,7 +1,7 @@
-# gh-board configuration – Solarized Light theme
+# Solarized Light – terminal 16-color palette (ANSI 0–15)
 #
-# Uses the terminal's 16-color palette (ANSI 0–15). Configure your terminal
-# emulator with the Solarized palette for correct rendering.
+# Requires your terminal emulator to be configured with the Solarized palette.
+# Works at any color depth; no true-color support needed.
 #
 # Solarized ANSI mapping (when terminal is set to Solarized):
 #
@@ -23,73 +23,6 @@
 #   13     violet      accent
 #   14     base1       comments / de-emphasized
 #   15     base3       background
-#
-# Copy to ~/.config/gh-board/config.toml and customize.
-
-# ==============================================================================
-# DEFAULTS
-# ==============================================================================
-
-[defaults]
-view = "prs"
-scope = "auto"
-refetch_interval_minutes = 10
-date_format = "relative"
-
-[defaults.preview]
-width = 0.45
-
-# ==============================================================================
-# PR SECTIONS
-# ==============================================================================
-
-[[pr_sections]]
-title = "My PRs"
-filters = "is:open author:@me"
-limit = 50
-
-[[pr_sections]]
-title = "Needs My Review"
-filters = "is:open review-requested:@me"
-limit = 50
-
-[[pr_sections]]
-title = "Recently Merged"
-filters = "is:merged author:@me sort:updated-desc"
-limit = 20
-
-# ==============================================================================
-# ISSUE SECTIONS
-# ==============================================================================
-
-[[issues_sections]]
-title = "Assigned to Me"
-filters = "is:open assignee:@me"
-
-[[issues_sections]]
-title = "Created by Me"
-filters = "is:open author:@me"
-
-[[issues_sections]]
-title = "All Repo Issues"
-filters = "is:open"
-limit = 50
-
-# ==============================================================================
-# NOTIFICATION SECTIONS
-# ==============================================================================
-
-[[notifications_sections]]
-title = "Unread"
-filters = "is:unread"
-
-[[notifications_sections]]
-title = "Review Requests"
-filters = "is:unread reason:review_requested"
-
-# ==============================================================================
-# THEME
-# ==============================================================================
 
 [theme.ui]
 sections_show_count = true
@@ -97,10 +30,6 @@ sections_show_count = true
 [theme.ui.table]
 show_separator = true
 compact = false
-
-# ------------------------------------------------------------------------------
-# Colors: Text
-# ------------------------------------------------------------------------------
 
 [theme.colors.text]
 primary = "11"       # base00 – body text
@@ -112,25 +41,13 @@ success = "2"        # green
 error = "1"          # red
 actor = "4"          # blue
 
-# ------------------------------------------------------------------------------
-# Colors: Background
-# ------------------------------------------------------------------------------
-
 [theme.colors.background]
 selected = "7"       # base2 – highlight bar
-
-# ------------------------------------------------------------------------------
-# Colors: Borders
-# ------------------------------------------------------------------------------
 
 [theme.colors.border]
 primary = "14"       # base1
 secondary = "7"      # base2
 faint = "15"         # base3
-
-# ------------------------------------------------------------------------------
-# Colors: Icons (author role indicators)
-# ------------------------------------------------------------------------------
 
 [theme.colors.icon]
 newcontributor = "3"    # yellow
@@ -139,10 +56,6 @@ collaborator = "4"      # blue
 member = "13"           # violet
 owner = "9"             # orange
 unknownrole = "14"      # base1
-
-# ------------------------------------------------------------------------------
-# Colors: Pill (sidebar state badge + author meta line)
-# ------------------------------------------------------------------------------
 
 [theme.colors.pill]
 draft_bg  = "12"       # base0  – subtle
@@ -156,19 +69,11 @@ age       = "14"       # base1  – de-emphasized
 role      = "14"       # base1
 separator = "14"       # base1
 
-# ------------------------------------------------------------------------------
-# Colors: Footer (per-view active section background)
-# ------------------------------------------------------------------------------
-
 [theme.colors.footer]
 prs           = "4"        # blue
 issues        = "2"        # green
 notifications = "5"        # magenta
 repo          = "13"       # violet
-
-# ------------------------------------------------------------------------------
-# Colors: Markdown Rendering
-# ------------------------------------------------------------------------------
 
 [theme.colors.markdown]
 text = "11"             # base00
@@ -189,10 +94,6 @@ horizontal_rule = "14"  # base1
 strikethrough = "14"    # base1
 emph = "5"              # magenta
 strong = "9"            # orange
-
-# ------------------------------------------------------------------------------
-# Colors: Syntax Highlighting
-# ------------------------------------------------------------------------------
 
 [theme.colors.markdown.syntax]
 text = "11"                # base00
@@ -221,14 +122,9 @@ deleted = "1"              # red
 inserted = "2"             # green
 subheading = "9"           # orange
 
-# ==============================================================================
-# ICONS
-# ==============================================================================
-
 [theme.icons]
-# Use ASCII preset for maximum terminal compatibility with Solarized
+# ASCII preset for maximum terminal compatibility with Solarized
 preset = "ascii"
-
 # Override individual icons if desired:
 # role_owner = "!"
 # role_member = "@"

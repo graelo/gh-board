@@ -119,7 +119,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
 
     // Scope state: repo-scoped vs global.
     let detected_repo = props.detected_repo;
-    let scope_config = config.map_or(Scope::Auto, |c| c.defaults.scope);
+    let scope_config = config.map_or(Scope::Auto, |c| c.github.scope);
     let initial_scoped = match scope_config {
         Scope::Auto | Scope::Repo => detected_repo.is_some(),
         Scope::Global => false,
@@ -147,15 +147,15 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         system.exit();
     }
 
-    let show_count = config.is_none_or(|c| c.theme.ui.sections_show_count);
-    let show_separator = config.is_none_or(|c| c.theme.ui.table.show_separator);
+    let show_count = config.is_none_or(|c| c.theme.ui.sections_show_count.unwrap_or(true));
+    let show_separator = config.is_none_or(|c| c.theme.ui.table.show_separator.unwrap_or(true));
     let preview_width_pct = config.map_or(0.45, |c| c.defaults.preview.width);
     let repo_paths = config.map(|c| &c.repo_paths);
     let date_format = config.map(|c| c.defaults.date_format.as_str());
 
     // All sections/paths needed simultaneously (views are always in the tree).
     let active = active_view.get();
-    let refetch_minutes = config.map_or(10, |c| c.defaults.refetch_interval_minutes);
+    let refetch_minutes = config.map_or(10, |c| c.github.refetch_interval_minutes);
     let sections_pr = config.map(|c| c.pr_sections.as_slice());
     let sections_issue = config.map(|c| c.issues_sections.as_slice());
     let sections_notif = config.map(|c| c.notifications_sections.as_slice());

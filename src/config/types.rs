@@ -43,11 +43,36 @@ pub struct AppConfig {
     pub issues_sections: Vec<IssueSection>,
     #[serde(default, rename = "notifications_sections")]
     pub notifications_sections: Vec<NotificationSection>,
+    pub github: GitHubConfig,
     pub defaults: Defaults,
     pub theme: Theme,
     pub keybindings: KeybindingsConfig,
     #[serde(default)]
     pub repo_paths: HashMap<String, PathBuf>,
+    /// Path to a theme-only TOML file. Accepts:
+    ///   - `"builtin:<name>"` (e.g. `"builtin:dracula"`)
+    ///   - A filesystem path (e.g. `"~/.config/gh-board/themes/monokai.toml"`)
+    pub theme_file: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// GitHub backend settings
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct GitHubConfig {
+    pub scope: Scope,
+    pub refetch_interval_minutes: u32,
+}
+
+impl Default for GitHubConfig {
+    fn default() -> Self {
+        Self {
+            scope: Scope::Auto,
+            refetch_interval_minutes: 10,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -116,9 +141,7 @@ pub enum View {
 #[serde(default)]
 pub struct Defaults {
     pub view: View,
-    pub scope: Scope,
     pub preview: PreviewDefaults,
-    pub refetch_interval_minutes: u32,
     pub date_format: String,
 }
 
@@ -126,9 +149,7 @@ impl Default for Defaults {
     fn default() -> Self {
         Self {
             view: View::Prs,
-            scope: Scope::Auto,
             preview: PreviewDefaults::default(),
-            refetch_interval_minutes: 10,
             date_format: "relative".to_owned(),
         }
     }
@@ -158,36 +179,213 @@ pub struct Theme {
     pub icons: IconConfig,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+impl Theme {
+    /// Merge two themes: `overlay` fields win over `base` when present (`Some`).
+    ///
+    /// This is used to apply a theme loaded from `theme_file` as the base,
+    /// with any inline `[theme.*]` fields in the main config as the overlay.
+    pub fn merge(base: Theme, overlay: Theme) -> Theme {
+        Theme {
+            ui: UiTheme {
+                sections_show_count: overlay
+                    .ui
+                    .sections_show_count
+                    .or(base.ui.sections_show_count),
+                table: TableTheme {
+                    show_separator: overlay
+                        .ui
+                        .table
+                        .show_separator
+                        .or(base.ui.table.show_separator),
+                    compact: overlay.ui.table.compact.or(base.ui.table.compact),
+                },
+            },
+            colors: merge_colors(&base.colors, &overlay.colors),
+            icons: merge_icons(base.icons, overlay.icons),
+        }
+    }
+}
+
+fn merge_colors(base: &ColorsTheme, overlay: &ColorsTheme) -> ColorsTheme {
+    ColorsTheme {
+        text: TextColors {
+            primary: overlay.text.primary.or(base.text.primary),
+            secondary: overlay.text.secondary.or(base.text.secondary),
+            inverted: overlay.text.inverted.or(base.text.inverted),
+            faint: overlay.text.faint.or(base.text.faint),
+            warning: overlay.text.warning.or(base.text.warning),
+            success: overlay.text.success.or(base.text.success),
+            error: overlay.text.error.or(base.text.error),
+            actor: overlay.text.actor.or(base.text.actor),
+        },
+        background: BgColors {
+            selected: overlay.background.selected.or(base.background.selected),
+        },
+        border: BorderColors {
+            primary: overlay.border.primary.or(base.border.primary),
+            secondary: overlay.border.secondary.or(base.border.secondary),
+            faint: overlay.border.faint.or(base.border.faint),
+        },
+        icon: IconColors {
+            newcontributor: overlay.icon.newcontributor.or(base.icon.newcontributor),
+            contributor: overlay.icon.contributor.or(base.icon.contributor),
+            collaborator: overlay.icon.collaborator.or(base.icon.collaborator),
+            member: overlay.icon.member.or(base.icon.member),
+            owner: overlay.icon.owner.or(base.icon.owner),
+            unknownrole: overlay.icon.unknownrole.or(base.icon.unknownrole),
+        },
+        pill: PillColors {
+            draft_bg: overlay.pill.draft_bg.or(base.pill.draft_bg),
+            open_bg: overlay.pill.open_bg.or(base.pill.open_bg),
+            closed_bg: overlay.pill.closed_bg.or(base.pill.closed_bg),
+            merged_bg: overlay.pill.merged_bg.or(base.pill.merged_bg),
+            fg: overlay.pill.fg.or(base.pill.fg),
+            branch: overlay.pill.branch.or(base.pill.branch),
+            author: overlay.pill.author.or(base.pill.author),
+            age: overlay.pill.age.or(base.pill.age),
+            role: overlay.pill.role.or(base.pill.role),
+            separator: overlay.pill.separator.or(base.pill.separator),
+        },
+        markdown: merge_markdown(&base.markdown, &overlay.markdown),
+        footer: FooterColors {
+            prs: overlay.footer.prs.or(base.footer.prs),
+            issues: overlay.footer.issues.or(base.footer.issues),
+            notifications: overlay.footer.notifications.or(base.footer.notifications),
+            repo: overlay.footer.repo.or(base.footer.repo),
+        },
+    }
+}
+
+fn merge_markdown(base: &MarkdownColors, overlay: &MarkdownColors) -> MarkdownColors {
+    MarkdownColors {
+        text: overlay.text.or(base.text),
+        heading: overlay.heading.or(base.heading),
+        h1: overlay.h1.or(base.h1),
+        h2: overlay.h2.or(base.h2),
+        h3: overlay.h3.or(base.h3),
+        h4: overlay.h4.or(base.h4),
+        h5: overlay.h5.or(base.h5),
+        h6: overlay.h6.or(base.h6),
+        code: overlay.code.or(base.code),
+        code_block: overlay.code_block.or(base.code_block),
+        link: overlay.link.or(base.link),
+        link_text: overlay.link_text.or(base.link_text),
+        image: overlay.image.or(base.image),
+        image_text: overlay.image_text.or(base.image_text),
+        horizontal_rule: overlay.horizontal_rule.or(base.horizontal_rule),
+        strikethrough: overlay.strikethrough.or(base.strikethrough),
+        emph: overlay.emph.or(base.emph),
+        strong: overlay.strong.or(base.strong),
+        syntax: SyntaxColors {
+            text: overlay.syntax.text.or(base.syntax.text),
+            background: overlay.syntax.background.or(base.syntax.background),
+            error: overlay.syntax.error.or(base.syntax.error),
+            error_background: overlay
+                .syntax
+                .error_background
+                .or(base.syntax.error_background),
+            comment: overlay.syntax.comment.or(base.syntax.comment),
+            comment_preproc: overlay
+                .syntax
+                .comment_preproc
+                .or(base.syntax.comment_preproc),
+            keyword: overlay.syntax.keyword.or(base.syntax.keyword),
+            keyword_reserved: overlay
+                .syntax
+                .keyword_reserved
+                .or(base.syntax.keyword_reserved),
+            keyword_namespace: overlay
+                .syntax
+                .keyword_namespace
+                .or(base.syntax.keyword_namespace),
+            keyword_type: overlay.syntax.keyword_type.or(base.syntax.keyword_type),
+            operator: overlay.syntax.operator.or(base.syntax.operator),
+            punctuation: overlay.syntax.punctuation.or(base.syntax.punctuation),
+            name: overlay.syntax.name.or(base.syntax.name),
+            name_builtin: overlay.syntax.name_builtin.or(base.syntax.name_builtin),
+            name_tag: overlay.syntax.name_tag.or(base.syntax.name_tag),
+            name_attribute: overlay.syntax.name_attribute.or(base.syntax.name_attribute),
+            name_class: overlay.syntax.name_class.or(base.syntax.name_class),
+            name_decorator: overlay.syntax.name_decorator.or(base.syntax.name_decorator),
+            name_function: overlay.syntax.name_function.or(base.syntax.name_function),
+            number: overlay.syntax.number.or(base.syntax.number),
+            string: overlay.syntax.string.or(base.syntax.string),
+            string_escape: overlay.syntax.string_escape.or(base.syntax.string_escape),
+            deleted: overlay.syntax.deleted.or(base.syntax.deleted),
+            inserted: overlay.syntax.inserted.or(base.syntax.inserted),
+            subheading: overlay.syntax.subheading.or(base.syntax.subheading),
+        },
+    }
+}
+
+fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
+    IconConfig {
+        preset: overlay.preset.or(base.preset),
+        pr_open: overlay.pr_open.or(base.pr_open),
+        pr_closed: overlay.pr_closed.or(base.pr_closed),
+        pr_merged: overlay.pr_merged.or(base.pr_merged),
+        pr_draft: overlay.pr_draft.or(base.pr_draft),
+        header_state: overlay.header_state.or(base.header_state),
+        header_comments: overlay.header_comments.or(base.header_comments),
+        header_review: overlay.header_review.or(base.header_review),
+        header_ci: overlay.header_ci.or(base.header_ci),
+        header_lines: overlay.header_lines.or(base.header_lines),
+        header_time: overlay.header_time.or(base.header_time),
+        review_approved: overlay.review_approved.or(base.review_approved),
+        review_changes: overlay.review_changes.or(base.review_changes),
+        review_required: overlay.review_required.or(base.review_required),
+        review_none: overlay.review_none.or(base.review_none),
+        review_commented: overlay.review_commented.or(base.review_commented),
+        ci_success: overlay.ci_success.or(base.ci_success),
+        ci_failure: overlay.ci_failure.or(base.ci_failure),
+        ci_pending: overlay.ci_pending.or(base.ci_pending),
+        ci_none: overlay.ci_none.or(base.ci_none),
+        issue_open: overlay.issue_open.or(base.issue_open),
+        issue_closed: overlay.issue_closed.or(base.issue_closed),
+        notif_unread: overlay.notif_unread.or(base.notif_unread),
+        notif_type_pr: overlay.notif_type_pr.or(base.notif_type_pr),
+        notif_type_issue: overlay.notif_type_issue.or(base.notif_type_issue),
+        notif_type_release: overlay.notif_type_release.or(base.notif_type_release),
+        notif_type_discussion: overlay.notif_type_discussion.or(base.notif_type_discussion),
+        branch_ahead: overlay.branch_ahead.or(base.branch_ahead),
+        branch_behind: overlay.branch_behind.or(base.branch_behind),
+        check_success: overlay.check_success.or(base.check_success),
+        check_failure: overlay.check_failure.or(base.check_failure),
+        check_pending: overlay.check_pending.or(base.check_pending),
+        branch_arrow: overlay.branch_arrow.or(base.branch_arrow),
+        tab_overview: overlay.tab_overview.or(base.tab_overview),
+        tab_activity: overlay.tab_activity.or(base.tab_activity),
+        tab_commits: overlay.tab_commits.or(base.tab_commits),
+        tab_checks: overlay.tab_checks.or(base.tab_checks),
+        tab_files: overlay.tab_files.or(base.tab_files),
+        role_newcontributor: overlay.role_newcontributor.or(base.role_newcontributor),
+        role_contributor: overlay.role_contributor.or(base.role_contributor),
+        role_collaborator: overlay.role_collaborator.or(base.role_collaborator),
+        role_member: overlay.role_member.or(base.role_member),
+        role_owner: overlay.role_owner.or(base.role_owner),
+        role_unknown: overlay.role_unknown.or(base.role_unknown),
+        section_prs: overlay.section_prs.or(base.section_prs),
+        section_issues: overlay.section_issues.or(base.section_issues),
+        section_notifications: overlay.section_notifications.or(base.section_notifications),
+        section_repo: overlay.section_repo.or(base.section_repo),
+        tab_section: overlay.tab_section.or(base.tab_section),
+        pill_left: overlay.pill_left.or(base.pill_left),
+        pill_right: overlay.pill_right.or(base.pill_right),
+    }
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct UiTheme {
-    pub sections_show_count: bool,
+    pub sections_show_count: Option<bool>,
     pub table: TableTheme,
 }
 
-impl Default for UiTheme {
-    fn default() -> Self {
-        Self {
-            sections_show_count: true,
-            table: TableTheme::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct TableTheme {
-    pub show_separator: bool,
-    pub compact: bool,
-}
-
-impl Default for TableTheme {
-    fn default() -> Self {
-        Self {
-            show_separator: true,
-            compact: false,
-        }
-    }
+    pub show_separator: Option<bool>,
+    pub compact: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------

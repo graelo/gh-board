@@ -10,9 +10,11 @@ title = "Global Issues"
 filters = "assignee:@me is:open"
 limit = 10
 
+[github]
+refetch_interval_minutes = 15
+
 [defaults]
 view = "prs"
-refetch_interval_minutes = 15
 date_format = "%Y-%m-%d %H:%M"
 
 [defaults.preview]

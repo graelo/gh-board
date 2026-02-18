@@ -5,9 +5,11 @@ title = "Local PRs"
 filters = "author:@me is:open repo:org/local"
 limit = 50
 
+[github]
+refetch_interval_minutes = 5
+
 [defaults]
 view = "issues"
-refetch_interval_minutes = 5
 date_format = "relative"
 
 [defaults.preview]

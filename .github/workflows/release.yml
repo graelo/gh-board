@@ -14,26 +14,36 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
+            gh_os: darwin
+            gh_arch: arm64
             rust: stable
             suffix: ''
             archive_ext: zip
           - os: macos-15-intel
             target: x86_64-apple-darwin
+            gh_os: darwin
+            gh_arch: amd64
             rust: stable
             suffix: ''
             archive_ext: zip
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            gh_os: linux
+            gh_arch: amd64
             rust: stable
             suffix: ''
             archive_ext: tar.xz
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
+            gh_os: linux
+            gh_arch: arm64
             rust: stable
             suffix: ''
             archive_ext: tar.xz
             # - os: windows-latest
             #   target: x86_64-pc-windows-msvc
+            #   gh_os: windows
+            #   gh_arch: amd64
             #   rust: stable
             #   suffix: .exe
             #   archive_ext: zip
@@ -62,6 +72,10 @@ jobs:
       - name: Build Release
         run: cargo build --release
 
+      - name: Prepare plain binary (for gh extension install)
+        run: cp target/release/${{ github.event.repository.name }}${{ matrix.suffix }} ${{ github.event.repository.name }}-${{ matrix.gh_os }}-${{ matrix.gh_arch }}${{ matrix.suffix }}
+        shell: bash
+
       - name: Compress to zip (macOS)
         if: ${{ matrix.os == 'macos-latest' || matrix.os == 'macos-15-intel' }}
         run: |
@@ -86,11 +100,17 @@ jobs:
           ls -alF target/release/
         shell: bash
 
-      - name: Upload artifacts
+      - name: Upload archive artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ github.event.repository.name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
           path: ${{ github.event.repository.name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
+
+      - name: Upload plain binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-${{ matrix.gh_os }}-${{ matrix.gh_arch }}${{ matrix.suffix }}
+          path: ${{ github.event.repository.name }}-${{ matrix.gh_os }}-${{ matrix.gh_arch }}${{ matrix.suffix }}
 
   release:
     name: Create a GitHub Release
@@ -139,10 +159,25 @@ jobs:
       # - uses: actions/download-artifact@v4
       #   with:
       #     name: ${{ github.event.repository.name }}-x86_64-pc-windows-msvc.zip
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-linux-amd64
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-linux-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-darwin-arm64
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ github.event.repository.name }}-darwin-amd64
+      # - uses: actions/download-artifact@v4
+      #   with:
+      #     name: ${{ github.event.repository.name }}-windows-amd64.exe
 
       - uses: ncipollo/release-action@v1
         with:
-          artifacts: '*.zip,*.tar.xz'
+          artifacts: '*.zip,*.tar.xz,gh-board-linux-amd64,gh-board-linux-arm64,gh-board-darwin-arm64,gh-board-darwin-amd64'
           bodyFile: 'CHANGELOG.md'
           token: ${{ secrets.GITHUB_TOKEN }}
 

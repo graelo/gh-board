@@ -87,8 +87,13 @@ See `examples/config.toml` for a comprehensive example.
 ### Command Line
 
 ```bash
-gh-board [OPTIONS] [REPO]
+gh-board [COMMAND] [OPTIONS] [REPO]
 ```
+
+**Subcommands:**
+
+- `init`: Interactive wizard that generates a starter `~/.config/gh-board/config.toml`
+- `themes`: List all built-in theme names
 
 **Options:**
 
@@ -119,10 +124,14 @@ Repo-local config (`.gh-board.toml`) merges on top of global config.
 The config uses TOML with these main sections:
 
 ```toml
-[defaults]
-view = "prs"                        # Initial view: prs, issues, notifications, repo
+theme_file = "builtin:dracula"      # Built-in theme, or path to a theme TOML file
+
+[github]
 scope = "auto"                      # "auto" (repo if in git dir), "repo", or "global"
 refetch_interval_minutes = 10       # Cache TTL
+
+[defaults]
+view = "prs"                        # Initial view: prs, issues, notifications, repo
 date_format = "relative"            # Or strftime format
 
 [defaults.preview]
@@ -141,8 +150,12 @@ host = "github.com"                 # Optional GHE hostname
 title = "Unread"
 filters = "is:unread"               # Supports: repo:, reason:, is:unread/read/done/all
 
+# Required for the C / Space "Checkout branch" action.
+# Maps "owner/repo" (GitHub full name) to the absolute path of your local clone.
+# Supports ~/  (tilde is expanded at startup).
+# If a repo is missing, checkout shows: "no local path configured for owner/repo"
 [repo_paths]
-"owner/repo" = "/path/to/local/clone"  # For checkout operations
+"owner/repo" = "~/code/owner/repo"
 
 [theme.ui]
 sections_show_count = true
@@ -244,7 +257,7 @@ The PR view displays the following columns:
 | `A`           | Unassign                   |
 | `c`           | Comment                    |
 | `d`           | View diff in pager         |
-| `C` / `Space` | Checkout branch            |
+| `C` / `Space` | Checkout branch ¹          |
 | `x`           | Close PR                   |
 | `X`           | Reopen PR                  |
 | `W`           | Mark as ready for review   |
@@ -253,6 +266,8 @@ The PR view displays the following columns:
 | `n`           | Switch view                |
 | `N`           | Switch view back           |
 | `S`           | Toggle repo scope          |
+
+¹ Requires `[repo_paths]` entry for the repo — see Configuration Structure.
 
 ### Issue View
 
@@ -295,6 +310,40 @@ The PR view displays the following columns:
 | `S`      | Toggle repo scope     |
 
 All keybindings are customizable via the config.
+
+## Themes
+
+gh-board ships with 24 built-in themes. Reference one with a single line in your config:
+
+```toml
+theme_file = "builtin:dracula"
+```
+
+Or point to a custom theme file:
+
+```toml
+theme_file = "~/.config/gh-board/themes/my-theme.toml"
+```
+
+Run `gh-board themes` to list all available built-in theme names:
+
+```
+ayu-dark, base16-default, catppuccin-latte, catppuccin-mocha,
+dracula, everforest, gruvbox-dark, iceberg, kanagawa,
+modus-operandi, modus-vivendi, monokai, nightfox, night-owl,
+nord, one-dark, onehalf-dark, palenight, rose-pine,
+solarized-16, solarized-dark, solarized-light, srcery,
+tokyo-night, zenburn
+```
+
+> **`solarized-16`** uses ANSI indices 0–15 and relies on your terminal being
+> configured with the Solarized palette. Light or dark depends on your terminal's
+> own background color.
+
+Any `[theme.*]` blocks in `config.toml` are merged on top of the theme file, so
+you can selectively override individual colors without forking the whole theme.
+
+---
 
 ## Color Model
 

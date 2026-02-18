@@ -33,6 +33,7 @@ pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
             std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let mut config: AppConfig = toml::from_str(&contents)
             .with_context(|| format!("parsing TOML from {}", path.display()))?;
+        config.repo_paths = expand_repo_paths(std::mem::take(&mut config.repo_paths));
         apply_theme_file(&mut config)?;
         return Ok(config);
     }
@@ -68,6 +69,7 @@ pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
         }
     };
 
+    config.repo_paths = expand_repo_paths(std::mem::take(&mut config.repo_paths));
     apply_theme_file(&mut config)?;
     Ok(config)
 }
@@ -198,5 +200,19 @@ fn expand_tilde(path: &str) -> PathBuf {
         return home.join(rest);
     }
     PathBuf::from(path)
+}
+
+fn expand_repo_paths(paths: std::collections::HashMap<String, PathBuf>) -> std::collections::HashMap<String, PathBuf> {
+    paths
+        .into_iter()
+        .map(|(k, v)| {
+            let expanded = v.to_str().map(std::borrow::ToOwned::to_owned);
+            let expanded = match expanded {
+                Some(s) => expand_tilde(&s),
+                None => v,
+            };
+            (k, expanded)
+        })
+        .collect()
 }
 

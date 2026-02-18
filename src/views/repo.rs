@@ -607,7 +607,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         Some(theme.footer_repo),
         Some(theme.footer_repo),
         Some(theme.border_faint),
-        &theme.icons.tab_section,
+        &theme.icons.tab_filter,
     );
 
     let current_mode = input_mode.read().clone();

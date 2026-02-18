@@ -1,6 +1,6 @@
 # Repo-local config that overrides the global config.
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Local PRs"
 filters = "author:@me is:open repo:org/local"
 limit = 50

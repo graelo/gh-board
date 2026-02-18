@@ -192,7 +192,7 @@ fn load_fixture(name: &str) -> AppConfig {
 #[test]
 fn ansi_only_config_loads_successfully() {
     let config = load_fixture("ansi_only_theme.toml");
-    assert!(!config.pr_sections.is_empty(), "should have PR sections");
+    assert!(!config.pr_filters.is_empty(), "should have PR filters");
     assert!((config.defaults.preview.width - 0.45).abs() < f64::EPSILON);
 }
 
@@ -276,7 +276,7 @@ fn ansi_only_config_values_are_ansi256() {
 #[test]
 fn mixed_config_loads_successfully() {
     let config = load_fixture("mixed_theme.toml");
-    assert!(!config.pr_sections.is_empty());
+    assert!(!config.pr_filters.is_empty());
 }
 
 #[test]
@@ -372,7 +372,7 @@ fn mixed_theme_resolves_at_all_depths() {
 #[test]
 fn invalid_color_in_config_produces_error() {
     let toml_str = r#"
-[[pr_sections]]
+[[pr_filters]]
 title = "test"
 filters = "is:open"
 

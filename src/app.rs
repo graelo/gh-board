@@ -47,10 +47,10 @@ impl ViewKind {
 
     pub fn icon_label(self, icons: &ResolvedIcons) -> String {
         match self {
-            Self::Prs => format!("{} {}", icons.section_prs, self.label()),
-            Self::Issues => format!("{} {}", icons.section_issues, self.label()),
-            Self::Notifications => format!("{} {}", icons.section_notifications, self.label()),
-            Self::Repo => format!("{} {}", icons.section_repo, self.label()),
+            Self::Prs => format!("{} {}", icons.view_prs, self.label()),
+            Self::Issues => format!("{} {}", icons.view_issues, self.label()),
+            Self::Notifications => format!("{} {}", icons.view_notifications, self.label()),
+            Self::Repo => format!("{} {}", icons.view_repo, self.label()),
         }
     }
 }
@@ -147,18 +147,18 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         system.exit();
     }
 
-    let show_count = config.is_none_or(|c| c.theme.ui.sections_show_count.unwrap_or(true));
+    let show_count = config.is_none_or(|c| c.theme.ui.filters_show_count.unwrap_or(true));
     let show_separator = config.is_none_or(|c| c.theme.ui.table.show_separator.unwrap_or(true));
     let preview_width_pct = config.map_or(0.45, |c| c.defaults.preview.width);
     let repo_paths = config.map(|c| &c.repo_paths);
     let date_format = config.map(|c| c.defaults.date_format.as_str());
 
-    // All sections/paths needed simultaneously (views are always in the tree).
+    // All filters/paths needed simultaneously (views are always in the tree).
     let active = active_view.get();
     let refetch_minutes = config.map_or(10, |c| c.github.refetch_interval_minutes);
-    let sections_pr = config.map(|c| c.pr_sections.as_slice());
-    let sections_issue = config.map(|c| c.issues_sections.as_slice());
-    let sections_notif = config.map(|c| c.notifications_sections.as_slice());
+    let filters_pr = config.map(|c| c.pr_filters.as_slice());
+    let filters_issue = config.map(|c| c.issues_filters.as_slice());
+    let filters_notif = config.map(|c| c.notifications_filters.as_slice());
     let repo_path = props.repo_path;
 
     element! {
@@ -168,7 +168,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 flex_grow: 1.0,
             ) {
                 PrsView(
-                    sections: sections_pr,
+                    filters: filters_pr,
                     octocrab: props.octocrab,
                     api_cache: props.api_cache,
                     theme,
@@ -177,7 +177,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     width,
                     height,
                     preview_width_pct,
-                    show_section_count: show_count,
+                    show_filter_count: show_count,
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,
@@ -195,7 +195,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 flex_grow: 1.0,
             ) {
                 IssuesView(
-                    sections: sections_issue,
+                    filters: filters_issue,
                     octocrab: props.octocrab,
                     api_cache: props.api_cache,
                     theme,
@@ -204,7 +204,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     width,
                     height,
                     preview_width_pct,
-                    show_section_count: show_count,
+                    show_filter_count: show_count,
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,
@@ -221,14 +221,14 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 flex_grow: 1.0,
             ) {
                 NotificationsView(
-                    sections: sections_notif,
+                    filters: filters_notif,
                     octocrab: props.octocrab,
                     theme,
                     keybindings,
                     color_depth: depth,
                     width,
                     height,
-                    show_section_count: show_count,
+                    show_filter_count: show_count,
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,

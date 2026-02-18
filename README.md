@@ -8,7 +8,7 @@ model for perfect terminal theme integration.
 ## Features
 
 - **Multiple Views**: PRs, Issues, Notifications, and Repo (branches)
-- **Configurable Sections**: Organize items with custom GitHub search filters
+- **Configurable Filters**: Organize items with custom GitHub search filters
 - **Rich Markdown Preview**: Full CommonMark rendering with syntax highlighting
   for 18+ languages
 - **Uniform Color Model**: Use ANSI-256 indices OR hex colors consistently
@@ -17,7 +17,7 @@ model for perfect terminal theme integration.
   (Solarized, Gruvbox, etc.)
 - **Powerful Actions**: Approve, comment, assign, merge, checkout, label, and
   more — all from your keyboard
-- **GitHub Enterprise Support**: Configure custom hosts per section
+- **GitHub Enterprise Support**: Configure custom hosts per filter
 - **Customizable Keybindings**: Rebind any action or define custom shell
   commands
 - **Configurable Icons**: Ship with `unicode`, `nerdfont`, and `ascii` presets,
@@ -63,24 +63,31 @@ gh board [REPO]
 1. Create a config file at `~/.config/gh-board/config.toml`:
 
 ```toml
-[[pr_sections]]
+[[pr_filters]]
 title = "My PRs"
 filters = "is:open author:@me"
 
-[[pr_sections]]
+[[pr_filters]]
 title = "Needs Review"
 filters = "is:open review-requested:@me"
 
-[[issues_sections]]
+[[issues_filters]]
 title = "Assigned to Me"
 filters = "is:open assignee:@me"
 ```
 
 2. Run `gh-board` (or `gh board`).
 
-3. Navigate with `j`/`k`, switch sections with `h`/`l`, press `?` for help.
+3. Navigate with `j`/`k`, switch filters with `h`/`l`, press `?` for help.
 
 See `examples/config.toml` for a comprehensive example.
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **View** | One of the four top-level content areas (PRs, Issues, Notifications, Repo). Switch between views with `n` / `N`. |
+| **Filter** | A named search-filter group within a view, displayed as a tab at the top of the screen. Navigate filters with `h` / `l`. Configured via `[[pr_filters]]`, `[[issues_filters]]`, `[[notifications_filters]]` in your config file. |
 
 ## Usage
 
@@ -121,7 +128,7 @@ Repo-local config (`.gh-board.toml`) merges on top of global config.
 
 ### Configuration Structure
 
-The config uses TOML with these main sections:
+The config uses TOML with these main blocks:
 
 ```toml
 theme_file = "builtin:dracula"      # Built-in theme, or path to a theme TOML file
@@ -137,16 +144,16 @@ date_format = "relative"            # Or strftime format
 [defaults.preview]
 width = 0.45                        # Fraction of terminal width (0.0-1.0)
 
-[[pr_sections]]
-title = "Section Name"
+[[pr_filters]]
+title = "Filter Name"
 filters = "is:open author:@me"      # GitHub search syntax
 limit = 50                          # Optional max items
 host = "github.com"                 # Optional GHE hostname
 
-[[issues_sections]]
-# Same structure as pr_sections
+[[issues_filters]]
+# Same structure as pr_filters
 
-[[notifications_sections]]
+[[notifications_filters]]
 title = "Unread"
 filters = "is:unread"               # Supports: repo:, reason:, is:unread/read/done/all
 
@@ -158,7 +165,7 @@ filters = "is:unread"               # Supports: repo:, reason:, is:unread/read/d
 "owner/repo" = "~/code/owner/repo"
 
 [theme.ui]
-sections_show_count = true
+filters_show_count = true
 
 [theme.ui.table]
 show_separator = true
@@ -236,12 +243,12 @@ The PR view displays the following columns:
 | `G` / `End`           | Jump to last item                  |
 | `Ctrl+d` / `PageDown` | Page down (preview pane)           |
 | `Ctrl+u` / `PageUp`   | Page up (preview pane)             |
-| `h` / `Left`          | Previous section                   |
-| `l` / `Right`         | Next section                       |
+| `h` / `Left`          | Previous filter                    |
+| `l` / `Right`         | Next filter                        |
 | `p`                   | Toggle preview pane                |
 | `o`                   | Open in browser                    |
-| `r`                   | Refresh current section            |
-| `R`                   | Refresh all sections (clear cache) |
+| `r`                   | Refresh current filter             |
+| `R`                   | Refresh all filters (clear cache)  |
 | `/`                   | Search / filter                    |
 | `y`                   | Copy number to clipboard           |
 | `Y`                   | Copy URL to clipboard              |

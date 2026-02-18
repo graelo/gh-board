@@ -25,7 +25,7 @@
 #   15     base3       background
 
 [theme.ui]
-sections_show_count = true
+filters_show_count = true
 
 [theme.ui.table]
 show_separator = true

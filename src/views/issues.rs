@@ -19,7 +19,7 @@ use crate::components::table::{
 };
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
-use crate::config::types::IssueSection;
+use crate::config::types::IssueFilter;
 use crate::filter;
 use crate::github::graphql::{self, IssueDetail, RateLimitInfo};
 use crate::github::rate_limit;
@@ -223,12 +223,12 @@ enum PendingAction {
 }
 
 // ---------------------------------------------------------------------------
-// Section state (T047)
+// Filter state (T047)
 // ---------------------------------------------------------------------------
 
-/// State for a single Issue section.
+/// State for a single filter.
 #[derive(Debug, Clone)]
-struct SectionData {
+struct FilterData {
     rows: Vec<Row>,
     bodies: Vec<String>,
     titles: Vec<String>,
@@ -238,7 +238,7 @@ struct SectionData {
     error: Option<String>,
 }
 
-impl Default for SectionData {
+impl Default for FilterData {
     fn default() -> Self {
         Self {
             rows: Vec::new(),
@@ -252,10 +252,10 @@ impl Default for SectionData {
     }
 }
 
-/// Shared state across all issue sections.
+/// Shared state across all issue filters.
 #[derive(Debug, Clone)]
 struct IssuesState {
-    sections: Vec<SectionData>,
+    filters: Vec<FilterData>,
 }
 
 // ---------------------------------------------------------------------------
@@ -264,7 +264,7 @@ struct IssuesState {
 
 #[derive(Default, Props)]
 pub struct IssuesViewProps<'a> {
-    pub sections: Option<&'a [IssueSection]>,
+    pub filters: Option<&'a [IssueFilter]>,
     pub octocrab: Option<&'a Arc<Octocrab>>,
     pub api_cache: Option<&'a Cache<String, String>>,
     pub theme: Option<&'a ResolvedTheme>,
@@ -274,7 +274,7 @@ pub struct IssuesViewProps<'a> {
     pub width: u16,
     pub height: u16,
     pub preview_width_pct: f64,
-    pub show_section_count: bool,
+    pub show_filter_count: bool,
     pub show_separator: bool,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
@@ -294,7 +294,7 @@ pub struct IssuesViewProps<'a> {
 #[component]
 #[allow(clippy::too_many_lines)]
 pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
-    let sections_cfg = props.sections.unwrap_or(&[]);
+    let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
     let depth = props.color_depth;
     let should_exit = props.should_exit;
@@ -302,7 +302,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let switch_view_back = props.switch_view_back;
     let scope_toggle = props.scope_toggle;
     let scope_repo = &props.scope_repo;
-    let section_count = sections_cfg.len();
+    let filter_count = filters_cfg.len();
     let is_active = props.is_active;
     let preview_pct = if props.preview_width_pct > 0.0 {
         props.preview_width_pct
@@ -310,7 +310,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         0.45
     };
 
-    let active_section = hooks.use_state(|| 0usize);
+    let active_filter = hooks.use_state(|| 0usize);
     let cursor = hooks.use_state(|| 0usize);
     let scroll_offset = hooks.use_state(|| 0usize);
     let preview_open = hooks.use_state(|| false);
@@ -341,25 +341,25 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     // State: rate limit from last GraphQL response.
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
 
-    // State: per-section fetch tracking (lazy: only fetch the active section).
-    let mut section_fetch_times =
-        hooks.use_state(move || vec![Option::<std::time::Instant>::None; section_count]);
-    let mut section_in_flight = hooks.use_state(move || vec![false; section_count]);
+    // State: per-filter fetch tracking (lazy: only fetch the active filter).
+    let mut filter_fetch_times =
+        hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
+    let mut filter_in_flight = hooks.use_state(move || vec![false; filter_count]);
 
-    let initial_sections = vec![SectionData::default(); section_count];
+    let initial_filters = vec![FilterData::default(); filter_count];
     let mut issues_state = hooks.use_state(move || IssuesState {
-        sections: initial_sections,
+        filters: initial_filters,
     });
 
-    // Track scope changes: when scope_repo changes, invalidate all sections.
+    // Track scope changes: when scope_repo changes, invalidate all filters.
     let mut last_scope = hooks.use_state(|| scope_repo.clone());
     if *last_scope.read() != *scope_repo {
         last_scope.set(scope_repo.clone());
         issues_state.set(IssuesState {
-            sections: vec![SectionData::default(); section_count],
+            filters: vec![FilterData::default(); filter_count],
         });
-        section_fetch_times.set(vec![None; section_count]);
-        section_in_flight.set(vec![false; section_count]);
+        filter_fetch_times.set(vec![None; filter_count]);
+        filter_in_flight.set(vec![false; filter_count]);
     }
 
     // Timer tick for periodic re-renders (supports auto-refetch).
@@ -412,21 +412,21 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         }
     });
 
-    // Compute active section index early (needed by fetch logic below).
-    let current_section_idx = active_section.get().min(section_count.saturating_sub(1));
+    // Compute active filter index early (needed by fetch logic below).
+    let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
 
-    // Auto-refetch: only reset the active section when its interval has elapsed.
+    // Auto-refetch: only reset the active filter when its interval has elapsed.
     let refetch_interval = props.refetch_interval_minutes;
     let needs_refetch = is_active
         && refetch_interval > 0
-        && !section_in_flight
+        && !filter_in_flight
             .read()
-            .get(current_section_idx)
+            .get(current_filter_idx)
             .copied()
             .unwrap_or(false)
-        && section_fetch_times
+        && filter_fetch_times
             .read()
-            .get(current_section_idx)
+            .get(current_filter_idx)
             .copied()
             .flatten()
             .is_some_and(|last| {
@@ -434,48 +434,48 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             });
     if needs_refetch {
         let mut state = issues_state.read().clone();
-        if current_section_idx < state.sections.len() {
-            state.sections[current_section_idx] = SectionData::default();
+        if current_filter_idx < state.filters.len() {
+            state.filters[current_filter_idx] = FilterData::default();
         }
         issues_state.set(state);
-        let mut times = section_fetch_times.read().clone();
-        if current_section_idx < times.len() {
-            times[current_section_idx] = None;
+        let mut times = filter_fetch_times.read().clone();
+        if current_filter_idx < times.len() {
+            times[current_filter_idx] = None;
         }
-        section_fetch_times.set(times);
+        filter_fetch_times.set(times);
     }
 
     // Clone octocrab and cache for use in action closures.
     let octocrab_for_actions = props.octocrab.map(Arc::clone);
     let api_cache_for_actions = props.api_cache.cloned();
 
-    // Lazy fetch: only fetch the active section when it needs data.
+    // Lazy fetch: only fetch the active filter when it needs data.
     let active_needs_fetch = issues_state
         .read()
-        .sections
-        .get(current_section_idx)
+        .filters
+        .get(current_filter_idx)
         .is_some_and(|s| s.loading);
-    let active_in_flight = section_in_flight
+    let active_in_flight = filter_in_flight
         .read()
-        .get(current_section_idx)
+        .get(current_filter_idx)
         .copied()
         .unwrap_or(false);
 
     if active_needs_fetch
         && !active_in_flight
         && is_active
-        && let Some(cfg) = sections_cfg.get(current_section_idx)
+        && let Some(cfg) = filters_cfg.get(current_filter_idx)
         && let Some(octocrab) = props.octocrab
     {
-        let mut in_flight = section_in_flight.read().clone();
-        if current_section_idx < in_flight.len() {
-            in_flight[current_section_idx] = true;
+        let mut in_flight = filter_in_flight.read().clone();
+        if current_filter_idx < in_flight.len() {
+            in_flight[current_filter_idx] = true;
         }
-        section_in_flight.set(in_flight);
+        filter_in_flight.set(in_flight);
 
         let octocrab = Arc::clone(octocrab);
         let api_cache = props.api_cache.cloned();
-        let section_idx = current_section_idx;
+        let filter_idx = current_filter_idx;
         let mut filters = cfg.filters.clone();
         // Inject repo scope if active and not already present.
         if let Some(ref repo) = *scope_repo
@@ -488,7 +488,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
         smol::spawn(Compat::new(async move {
-            let section_data =
+            let filter_data =
                 match graphql::search_issues_all(&octocrab, &filters, limit, api_cache.as_ref())
                     .await
                 {
@@ -503,7 +503,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         let bodies: Vec<String> = issues.iter().map(|i| i.body.clone()).collect();
                         let titles: Vec<String> = issues.iter().map(|i| i.title.clone()).collect();
                         let issue_count = issues.len();
-                        SectionData {
+                        FilterData {
                             rows,
                             bodies,
                             titles,
@@ -519,46 +519,46 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         } else {
                             e.to_string()
                         };
-                        SectionData {
+                        FilterData {
                             loading: false,
                             error: Some(error_msg),
-                            ..SectionData::default()
+                            ..FilterData::default()
                         }
                     }
                 };
 
             let mut state = issues_state.read().clone();
-            if section_idx < state.sections.len() {
-                state.sections[section_idx] = section_data;
+            if filter_idx < state.filters.len() {
+                state.filters[filter_idx] = filter_data;
             }
             issues_state.set(state);
 
-            let mut times = section_fetch_times.read().clone();
-            if section_idx < times.len() {
-                times[section_idx] = Some(std::time::Instant::now());
+            let mut times = filter_fetch_times.read().clone();
+            if filter_idx < times.len() {
+                times[filter_idx] = Some(std::time::Instant::now());
             }
-            section_fetch_times.set(times);
-            let mut in_flight = section_in_flight.read().clone();
-            if section_idx < in_flight.len() {
-                in_flight[section_idx] = false;
+            filter_fetch_times.set(times);
+            let mut in_flight = filter_in_flight.read().clone();
+            if filter_idx < in_flight.len() {
+                in_flight[filter_idx] = false;
             }
-            section_in_flight.set(in_flight);
+            filter_in_flight.set(in_flight);
         }))
         .detach();
     }
 
     let state_ref = issues_state.read();
     let all_rows_count = state_ref
-        .sections
-        .get(current_section_idx)
+        .filters
+        .get(current_filter_idx)
         .map_or(0, |s| s.rows.len());
     let search_q = search_query.read().clone();
     let total_rows = if search_q.is_empty() {
         all_rows_count
     } else {
         state_ref
-            .sections
-            .get(current_section_idx)
+            .filters
+            .get(current_filter_idx)
             .map_or(0, |s| filter::filter_rows(&s.rows, &search_q).len())
     };
 
@@ -596,7 +596,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             input_buffer,
                             action_status,
                             &issues_state,
-                            current_section_idx,
+                            current_filter_idx,
                             cursor.get(),
                             octocrab_for_actions.as_ref(),
                         );
@@ -609,7 +609,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             input_buffer,
                             action_status,
                             &issues_state,
-                            current_section_idx,
+                            current_filter_idx,
                             cursor.get(),
                             octocrab_for_actions.as_ref(),
                             assignee_candidates,
@@ -626,7 +626,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             label_candidates,
                             label_selection,
                             &issues_state,
-                            current_section_idx,
+                            current_filter_idx,
                             cursor.get(),
                             octocrab_for_actions.as_ref(),
                         );
@@ -638,7 +638,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             input_mode,
                             action_status,
                             &issues_state,
-                            current_section_idx,
+                            current_filter_idx,
                             cursor.get(),
                             octocrab_for_actions.as_ref(),
                         );
@@ -665,7 +665,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             preview_scroll,
                             cursor,
                             scroll_offset,
-                            active_section,
+                            active_filter,
                             input_mode,
                             input_buffer,
                             action_status,
@@ -675,12 +675,12 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             assignee_selection,
                             total_rows,
                             visible_rows,
-                            section_count,
+                            filter_count,
                             issues_state,
-                            current_section_idx,
+                            current_filter_idx,
                             octocrab_for_actions.as_ref(),
                             api_cache_for_actions.as_ref(),
-                            section_fetch_times,
+                            filter_fetch_times,
                             help_visible,
                             rate_limit_state,
                             sidebar_tab,
@@ -702,20 +702,20 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     }
 
     // Build tabs.
-    let tabs: Vec<Tab> = sections_cfg
+    let tabs: Vec<Tab> = filters_cfg
         .iter()
         .enumerate()
         .map(|(i, s)| Tab {
             title: s.title.clone(),
-            count: state_ref.sections.get(i).map(|d| d.issue_count),
+            count: state_ref.filters.get(i).map(|d| d.issue_count),
         })
         .collect();
 
-    let current_data = state_ref.sections.get(current_section_idx);
+    let current_data = state_ref.filters.get(current_filter_idx);
     let columns = issue_columns(&theme.icons);
 
-    let layout = sections_cfg
-        .get(current_section_idx)
+    let layout = filters_cfg
+        .get(current_filter_idx)
         .and_then(|s| s.layout.as_ref());
     let hidden_set: HashSet<String> = layout
         .map(|l| l.hidden.iter().cloned().collect())
@@ -864,13 +864,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
-        current_section_idx,
-        props.show_section_count,
+        current_filter_idx,
+        props.show_filter_count,
         depth,
         Some(theme.footer_issues),
         Some(theme.footer_issues),
         Some(theme.border_faint),
-        &theme.icons.tab_section,
+        &theme.icons.tab_filter,
     );
 
     // Build text input widget.
@@ -973,9 +973,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             format!("Issue {cursor_pos}/{total_rows} (filtered from {total})")
         }
     };
-    let active_fetch_time = section_fetch_times
+    let active_fetch_time = filter_fetch_times
         .read()
-        .get(current_section_idx)
+        .get(current_filter_idx)
         .copied()
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
@@ -1167,7 +1167,7 @@ fn handle_assign_input(
     mut input_buffer: State<String>,
     mut action_status: State<Option<String>>,
     issues_state: &State<IssuesState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
     assignee_candidates: State<Vec<String>>,
@@ -1221,7 +1221,7 @@ fn handle_assign_input(
             if !final_input.trim().is_empty()
                 && let Some(octocrab) = octocrab_for_actions
             {
-                let info = get_current_issue_info(issues_state, section_idx, cursor);
+                let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let (mut usernames, needs_me) = parse_assignee_input(&final_input);
@@ -1300,7 +1300,7 @@ fn handle_assign_input(
             if !final_input.trim().is_empty()
                 && let Some(octocrab) = octocrab_for_actions
             {
-                let info = get_current_issue_info(issues_state, section_idx, cursor);
+                let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let (mut usernames, needs_me) = parse_assignee_input(&final_input);
@@ -1353,7 +1353,7 @@ fn handle_text_input(
     mut input_buffer: State<String>,
     mut action_status: State<Option<String>>,
     issues_state: &State<IssuesState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
 ) {
@@ -1363,7 +1363,7 @@ fn handle_text_input(
             if !text.is_empty()
                 && let Some(octocrab) = octocrab_for_actions
             {
-                let info = get_current_issue_info(issues_state, section_idx, cursor);
+                let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let is_comment = *current_mode == InputMode::Comment;
@@ -1448,7 +1448,7 @@ fn handle_label_input(
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
     issues_state: &State<IssuesState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
 ) {
@@ -1489,7 +1489,7 @@ fn handle_label_input(
             if !label.is_empty()
                 && let Some(octocrab) = octocrab_for_actions
             {
-                let info = get_current_issue_info(issues_state, section_idx, cursor);
+                let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let labels = vec![label.clone()];
@@ -1537,14 +1537,14 @@ fn handle_confirm_input(
     mut input_mode: State<InputMode>,
     mut action_status: State<Option<String>>,
     issues_state: &State<IssuesState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
 ) {
     match code {
         KeyCode::Char('y' | 'Y') => {
             if let Some(octocrab) = octocrab_for_actions {
-                let info = get_current_issue_info(issues_state, section_idx, cursor);
+                let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let action = pending.clone();
@@ -1596,7 +1596,7 @@ fn handle_normal_input(
     mut preview_scroll: State<usize>,
     mut cursor: State<usize>,
     mut scroll_offset: State<usize>,
-    mut active_section: State<usize>,
+    mut active_filter: State<usize>,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
     mut action_status: State<Option<String>>,
@@ -1606,12 +1606,12 @@ fn handle_normal_input(
     mut assignee_selection: State<usize>,
     total_rows: usize,
     visible_rows: usize,
-    section_count: usize,
+    filter_count: usize,
     mut issues_state: State<IssuesState>,
-    current_section_idx: usize,
+    current_filter_idx: usize,
     octocrab_for_actions: Option<&Arc<Octocrab>>,
     api_cache_for_refresh: Option<&Cache<String, String>>,
-    mut section_fetch_times: State<Vec<Option<std::time::Instant>>>,
+    mut filter_fetch_times: State<Vec<Option<std::time::Instant>>>,
     mut help_visible: State<bool>,
     mut rate_limit_state: State<Option<RateLimitInfo>>,
     mut sidebar_tab: State<SidebarTab>,
@@ -1661,7 +1661,7 @@ fn handle_normal_input(
             action_status.set(None);
 
             if let Some(octocrab) = octocrab_for_actions {
-                let info = get_current_issue_info(&issues_state, current_section_idx, cursor.get());
+                let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
                 if let Some((owner, repo, _)) = info {
                     let octocrab = Arc::clone(octocrab);
                     let api_cache = api_cache_for_refresh.cloned();
@@ -1686,8 +1686,8 @@ fn handle_normal_input(
             if let Some(octocrab) = octocrab_for_actions {
                 let state = issues_state.read();
                 let issue = state
-                    .sections
-                    .get(current_section_idx)
+                    .filters
+                    .get(current_filter_idx)
                     .and_then(|s| s.issues.get(cursor.get()));
                 if let Some(issue) = issue
                     && let Some(repo_ref) = &issue.repo
@@ -1723,8 +1723,8 @@ fn handle_normal_input(
             let (current_assignees, candidates) = {
                 let state = issues_state.read();
                 let issue = state
-                    .sections
-                    .get(current_section_idx)
+                    .filters
+                    .get(current_filter_idx)
                     .and_then(|s| s.issues.get(cursor.get()));
 
                 if let Some(issue) = issue {
@@ -1759,8 +1759,8 @@ fn handle_normal_input(
             if let Some(octocrab) = octocrab_for_actions {
                 let state = issues_state.read();
                 let issue = state
-                    .sections
-                    .get(current_section_idx)
+                    .filters
+                    .get(current_filter_idx)
                     .and_then(|s| s.issues.get(cursor.get()));
                 if let Some(issue) = issue
                     && let Some(assignee) = issue.assignees.first()
@@ -1795,7 +1795,7 @@ fn handle_normal_input(
         }
         // --- Clipboard & Browser (T091, T092) ---
         KeyCode::Char('y') => {
-            let info = get_current_issue_info(&issues_state, current_section_idx, cursor.get());
+            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
             if let Some((_, _, number)) = info {
                 let text = number.to_string();
                 match clipboard::copy_to_clipboard(&text) {
@@ -1805,7 +1805,7 @@ fn handle_normal_input(
             }
         }
         KeyCode::Char('Y') => {
-            let info = get_current_issue_info(&issues_state, current_section_idx, cursor.get());
+            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
             if let Some((owner, repo, number)) = info {
                 let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
                 match clipboard::copy_to_clipboard(&url) {
@@ -1815,7 +1815,7 @@ fn handle_normal_input(
             }
         }
         KeyCode::Char('o') => {
-            let info = get_current_issue_info(&issues_state, current_section_idx, cursor.get());
+            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
             if let Some((owner, repo, number)) = info {
                 let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
                 match clipboard::open_in_browser(&url) {
@@ -1829,17 +1829,17 @@ fn handle_normal_input(
             if let Some(c) = api_cache_for_refresh {
                 c.invalidate_all();
             }
-            let idx = active_section.get();
+            let idx = active_filter.get();
             let mut state = issues_state.read().clone();
-            if idx < state.sections.len() {
-                state.sections[idx] = SectionData::default();
+            if idx < state.filters.len() {
+                state.filters[idx] = FilterData::default();
             }
             issues_state.set(state);
-            let mut times = section_fetch_times.read().clone();
+            let mut times = filter_fetch_times.read().clone();
             if idx < times.len() {
                 times[idx] = None;
             }
-            section_fetch_times.set(times);
+            filter_fetch_times.set(times);
             pending_detail.set(None);
             cursor.set(0);
             scroll_offset.set(0);
@@ -1941,10 +1941,10 @@ fn handle_normal_input(
         }
         // Section switching
         KeyCode::Char('h') | KeyCode::Left => {
-            if section_count > 0 {
-                let current = active_section.get();
-                active_section.set(if current == 0 {
-                    section_count.saturating_sub(1)
+            if filter_count > 0 {
+                let current = active_filter.get();
+                active_filter.set(if current == 0 {
+                    filter_count.saturating_sub(1)
                 } else {
                     current - 1
                 });
@@ -1955,8 +1955,8 @@ fn handle_normal_input(
             }
         }
         KeyCode::Char('l') | KeyCode::Right => {
-            if section_count > 0 {
-                active_section.set((active_section.get() + 1) % section_count);
+            if filter_count > 0 {
+                active_filter.set((active_filter.get() + 1) % filter_count);
                 cursor.set(0);
                 scroll_offset.set(0);
                 preview_scroll.set(0);
@@ -1976,12 +1976,12 @@ fn handle_normal_input(
 
 fn get_current_issue_info(
     issues_state: &State<IssuesState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
 ) -> Option<(String, String, u64)> {
     let state = issues_state.read();
-    let section = state.sections.get(section_idx)?;
-    let issue = section.issues.get(cursor)?;
+    let filter = state.filters.get(filter_idx)?;
+    let issue = filter.issues.get(cursor)?;
     let repo_ref = issue.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), issue.number))
 }

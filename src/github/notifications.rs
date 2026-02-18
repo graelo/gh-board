@@ -12,7 +12,7 @@ use crate::github::types::{Notification, NotificationReason, RepoRef, SubjectTyp
 
 /// Parsed filter parameters for the notifications REST API.
 #[derive(Debug, Clone, Default)]
-pub struct NotificationFilter {
+pub struct NotificationQueryParams {
     /// If `true`, include read notifications.
     pub all: bool,
     /// Max results per page.
@@ -32,11 +32,11 @@ pub enum NotificationStatus {
 }
 
 /// Parse a filter string like `"repo:owner/name reason:mention is:unread"`
-/// into a `NotificationFilter`.
-pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationFilter {
+/// into a `NotificationQueryParams`.
+pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
     #[allow(clippy::cast_possible_truncation)]
     let per_page = limit.min(100) as u8;
-    let mut filter = NotificationFilter {
+    let mut filter = NotificationQueryParams {
         per_page,
         all: true,
         ..Default::default()
@@ -143,7 +143,7 @@ fn into_domain(n: octocrab::models::activity::Notification) -> Notification {
 /// Fetch notifications from the REST API, applying the given filter.
 pub async fn fetch_notifications(
     octocrab: &Arc<Octocrab>,
-    filter: &NotificationFilter,
+    filter: &NotificationQueryParams,
 ) -> Result<Vec<Notification>> {
     let page = octocrab
         .activity()

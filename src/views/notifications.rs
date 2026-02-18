@@ -16,7 +16,7 @@ use crate::components::table::{
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
-use crate::config::types::NotificationSection;
+use crate::config::types::NotificationFilter;
 use crate::filter;
 use crate::github::notifications;
 use crate::github::rate_limit;
@@ -159,12 +159,12 @@ enum InputMode {
 }
 
 // ---------------------------------------------------------------------------
-// Section state (T053)
+// Filter state (T053)
 // ---------------------------------------------------------------------------
 
-/// State for a single notification section.
+/// State for a single filter.
 #[derive(Debug, Clone)]
-struct SectionData {
+struct FilterData {
     rows: Vec<Row>,
     /// Notification IDs indexed same as rows (used by action keybindings).
     ids: Vec<String>,
@@ -175,7 +175,7 @@ struct SectionData {
     error: Option<String>,
 }
 
-impl Default for SectionData {
+impl Default for FilterData {
     fn default() -> Self {
         Self {
             rows: Vec::new(),
@@ -188,10 +188,10 @@ impl Default for SectionData {
     }
 }
 
-/// Shared state across all notification sections.
+/// Shared state across all notification filters.
 #[derive(Debug, Clone)]
 struct NotificationsState {
-    sections: Vec<SectionData>,
+    filters: Vec<FilterData>,
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ struct NotificationsState {
 
 #[derive(Default, Props)]
 pub struct NotificationsViewProps<'a> {
-    pub sections: Option<&'a [NotificationSection]>,
+    pub filters: Option<&'a [NotificationFilter]>,
     pub octocrab: Option<&'a Arc<Octocrab>>,
     pub theme: Option<&'a ResolvedTheme>,
     /// Merged keybindings for help overlay.
@@ -208,7 +208,7 @@ pub struct NotificationsViewProps<'a> {
     pub color_depth: ColorDepth,
     pub width: u16,
     pub height: u16,
-    pub show_section_count: bool,
+    pub show_filter_count: bool,
     pub show_separator: bool,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
@@ -232,7 +232,7 @@ pub fn NotificationsView<'a>(
     props: &NotificationsViewProps<'a>,
     mut hooks: Hooks,
 ) -> impl Into<AnyElement<'a>> {
-    let sections_cfg = props.sections.unwrap_or(&[]);
+    let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
     let depth = props.color_depth;
     let should_exit = props.should_exit;
@@ -240,10 +240,10 @@ pub fn NotificationsView<'a>(
     let switch_view_back = props.switch_view_back;
     let scope_toggle = props.scope_toggle;
     let scope_repo = &props.scope_repo;
-    let section_count = sections_cfg.len();
+    let filter_count = filters_cfg.len();
     let is_active = props.is_active;
 
-    let mut active_section = hooks.use_state(|| 0usize);
+    let mut active_filter = hooks.use_state(|| 0usize);
     let mut cursor = hooks.use_state(|| 0usize);
     let mut scroll_offset = hooks.use_state(|| 0usize);
 
@@ -253,25 +253,25 @@ pub fn NotificationsView<'a>(
     let mut help_visible = hooks.use_state(|| false);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
 
-    // State: per-section fetch tracking (lazy: only fetch the active section).
-    let mut section_fetch_times =
-        hooks.use_state(move || vec![Option::<std::time::Instant>::None; section_count]);
-    let mut section_in_flight = hooks.use_state(move || vec![false; section_count]);
+    // State: per-filter fetch tracking (lazy: only fetch the active filter).
+    let mut filter_fetch_times =
+        hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
+    let mut filter_in_flight = hooks.use_state(move || vec![false; filter_count]);
 
-    let initial_sections = vec![SectionData::default(); section_count];
+    let initial_filters = vec![FilterData::default(); filter_count];
     let mut notif_state = hooks.use_state(move || NotificationsState {
-        sections: initial_sections,
+        filters: initial_filters,
     });
 
-    // Track scope changes: when scope_repo changes, invalidate all sections.
+    // Track scope changes: when scope_repo changes, invalidate all filters.
     let mut last_scope = hooks.use_state(|| scope_repo.clone());
     if *last_scope.read() != *scope_repo {
         last_scope.set(scope_repo.clone());
         notif_state.set(NotificationsState {
-            sections: vec![SectionData::default(); section_count],
+            filters: vec![FilterData::default(); filter_count],
         });
-        section_fetch_times.set(vec![None; section_count]);
-        section_in_flight.set(vec![false; section_count]);
+        filter_fetch_times.set(vec![None; filter_count]);
+        filter_in_flight.set(vec![false; filter_count]);
     }
 
     // Timer tick for periodic re-renders (supports auto-refetch).
@@ -283,21 +283,21 @@ pub fn NotificationsView<'a>(
         }
     });
 
-    // Compute active section index early (needed by fetch logic below).
-    let current_section_idx = active_section.get().min(section_count.saturating_sub(1));
+    // Compute active filter index early (needed by fetch logic below).
+    let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
 
-    // Auto-refetch: only reset the active section when its interval has elapsed.
+    // Auto-refetch: only reset the active filter when its interval has elapsed.
     let refetch_interval = props.refetch_interval_minutes;
     let needs_refetch = is_active
         && refetch_interval > 0
-        && !section_in_flight
+        && !filter_in_flight
             .read()
-            .get(current_section_idx)
+            .get(current_filter_idx)
             .copied()
             .unwrap_or(false)
-        && section_fetch_times
+        && filter_fetch_times
             .read()
-            .get(current_section_idx)
+            .get(current_filter_idx)
             .copied()
             .flatten()
             .is_some_and(|last| {
@@ -305,43 +305,43 @@ pub fn NotificationsView<'a>(
             });
     if needs_refetch {
         let mut state = notif_state.read().clone();
-        if current_section_idx < state.sections.len() {
-            state.sections[current_section_idx] = SectionData::default();
+        if current_filter_idx < state.filters.len() {
+            state.filters[current_filter_idx] = FilterData::default();
         }
         notif_state.set(state);
-        let mut times = section_fetch_times.read().clone();
-        if current_section_idx < times.len() {
-            times[current_section_idx] = None;
+        let mut times = filter_fetch_times.read().clone();
+        if current_filter_idx < times.len() {
+            times[current_filter_idx] = None;
         }
-        section_fetch_times.set(times);
+        filter_fetch_times.set(times);
     }
 
-    // Lazy fetch: only fetch the active section when it needs data.
+    // Lazy fetch: only fetch the active filter when it needs data.
     let active_needs_fetch = notif_state
         .read()
-        .sections
-        .get(current_section_idx)
+        .filters
+        .get(current_filter_idx)
         .is_some_and(|s| s.loading);
-    let active_in_flight = section_in_flight
+    let active_in_flight = filter_in_flight
         .read()
-        .get(current_section_idx)
+        .get(current_filter_idx)
         .copied()
         .unwrap_or(false);
 
     if active_needs_fetch
         && !active_in_flight
         && is_active
-        && let Some(cfg) = sections_cfg.get(current_section_idx)
+        && let Some(cfg) = filters_cfg.get(current_filter_idx)
         && let Some(octocrab) = props.octocrab
     {
-        let mut in_flight = section_in_flight.read().clone();
-        if current_section_idx < in_flight.len() {
-            in_flight[current_section_idx] = true;
+        let mut in_flight = filter_in_flight.read().clone();
+        if current_filter_idx < in_flight.len() {
+            in_flight[current_filter_idx] = true;
         }
-        section_in_flight.set(in_flight);
+        filter_in_flight.set(in_flight);
 
         let octocrab = Arc::clone(octocrab);
-        let section_idx = current_section_idx;
+        let filter_idx = current_filter_idx;
         let mut filter = notifications::parse_filters(&cfg.filters, cfg.limit.unwrap_or(30));
         // Inject repo scope if active and not already present.
         if let Some(ref repo) = *scope_repo
@@ -353,7 +353,7 @@ pub fn NotificationsView<'a>(
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
         smol::spawn(Compat::new(async move {
-            let section_data = match notifications::fetch_notifications(&octocrab, &filter).await {
+            let filter_data = match notifications::fetch_notifications(&octocrab, &filter).await {
                 Ok(notifs) => {
                     let rows: Vec<Row> = notifs
                         .iter()
@@ -361,7 +361,7 @@ pub fn NotificationsView<'a>(
                         .collect();
                     let ids: Vec<String> = notifs.iter().map(|n| n.id.clone()).collect();
                     let notification_count = notifs.len();
-                    SectionData {
+                    FilterData {
                         rows,
                         ids,
                         notifications: notifs,
@@ -376,44 +376,44 @@ pub fn NotificationsView<'a>(
                     } else {
                         e.to_string()
                     };
-                    SectionData {
+                    FilterData {
                         loading: false,
                         error: Some(error_msg),
-                        ..SectionData::default()
+                        ..FilterData::default()
                     }
                 }
             };
 
             let mut state = notif_state.read().clone();
-            if section_idx < state.sections.len() {
-                state.sections[section_idx] = section_data;
+            if filter_idx < state.filters.len() {
+                state.filters[filter_idx] = filter_data;
             }
             notif_state.set(state);
 
-            let mut times = section_fetch_times.read().clone();
-            if section_idx < times.len() {
-                times[section_idx] = Some(std::time::Instant::now());
+            let mut times = filter_fetch_times.read().clone();
+            if filter_idx < times.len() {
+                times[filter_idx] = Some(std::time::Instant::now());
             }
-            section_fetch_times.set(times);
-            let mut in_flight = section_in_flight.read().clone();
-            if section_idx < in_flight.len() {
-                in_flight[section_idx] = false;
+            filter_fetch_times.set(times);
+            let mut in_flight = filter_in_flight.read().clone();
+            if filter_idx < in_flight.len() {
+                in_flight[filter_idx] = false;
             }
-            section_in_flight.set(in_flight);
+            filter_in_flight.set(in_flight);
         }))
         .detach();
     }
 
     let state_ref = notif_state.read();
     let all_rows_count = state_ref
-        .sections
-        .get(current_section_idx)
+        .filters
+        .get(current_filter_idx)
         .map_or(0, |s| s.rows.len());
     let search_q = search_query.read().clone();
     let total_rows = if search_q.is_empty() {
         all_rows_count
     } else {
-        state_ref.sections.get(current_section_idx).map_or(0, |s| {
+        state_ref.filters.get(current_filter_idx).map_or(0, |s| {
             filter::filter_notifications(&s.notifications, &s.rows, &search_q).len()
         })
     };
@@ -455,7 +455,7 @@ pub fn NotificationsView<'a>(
                                     PendingAction::Unsubscribe => {
                                         let notif = get_current_notification(
                                             &notif_state,
-                                            current_section_idx,
+                                            current_filter_idx,
                                             cursor.get(),
                                         );
                                         if let Some(n) = notif {
@@ -475,7 +475,7 @@ pub fn NotificationsView<'a>(
                                             .detach();
                                             remove_notification(
                                                 notif_state,
-                                                current_section_idx,
+                                                current_filter_idx,
                                                 cursor.get(),
                                             );
                                             clamp_cursor(
@@ -497,12 +497,12 @@ pub fn NotificationsView<'a>(
                                             }
                                         }))
                                         .detach();
-                                        clear_section(notif_state, current_section_idx);
+                                        clear_filter(notif_state, current_filter_idx);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
                                     PendingAction::MarkAllDone => {
-                                        let ids = get_section_ids(notif_state, current_section_idx);
+                                        let ids = get_filter_ids(notif_state, current_filter_idx);
                                         let octocrab = Arc::clone(octocrab);
                                         smol::spawn(Compat::new(async move {
                                             let mut failed = 0usize;
@@ -527,14 +527,14 @@ pub fn NotificationsView<'a>(
                                             }
                                         }))
                                         .detach();
-                                        clear_section(notif_state, current_section_idx);
+                                        clear_filter(notif_state, current_filter_idx);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
                                     PendingAction::MarkDone => {
                                         let notif = get_current_notification(
                                             &notif_state,
-                                            current_section_idx,
+                                            current_filter_idx,
                                             cursor.get(),
                                         );
                                         if let Some(n) = notif {
@@ -556,7 +556,7 @@ pub fn NotificationsView<'a>(
                                             .detach();
                                             remove_notification(
                                                 notif_state,
-                                                current_section_idx,
+                                                current_filter_idx,
                                                 cursor.get(),
                                             );
                                             clamp_cursor(
@@ -634,7 +634,7 @@ pub fn NotificationsView<'a>(
                         KeyCode::Char('y') => {
                             let notif = get_current_notification(
                                 &notif_state,
-                                current_section_idx,
+                                current_filter_idx,
                                 cursor.get(),
                             );
                             if let Some(n) = notif {
@@ -644,7 +644,7 @@ pub fn NotificationsView<'a>(
                         KeyCode::Char('Y') => {
                             let notif = get_current_notification(
                                 &notif_state,
-                                current_section_idx,
+                                current_filter_idx,
                                 cursor.get(),
                             );
                             if let Some(n) = notif
@@ -656,7 +656,7 @@ pub fn NotificationsView<'a>(
                         KeyCode::Char('o') => {
                             let notif = get_current_notification(
                                 &notif_state,
-                                current_section_idx,
+                                current_filter_idx,
                                 cursor.get(),
                             );
                             if let Some(n) = notif
@@ -667,17 +667,17 @@ pub fn NotificationsView<'a>(
                         }
                         // Retry / refresh
                         KeyCode::Char('r') => {
-                            let idx = active_section.get();
+                            let idx = active_filter.get();
                             let mut state = notif_state.read().clone();
-                            if idx < state.sections.len() {
-                                state.sections[idx] = SectionData::default();
+                            if idx < state.filters.len() {
+                                state.filters[idx] = FilterData::default();
                             }
                             notif_state.set(state);
-                            let mut times = section_fetch_times.read().clone();
+                            let mut times = filter_fetch_times.read().clone();
                             if idx < times.len() {
                                 times[idx] = None;
                             }
-                            section_fetch_times.set(times);
+                            filter_fetch_times.set(times);
                             cursor.set(0);
                             scroll_offset.set(0);
                         }
@@ -701,7 +701,7 @@ pub fn NotificationsView<'a>(
                             if let Some(ref octocrab) = octocrab_for_actions {
                                 let notif = get_current_notification(
                                     &notif_state,
-                                    current_section_idx,
+                                    current_filter_idx,
                                     cursor.get(),
                                 );
                                 if let Some(n) = notif {
@@ -720,7 +720,7 @@ pub fn NotificationsView<'a>(
                                     .detach();
                                     remove_notification(
                                         notif_state,
-                                        current_section_idx,
+                                        current_filter_idx,
                                         cursor.get(),
                                     );
                                     clamp_cursor(
@@ -812,10 +812,10 @@ pub fn NotificationsView<'a>(
                         }
                         // Section switching
                         KeyCode::Char('h') | KeyCode::Left => {
-                            if section_count > 0 {
-                                let current = active_section.get();
-                                active_section.set(if current == 0 {
-                                    section_count.saturating_sub(1)
+                            if filter_count > 0 {
+                                let current = active_filter.get();
+                                active_filter.set(if current == 0 {
+                                    filter_count.saturating_sub(1)
                                 } else {
                                     current - 1
                                 });
@@ -824,8 +824,8 @@ pub fn NotificationsView<'a>(
                             }
                         }
                         KeyCode::Char('l') | KeyCode::Right => {
-                            if section_count > 0 {
-                                active_section.set((active_section.get() + 1) % section_count);
+                            if filter_count > 0 {
+                                active_filter.set((active_filter.get() + 1) % filter_count);
                                 cursor.set(0);
                                 scroll_offset.set(0);
                             }
@@ -850,16 +850,16 @@ pub fn NotificationsView<'a>(
     }
 
     // Build tabs.
-    let tabs: Vec<Tab> = sections_cfg
+    let tabs: Vec<Tab> = filters_cfg
         .iter()
         .enumerate()
         .map(|(i, s)| Tab {
             title: s.title.clone(),
-            count: state_ref.sections.get(i).map(|d| d.notification_count),
+            count: state_ref.filters.get(i).map(|d| d.notification_count),
         })
         .collect();
 
-    let current_data = state_ref.sections.get(current_section_idx);
+    let current_data = state_ref.filters.get(current_filter_idx);
     let columns = notification_columns();
 
     let all_rows: &[Row] = current_data.map_or(&[], |d| d.rows.as_slice());
@@ -895,13 +895,13 @@ pub fn NotificationsView<'a>(
 
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
-        current_section_idx,
-        props.show_section_count,
+        current_filter_idx,
+        props.show_filter_count,
         depth,
         Some(theme.footer_notifications),
         Some(theme.footer_notifications),
         Some(theme.border_faint),
-        &theme.icons.tab_section,
+        &theme.icons.tab_filter,
     );
 
     let current_mode = input_mode.read().clone();
@@ -951,9 +951,9 @@ pub fn NotificationsView<'a>(
             format!("Notif {cursor_pos}/{total_rows} (filtered from {total})")
         }
     };
-    let active_fetch_time = section_fetch_times
+    let active_fetch_time = filter_fetch_times
         .read()
-        .get(current_section_idx)
+        .get(current_filter_idx)
         .copied()
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
@@ -1018,50 +1018,50 @@ pub fn NotificationsView<'a>(
 
 fn get_current_notification(
     notif_state: &State<NotificationsState>,
-    section_idx: usize,
+    filter_idx: usize,
     cursor: usize,
 ) -> Option<Notification> {
     let state = notif_state.read();
-    let section = state.sections.get(section_idx)?;
-    section.notifications.get(cursor).cloned()
+    let filter = state.filters.get(filter_idx)?;
+    filter.notifications.get(cursor).cloned()
 }
 
-/// Remove a notification at `index` from section `section_idx` in local state.
+/// Remove a notification at `index` from filter `filter_idx` in local state.
 fn remove_notification(
     mut notif_state: State<NotificationsState>,
-    section_idx: usize,
+    filter_idx: usize,
     index: usize,
 ) {
     let mut state = notif_state.read().clone();
-    if let Some(section) = state.sections.get_mut(section_idx)
-        && index < section.rows.len()
+    if let Some(filter) = state.filters.get_mut(filter_idx)
+        && index < filter.rows.len()
     {
-        section.rows.remove(index);
-        section.ids.remove(index);
-        section.notifications.remove(index);
-        section.notification_count = section.notifications.len();
+        filter.rows.remove(index);
+        filter.ids.remove(index);
+        filter.notifications.remove(index);
+        filter.notification_count = filter.notifications.len();
     }
     notif_state.set(state);
 }
 
-/// Clear all notifications from a section in local state.
-fn clear_section(mut notif_state: State<NotificationsState>, section_idx: usize) {
+/// Clear all notifications from a filter in local state.
+fn clear_filter(mut notif_state: State<NotificationsState>, filter_idx: usize) {
     let mut state = notif_state.read().clone();
-    if let Some(section) = state.sections.get_mut(section_idx) {
-        section.rows.clear();
-        section.ids.clear();
-        section.notifications.clear();
-        section.notification_count = 0;
+    if let Some(filter) = state.filters.get_mut(filter_idx) {
+        filter.rows.clear();
+        filter.ids.clear();
+        filter.notifications.clear();
+        filter.notification_count = 0;
     }
     notif_state.set(state);
 }
 
-/// Get all notification IDs for a section.
-fn get_section_ids(notif_state: State<NotificationsState>, section_idx: usize) -> Vec<String> {
+/// Get all notification IDs for a filter.
+fn get_filter_ids(notif_state: State<NotificationsState>, filter_idx: usize) -> Vec<String> {
     let state = notif_state.read();
     state
-        .sections
-        .get(section_idx)
+        .filters
+        .get(filter_idx)
         .map_or_else(Vec::new, |s| s.ids.clone())
 }
 

@@ -5,6 +5,7 @@
 
 pub mod actions;
 pub mod app;
+pub mod init;
 pub mod color;
 pub mod components;
 pub mod config;

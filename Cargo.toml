@@ -9,6 +9,9 @@ license = "MIT"
 keywords = ["cli", "dashboard", "github", "tui"]
 categories = ["command-line-utilities"]
 
+[profile.release]
+strip = true
+
 [dependencies]
 anyhow = "1"
 #

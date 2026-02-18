@@ -5,7 +5,6 @@
 
 pub mod actions;
 pub mod app;
-pub mod init;
 pub mod color;
 pub mod components;
 pub mod config;
@@ -13,6 +12,7 @@ pub mod filter;
 pub mod git;
 pub mod github;
 pub mod icons;
+pub mod init;
 pub mod markdown;
 pub mod theme;
 pub mod util;

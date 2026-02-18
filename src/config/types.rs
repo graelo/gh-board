@@ -280,12 +280,24 @@ fn merge_markdown(base: &MarkdownColors, overlay: &MarkdownColors) -> MarkdownCo
             text: overlay.syntax.text.or(base.syntax.text),
             background: overlay.syntax.background.or(base.syntax.background),
             error: overlay.syntax.error.or(base.syntax.error),
-            error_background: overlay.syntax.error_background.or(base.syntax.error_background),
+            error_background: overlay
+                .syntax
+                .error_background
+                .or(base.syntax.error_background),
             comment: overlay.syntax.comment.or(base.syntax.comment),
-            comment_preproc: overlay.syntax.comment_preproc.or(base.syntax.comment_preproc),
+            comment_preproc: overlay
+                .syntax
+                .comment_preproc
+                .or(base.syntax.comment_preproc),
             keyword: overlay.syntax.keyword.or(base.syntax.keyword),
-            keyword_reserved: overlay.syntax.keyword_reserved.or(base.syntax.keyword_reserved),
-            keyword_namespace: overlay.syntax.keyword_namespace.or(base.syntax.keyword_namespace),
+            keyword_reserved: overlay
+                .syntax
+                .keyword_reserved
+                .or(base.syntax.keyword_reserved),
+            keyword_namespace: overlay
+                .syntax
+                .keyword_namespace
+                .or(base.syntax.keyword_namespace),
             keyword_type: overlay.syntax.keyword_type.or(base.syntax.keyword_type),
             operator: overlay.syntax.operator.or(base.syntax.operator),
             punctuation: overlay.syntax.punctuation.or(base.syntax.punctuation),

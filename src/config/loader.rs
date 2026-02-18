@@ -98,8 +98,8 @@ fn apply_theme_file(config: &mut AppConfig) -> Result<()> {
         Box::leak(contents.into_boxed_str())
     };
 
-    let file_theme: ThemeFile = toml::from_str(toml_src)
-        .with_context(|| format!("parsing theme file {theme_file:?}"))?;
+    let file_theme: ThemeFile =
+        toml::from_str(toml_src).with_context(|| format!("parsing theme file {theme_file:?}"))?;
 
     // The file provides the base; inline [theme.*] is the overlay.
     let inline = std::mem::take(&mut config.theme);
@@ -202,7 +202,9 @@ fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
-fn expand_repo_paths(paths: std::collections::HashMap<String, PathBuf>) -> std::collections::HashMap<String, PathBuf> {
+fn expand_repo_paths(
+    paths: std::collections::HashMap<String, PathBuf>,
+) -> std::collections::HashMap<String, PathBuf> {
     paths
         .into_iter()
         .map(|(k, v)| {
@@ -215,4 +217,3 @@ fn expand_repo_paths(paths: std::collections::HashMap<String, PathBuf>) -> std::
         })
         .collect()
 }
-

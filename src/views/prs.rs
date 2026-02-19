@@ -794,7 +794,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             // Capture PRs for prefetch before filter_data is moved into state.
             // Only prefetch when the list succeeded (error implies empty prs, but be explicit).
             let prs_for_prefetch: Vec<PullRequest> = if filter_data.error.is_none() {
-                filter_data.prs.iter().take(prefetch_limit).cloned().collect()
+                filter_data
+                    .prs
+                    .iter()
+                    .take(prefetch_limit)
+                    .cloned()
+                    .collect()
             } else {
                 Vec::new()
             };

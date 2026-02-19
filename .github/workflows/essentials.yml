@@ -68,6 +68,7 @@ jobs:
           cargo deny check
 
       - name: Quality - cargo outdated
+        if: github.event_name == 'pull_request'
         timeout-minutes: 20
         run: |
           VERSION=$(curl -s https://api.github.com/repos/kbknapp/cargo-outdated/releases/latest | jq -r '.tag_name')

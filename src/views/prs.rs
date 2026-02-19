@@ -792,9 +792,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             };
 
             // Capture PRs for prefetch before filter_data is moved into state.
-            let prs_for_prefetch: Vec<PullRequest> = if prefetch_limit > 0 {
-                let n = prefetch_limit.min(filter_data.prs.len());
-                filter_data.prs[..n].to_vec()
+            // Only prefetch when the list succeeded (error implies empty prs, but be explicit).
+            let prs_for_prefetch: Vec<PullRequest> = if filter_data.error.is_none() {
+                filter_data.prs.iter().take(prefetch_limit).cloned().collect()
             } else {
                 Vec::new()
             };
@@ -845,7 +845,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             Ok((mut detail, rl)) => {
                                 if detail.behind_by.is_none()
                                     && let Some(ref head_owner) = pr.head_repo_owner
-                                    && let Ok(behind) = graphql::fetch_compare(
+                                {
+                                    match graphql::fetch_compare(
                                         &octocrab_pf,
                                         &owner,
                                         &repo_name,
@@ -854,8 +855,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         &pr.head_ref,
                                     )
                                     .await
-                                {
-                                    detail.behind_by = behind;
+                                    {
+                                        Ok(behind) => detail.behind_by = behind,
+                                        Err(e) => tracing::debug!(
+                                            "compare API failed for PR #{}: {e:#}",
+                                            pr.number
+                                        ),
+                                    }
                                 }
 
                                 if rl.is_some() {
@@ -881,7 +887,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             Err(e) => {
                                 tracing::debug!("prefetch failed for PR #{}: {e:#}", pr.number);
                                 if rate_limit::is_rate_limited(&e) {
-                                    tracing::warn!("rate-limited during prefetch, stopping");
+                                    tracing::warn!(
+                                        "rate-limited during prefetch at PR #{}, stopping",
+                                        pr.number
+                                    );
                                     break;
                                 }
                             }

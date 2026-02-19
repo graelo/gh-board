@@ -493,6 +493,8 @@ pub struct PrsViewProps<'a> {
     pub is_active: bool,
     /// Auto-refetch interval in minutes (0 = disabled).
     pub refetch_interval_minutes: u32,
+    /// Number of PR details to prefetch after list load. 0 = on-demand only.
+    pub prefetch_pr_details: u32,
 }
 
 #[component]
@@ -738,6 +740,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         let limit = cfg.limit.unwrap_or(30);
         let theme_clone = theme.clone();
         let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
+        let prefetch_limit = props.prefetch_pr_details as usize;
         // Phase 3: snapshot detail cache so already-fetched detail backfills rows.
         let detail_cache_snap = detail_cache.read().clone();
 
@@ -788,6 +791,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 }
             };
 
+            // Capture PRs for prefetch before filter_data is moved into state.
+            let prs_for_prefetch: Vec<PullRequest> = if prefetch_limit > 0 {
+                let n = prefetch_limit.min(filter_data.prs.len());
+                filter_data.prs[..n].to_vec()
+            } else {
+                Vec::new()
+            };
+
             // Update only this filter.
             let mut state = prs_state.read().clone();
             if filter_idx < state.filters.len() {
@@ -806,6 +817,79 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 in_flight[filter_idx] = false;
             }
             filter_in_flight.set(in_flight);
+
+            // Background prefetch: sequentially fetch full details for the first N PRs.
+            if !prs_for_prefetch.is_empty() {
+                let octocrab_pf = Arc::clone(&octocrab);
+                let api_cache_pf = api_cache.clone();
+                let theme_pf = theme_clone.clone();
+
+                smol::spawn(Compat::new(async move {
+                    for pr in prs_for_prefetch {
+                        // Skip PRs already in the in-component cache.
+                        if detail_cache.read().contains_key(&pr.number) {
+                            continue;
+                        }
+                        let Some(ref repo) = pr.repo else { continue };
+                        let (owner, repo_name) = (repo.owner.clone(), repo.name.clone());
+
+                        match graphql::fetch_pr_detail(
+                            &octocrab_pf,
+                            &owner,
+                            &repo_name,
+                            pr.number,
+                            api_cache_pf.as_ref(),
+                        )
+                        .await
+                        {
+                            Ok((mut detail, rl)) => {
+                                if detail.behind_by.is_none()
+                                    && let Some(ref head_owner) = pr.head_repo_owner
+                                    && let Ok(behind) = graphql::fetch_compare(
+                                        &octocrab_pf,
+                                        &owner,
+                                        &repo_name,
+                                        &pr.base_ref,
+                                        head_owner,
+                                        &pr.head_ref,
+                                    )
+                                    .await
+                                {
+                                    detail.behind_by = behind;
+                                }
+
+                                if rl.is_some() {
+                                    rate_limit_state.set(rl);
+                                }
+
+                                let update_cell = update_cell_from_detail(&detail, &theme_pf);
+                                let mut state = prs_state.read().clone();
+                                'pf: for fd in &mut state.filters {
+                                    if let Some(idx) =
+                                        fd.prs.iter().position(|p| p.number == pr.number)
+                                    {
+                                        fd.rows[idx].insert("update".to_owned(), update_cell);
+                                        break 'pf;
+                                    }
+                                }
+                                prs_state.set(state);
+
+                                let mut cache = detail_cache.read().clone();
+                                cache.insert(pr.number, detail);
+                                detail_cache.set(cache);
+                            }
+                            Err(e) => {
+                                tracing::debug!("prefetch failed for PR #{}: {e:#}", pr.number);
+                                if rate_limit::is_rate_limited(&e) {
+                                    tracing::warn!("rate-limited during prefetch, stopping");
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }))
+                .detach();
+            }
         }))
         .detach();
     }

@@ -147,6 +147,18 @@ pub enum CheckConclusion {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum CommitCheckState {
+    Success,
+    Failure,
+    Pending,
+    Error,
+    Expected,
+    #[serde(other)]
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum FileChangeType {
     Added,
     Deleted,
@@ -209,6 +221,7 @@ pub struct Commit {
     pub message: String,
     pub author: Option<String>,
     pub committed_date: Option<DateTime<Utc>>,
+    pub check_state: Option<CommitCheckState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

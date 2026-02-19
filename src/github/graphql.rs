@@ -7,9 +7,10 @@ use octocrab::Octocrab;
 use serde::{Deserialize, Serialize};
 
 use crate::github::types::{
-    Actor, AuthorAssociation, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType,
-    Issue, IssueState, Label, MergeStateStatus, MergeableState, PrState, PullRequest,
-    ReactionGroups, RepoRef, Review, ReviewDecision, ReviewState, ReviewThread, TimelineEvent,
+    Actor, AuthorAssociation, CheckConclusion, CheckRun, CheckStatus, Commit, CommitCheckState,
+    File, FileChangeType, Issue, IssueState, Label, MergeStateStatus, MergeableState, PrState,
+    PullRequest, ReactionGroups, RepoRef, Review, ReviewDecision, ReviewState, ReviewThread,
+    TimelineEvent,
 };
 
 // ---------------------------------------------------------------------------
@@ -107,7 +108,7 @@ query PullRequestDetail($owner: String!, $repo: String!, $number: Int!) {
         }
       }
       commits(first: 100) {
-        nodes { commit { oid messageHeadline author { name } committedDate } }
+        nodes { commit { oid messageHeadline author { name } committedDate statusCheckRollup { state } } }
       }
       files(first: 100) {
         nodes { path additions deletions changeType }
@@ -385,11 +386,18 @@ struct RawDetailCommit {
     author: Option<RawCommitAuthor>,
     #[serde(rename = "committedDate")]
     committed_date: Option<DateTime<Utc>>,
+    #[serde(rename = "statusCheckRollup")]
+    status_check_rollup: Option<RawDetailStatusCheckRollup>,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawCommitAuthor {
     name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawDetailStatusCheckRollup {
+    state: Option<CommitCheckState>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1241,6 +1249,7 @@ impl RawPrDetail {
                             message: c.message_headline,
                             author: c.author.and_then(|a| a.name),
                             committed_date: c.committed_date,
+                            check_state: c.status_check_rollup.and_then(|r| r.state),
                         })
                     })
                     .collect()

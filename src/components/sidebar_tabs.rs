@@ -1,7 +1,8 @@
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::github::graphql::{IssueDetail, PrDetail};
 use crate::github::types::{
-    CheckConclusion, CheckStatus, FileChangeType, Issue, PullRequest, ReviewState, TimelineEvent,
+    CheckConclusion, CheckStatus, CommitCheckState, FileChangeType, Issue, PullRequest,
+    ReviewState, TimelineEvent,
 };
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
@@ -247,10 +248,16 @@ pub fn render_commits(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLin
             .map(|d| crate::util::format_date(d, "relative"))
             .unwrap_or_default();
 
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::text(format!("{short_sha} "), theme.text_warning),
-            StyledSpan::text(&commit.message, theme.text_primary),
-        ]));
+        let mut spans = vec![StyledSpan::text(
+            format!("{short_sha} "),
+            theme.text_warning,
+        )];
+        if let Some(state) = commit.check_state {
+            let (icon, color) = commit_check_state_icon(state, theme);
+            spans.push(StyledSpan::text(format!("{icon} "), color));
+        }
+        spans.push(StyledSpan::text(&commit.message, theme.text_primary));
+        lines.push(StyledLine::from_spans(spans));
         if !author.is_empty() || !date.is_empty() {
             lines.push(StyledLine::from_spans(vec![
                 StyledSpan::text(format!("        {author}"), theme.text_actor),
@@ -287,6 +294,17 @@ pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine>
     }
 
     lines
+}
+
+fn commit_check_state_icon(state: CommitCheckState, theme: &ResolvedTheme) -> (String, AppColor) {
+    let icons = &theme.icons;
+    match state {
+        CommitCheckState::Success => (icons.check_success.clone(), theme.text_success),
+        CommitCheckState::Failure | CommitCheckState::Error => {
+            (icons.check_failure.clone(), theme.text_error)
+        }
+        _ => (icons.check_pending.clone(), theme.text_warning),
+    }
 }
 
 fn check_status_icon(

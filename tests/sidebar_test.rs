@@ -114,12 +114,14 @@ fn test_detail() -> PrDetail {
                 message: "Initial commit".to_owned(),
                 author: Some("Author One".to_owned()),
                 committed_date: Some(Utc::now() - Duration::days(1)),
+                check_state: None,
             },
             Commit {
                 sha: "def456".to_owned(),
                 message: "Fix bug".to_owned(),
                 author: None,
                 committed_date: None,
+                check_state: None,
             },
         ],
         files: vec![

@@ -136,6 +136,7 @@ theme_file = "builtin:dracula"      # Built-in theme, or path to a theme TOML fi
 [github]
 scope = "auto"                      # "auto" (repo if in git dir), "repo", or "global"
 refetch_interval_minutes = 10       # Cache TTL
+prefetch_pr_details = 0             # Background-prefetch first N PR details (0 = off)
 
 [defaults]
 view = "prs"                        # Initial view: prs, issues, notifications, repo

@@ -2032,6 +2032,8 @@ fn build_issue_sidebar_meta(
         role_icon: String::new(),
         role_text: String::new(),
         role_fg: theme.pill_role.to_crossterm_color(depth),
+        update_text: None,
+        update_fg: theme.text_faint.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
     }

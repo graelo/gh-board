@@ -71,6 +71,9 @@ fn test_pr() -> PullRequest {
         comment_count: 3,
         author_association: None,
         participants: Vec::new(),
+        merge_state_status: None,
+        head_repo_owner: None,
+        head_repo_name: None,
     }
 }
 
@@ -133,6 +136,8 @@ fn test_detail() -> PrDetail {
                 status: Some(FileChangeType::Added),
             },
         ],
+        mergeable: None,
+        behind_by: None,
     }
 }
 
@@ -250,6 +255,8 @@ fn activity_empty_shows_placeholder() {
         timeline_events: Vec::new(),
         commits: Vec::new(),
         files: Vec::new(),
+        mergeable: None,
+        behind_by: None,
     };
     let theme = test_theme();
     let lines = sidebar_tabs::render_activity(&detail, &theme, ColorDepth::TrueColor);
@@ -293,6 +300,8 @@ fn commits_empty_shows_placeholder() {
         timeline_events: Vec::new(),
         commits: Vec::new(),
         files: Vec::new(),
+        mergeable: None,
+        behind_by: None,
     };
     let theme = test_theme();
     let lines = sidebar_tabs::render_commits(&detail, &theme);
@@ -369,6 +378,8 @@ fn files_empty_shows_placeholder() {
         timeline_events: Vec::new(),
         commits: Vec::new(),
         files: Vec::new(),
+        mergeable: None,
+        behind_by: None,
     };
     let theme = test_theme();
     let lines = sidebar_tabs::render_files(&detail, &theme);

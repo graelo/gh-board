@@ -90,6 +90,9 @@ pub struct SidebarMeta {
     pub role_icon: String,
     pub role_text: String,
     pub role_fg: Color,
+    // Update status (between branch and role)
+    pub update_text: Option<String>,
+    pub update_fg: Color,
     // Participants line
     pub participants: Vec<String>,
     pub participants_fg: Color,
@@ -302,9 +305,12 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                 let has_participants = !m.participants.is_empty();
                 let participants_text = m.participants.join(", ");
                 let participants_fg = m.participants_fg;
+                let has_update = m.update_text.is_some();
+                let update_label = m.update_text.map(|t| format!(" {t}")).unwrap_or_default();
+                let update_fg = m.update_fg;
                 element! {
                     View(margin_top: 1, flex_direction: FlexDirection::Column) {
-                        // Line 1: pill + branch + role
+                        // Line 1: pill + branch + update status + role
                         View(flex_direction: FlexDirection::Row) {
                             // Left cap (Powerline glyph, fg = pill color, no bg)
                             #(if has_caps {
@@ -339,6 +345,17 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                                 None
                             })
                             Text(content: branch_label, color: m.branch_fg, wrap: TextWrap::NoWrap)
+                            #(if has_update {
+                                Some(element! {
+                                    Text(
+                                        content: update_label,
+                                        color: update_fg,
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                })
+                            } else {
+                                None
+                            })
                             Text(content: role_label, color: m.role_fg, wrap: TextWrap::NoWrap)
                         }
                         // Line 2: Participants

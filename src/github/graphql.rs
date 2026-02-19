@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::github::types::{
     Actor, AuthorAssociation, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType,
-    Issue, IssueState, Label, MergeableState, PrState, PullRequest, ReactionGroups, RepoRef,
-    Review, ReviewDecision, ReviewState, ReviewThread, TimelineEvent,
+    Issue, IssueState, Label, MergeableState, MergeStateStatus, PrState, PullRequest,
+    ReactionGroups, RepoRef, Review, ReviewDecision, ReviewState, ReviewThread, TimelineEvent,
 };
 
 // ---------------------------------------------------------------------------
@@ -37,6 +37,8 @@ query SearchPullRequests($query: String!, $first: Int!, $after: String) {
         deletions
         headRefName
         baseRefName
+        mergeStateStatus
+        headRepository { owner { login } name }
         url
         updatedAt
         createdAt
@@ -86,6 +88,7 @@ query PullRequestDetail($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       body
+      mergeable
       reviews(last: 50) {
         nodes { author { login } state body submittedAt }
       }
@@ -316,6 +319,7 @@ struct PrDetailRepo {
 struct RawPrDetail {
     #[serde(default)]
     body: String,
+    mergeable: Option<MergeableState>,
     reviews: Option<Connection<RawReview>>,
     #[serde(rename = "reviewThreads")]
     review_threads: Option<Connection<RawReviewThread>>,
@@ -424,6 +428,10 @@ struct RawPullRequest {
     head_ref_name: String,
     #[serde(rename = "baseRefName", default)]
     base_ref_name: String,
+    #[serde(rename = "mergeStateStatus")]
+    merge_state_status: Option<MergeStateStatus>,
+    #[serde(rename = "headRepository")]
+    head_repository: Option<RawHeadRepository>,
     url: String,
     #[serde(rename = "updatedAt")]
     updated_at: DateTime<Utc>,
@@ -449,6 +457,18 @@ struct RawActor {
     login: String,
     #[serde(rename = "avatarUrl", default)]
     avatar_url: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawHeadRepository {
+    owner: RawActorLogin,
+    name: String,
+}
+
+/// Minimal actor with only `login` (no `avatarUrl`), used for nested owner nodes.
+#[derive(Debug, Deserialize)]
+struct RawActorLogin {
+    login: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -722,6 +742,12 @@ impl RawPullRequest {
                 .participants
                 .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
                 .unwrap_or_default(),
+            merge_state_status: self.merge_state_status,
+            head_repo_owner: self
+                .head_repository
+                .as_ref()
+                .map(|r| r.owner.login.clone()),
+            head_repo_name: self.head_repository.map(|r| r.name),
         }
     }
 }
@@ -1068,6 +1094,10 @@ pub struct PrDetail {
     pub timeline_events: Vec<TimelineEvent>,
     pub commits: Vec<Commit>,
     pub files: Vec<File>,
+    /// Mergeability from the detail query (`mergeable` field).
+    pub mergeable: Option<MergeableState>,
+    /// How many commits behind base this PR is (from REST compare API).
+    pub behind_by: Option<u32>,
 }
 
 /// Detailed Issue data fetched for the sidebar tabs.
@@ -1243,6 +1273,8 @@ impl RawPrDetail {
             timeline_events,
             commits,
             files,
+            mergeable: self.mergeable,
+            behind_by: None, // Populated by fetch_compare after the GraphQL call.
         }
     }
 }
@@ -1399,6 +1431,38 @@ pub async fn fetch_issue_detail(
     }
 
     Ok((detail, rate_limit))
+}
+
+// ---------------------------------------------------------------------------
+// Compare API (REST — branch update status)
+// ---------------------------------------------------------------------------
+
+/// Fetch how many commits behind `base_ref` the head branch is.
+///
+/// Uses `GET /repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}`.
+/// Returns `Some(n)` where `n` is the number of commits the head is behind base,
+/// or `None` if the request fails or the field is absent.
+pub async fn fetch_compare(
+    octocrab: &Arc<Octocrab>,
+    base_owner: &str,
+    base_repo: &str,
+    base_ref: &str,
+    head_owner: &str,
+    head_ref: &str,
+) -> Result<Option<u32>> {
+    let route = format!(
+        "/repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}"
+    );
+    let response: serde_json::Value = octocrab.get(route, None::<&()>).await.with_context(|| {
+        format!(
+            "compare request failed for {base_owner}/{base_repo}: \
+             {base_ref}...{head_owner}:{head_ref}"
+        )
+    })?;
+    let behind_by = response["behind_by"]
+        .as_u64()
+        .and_then(|n| u32::try_from(n).ok());
+    Ok(behind_by)
 }
 
 // ---------------------------------------------------------------------------

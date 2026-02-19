@@ -64,6 +64,9 @@ pub struct AppConfig {
 pub struct GitHubConfig {
     pub scope: Scope,
     pub refetch_interval_minutes: u32,
+    /// Number of PR details to prefetch in the background after the list loads.
+    /// `0` = on-demand only (default).
+    pub prefetch_pr_details: u32,
 }
 
 impl Default for GitHubConfig {
@@ -71,6 +74,7 @@ impl Default for GitHubConfig {
         Self {
             scope: Scope::Auto,
             refetch_interval_minutes: 10,
+            prefetch_pr_details: 0,
         }
     }
 }

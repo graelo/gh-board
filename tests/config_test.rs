@@ -119,7 +119,18 @@ fn default_config_has_sane_defaults() {
     let config = AppConfig::default();
     assert_eq!(config.defaults.view, gh_board::config::types::View::Prs);
     assert_eq!(config.github.refetch_interval_minutes, 10);
+    assert_eq!(config.github.prefetch_pr_details, 0);
     assert!((config.defaults.preview.width - 0.45).abs() < f64::EPSILON);
+}
+
+#[test]
+fn parse_prefetch_pr_details() {
+    let toml = r"
+[github]
+prefetch_pr_details = 20
+";
+    let config: AppConfig = toml::from_str(toml).unwrap();
+    assert_eq!(config.github.prefetch_pr_details, 20);
 }
 
 #[test]

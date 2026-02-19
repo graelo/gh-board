@@ -303,17 +303,17 @@ fn aggregate_ci_status(
 }
 
 /// Derive a coarse `BranchUpdateStatus` from the PR's `merge_state_status`.
+///
+/// Only definitive *negative* signals (BEHIND, DIRTY) are surfaced from the
+/// search query. Everything else stays Unknown/blank until the detail fetch
+/// provides `behind_by` / `mergeable`.  In particular, CLEAN must not be
+/// mapped to `UpToDate` here: GitHub returns CLEAN for branches that are hundreds
+/// of commits behind when the repo does not require up-to-date branches before
+/// merging.  The authoritative ✓ comes only from `effective_update_status`.
 fn branch_update_status(pr: &PullRequest) -> BranchUpdateStatus {
     match pr.merge_state_status {
         Some(MergeStateStatus::Behind) => BranchUpdateStatus::NeedsUpdate,
         Some(MergeStateStatus::Dirty) => BranchUpdateStatus::HasConflicts,
-        Some(
-            MergeStateStatus::Clean
-            | MergeStateStatus::Unstable
-            | MergeStateStatus::HasHooks
-            | MergeStateStatus::Blocked
-            | MergeStateStatus::Draft,
-        ) => BranchUpdateStatus::UpToDate,
         _ => BranchUpdateStatus::Unknown,
     }
 }
@@ -2308,9 +2308,11 @@ mod tests {
     }
 
     #[test]
-    fn branch_status_clean_is_up_to_date() {
+    fn branch_status_clean_is_unknown() {
+        // CLEAN from the search query is not sufficient to show ✓: a repo that
+        // does not require up-to-date branches returns CLEAN even when behind.
         let pr = pr_with_status(Some(MergeStateStatus::Clean));
-        assert_eq!(branch_update_status(&pr), BranchUpdateStatus::UpToDate);
+        assert_eq!(branch_update_status(&pr), BranchUpdateStatus::Unknown);
     }
 
     #[test]

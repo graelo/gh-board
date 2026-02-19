@@ -368,6 +368,10 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         tab_filter: overlay.tab_filter.or(base.tab_filter),
         pill_left: overlay.pill_left.or(base.pill_left),
         pill_right: overlay.pill_right.or(base.pill_right),
+        header_update: overlay.header_update.or(base.header_update),
+        update_needed: overlay.update_needed.or(base.update_needed),
+        update_conflict: overlay.update_conflict.or(base.update_conflict),
+        update_ok: overlay.update_ok.or(base.update_ok),
     }
 }
 
@@ -665,4 +669,9 @@ pub struct IconConfig {
     // Pill caps (rounded edges)
     pub pill_left: Option<String>,
     pub pill_right: Option<String>,
+    // Branch update status
+    pub header_update: Option<String>,
+    pub update_needed: Option<String>,
+    pub update_conflict: Option<String>,
+    pub update_ok: Option<String>,
 }

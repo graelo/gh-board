@@ -32,6 +32,31 @@ pub enum MergeableState {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum MergeStateStatus {
+    Behind,
+    Blocked,
+    Clean,
+    Dirty,
+    Draft,
+    HasHooks,
+    Unknown,
+    Unstable,
+}
+
+/// Coarse branch update status derived from `MergeStateStatus`.
+///
+/// Only the two definitively-negative states are set from the search query;
+/// `UpToDate` is never returned here — the authoritative positive confirmation
+/// comes from `effective_update_status` after the detail fetch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BranchUpdateStatus {
+    NeedsUpdate,
+    HasConflicts,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ReviewDecision {
     Approved,
     ChangesRequested,
@@ -350,6 +375,12 @@ pub struct PullRequest {
     /// Deduplicated participant logins (from GitHub's `participants` connection).
     #[serde(default)]
     pub participants: Vec<String>,
+    /// Merge state from GitHub's `mergeStateStatus` field.
+    pub merge_state_status: Option<MergeStateStatus>,
+    /// Owner login of the head repository (for fork PRs).
+    pub head_repo_owner: Option<String>,
+    /// Name of the head repository (for fork PRs).
+    pub head_repo_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

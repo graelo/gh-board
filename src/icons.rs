@@ -68,6 +68,11 @@ pub struct ResolvedIcons {
     // Pill caps (rounded edges, 2)
     pub pill_left: String,
     pub pill_right: String,
+    // Branch update status (4)
+    pub header_update: String,
+    pub update_needed: String,
+    pub update_conflict: String,
+    pub update_ok: String,
 }
 
 impl ResolvedIcons {
@@ -138,6 +143,11 @@ impl ResolvedIcons {
             // Pill caps (no rounded edges in unicode preset)
             pill_left: String::new(),
             pill_right: String::new(),
+            // Branch update status
+            header_update: "\u{2195}".to_owned(), // ↕
+            update_needed: "\u{2193}".to_owned(), // ↓
+            update_conflict: "!".to_owned(),
+            update_ok: "\u{2713}".to_owned(), // ✓
         }
     }
 
@@ -209,6 +219,11 @@ impl ResolvedIcons {
             // Pill caps (Powerline half-circles for rounded edges)
             pill_left: "\u{e0b6}".to_owned(), //  nf-pl-right_half_circle_thick
             pill_right: "\u{e0b4}".to_owned(), //  nf-pl-left_half_circle_thick
+            // Branch update status
+            header_update: "\u{f0c7b}".to_owned(), // nf-oct-sync
+            update_needed: "\u{f063}".to_owned(),  // nf-fa-arrow_down
+            update_conflict: "\u{f12a}".to_owned(), // nf-fa-exclamation
+            update_ok: "\u{f00c}".to_owned(),      // nf-fa-check
         }
     }
 
@@ -279,6 +294,11 @@ impl ResolvedIcons {
             // Pill caps (no rounded edges in ascii preset)
             pill_left: String::new(),
             pill_right: String::new(),
+            // Branch update status
+            header_update: "U".to_owned(),
+            update_needed: "v".to_owned(),
+            update_conflict: "!".to_owned(),
+            update_ok: "ok".to_owned(),
         }
     }
 
@@ -375,6 +395,13 @@ impl ResolvedIcons {
             tab_filter: config.tab_filter.clone().unwrap_or(base.tab_filter),
             pill_left: config.pill_left.clone().unwrap_or(base.pill_left),
             pill_right: config.pill_right.clone().unwrap_or(base.pill_right),
+            header_update: config.header_update.clone().unwrap_or(base.header_update),
+            update_needed: config.update_needed.clone().unwrap_or(base.update_needed),
+            update_conflict: config
+                .update_conflict
+                .clone()
+                .unwrap_or(base.update_conflict),
+            update_ok: config.update_ok.clone().unwrap_or(base.update_ok),
         }
     }
 }

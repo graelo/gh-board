@@ -324,13 +324,12 @@ fn branch_update_status(pr: &PullRequest) -> BranchUpdateStatus {
 /// unknown and `mergeable` is not `Conflicting`).
 fn effective_update_status(detail: &PrDetail) -> Option<MergeStateStatus> {
     if matches!(detail.mergeable, Some(MergeableState::Conflicting)) {
-        Some(MergeStateStatus::Dirty)
-    } else if detail.behind_by.is_some_and(|b| b > 0) {
-        Some(MergeStateStatus::Behind)
-    } else if detail.behind_by == Some(0) {
-        Some(MergeStateStatus::Clean)
-    } else {
-        None
+        return Some(MergeStateStatus::Dirty);
+    }
+    match detail.behind_by {
+        Some(0) => Some(MergeStateStatus::Clean),
+        Some(_) => Some(MergeStateStatus::Behind),
+        None => None,
     }
 }
 
@@ -338,7 +337,6 @@ fn effective_update_status(detail: &PrDetail) -> Option<MergeStateStatus> {
 fn update_cell(status: BranchUpdateStatus, theme: &ResolvedTheme) -> Cell {
     let icons = &theme.icons;
     match status {
-        BranchUpdateStatus::UpToDate => Cell::colored(icons.update_ok.clone(), theme.text_success),
         BranchUpdateStatus::NeedsUpdate => {
             Cell::colored(icons.update_needed.clone(), theme.text_warning)
         }
@@ -359,14 +357,27 @@ fn update_cell_from_detail(detail: &PrDetail, theme: &ResolvedTheme) -> Cell {
         Some(MergeStateStatus::Behind) => {
             Cell::colored(icons.update_needed.clone(), theme.text_warning)
         }
-        Some(MergeStateStatus::Clean) => {
-            Cell::colored(icons.update_ok.clone(), theme.text_success)
-        }
+        Some(MergeStateStatus::Clean) => Cell::colored(icons.update_ok.clone(), theme.text_success),
         _ => Cell::colored(String::new(), theme.text_faint),
     }
 }
 
 // ---------------------------------------------------------------------------
+// Detail request (debounce)
+// ---------------------------------------------------------------------------
+
+/// Parameters needed to fetch sidebar detail for a PR.
+#[derive(Clone)]
+struct DetailRequest {
+    octocrab: Arc<Octocrab>,
+    owner: String,
+    repo: String,
+    pr_number: u64,
+    base_ref: String,
+    head_repo_owner: Option<String>,
+    head_ref: String,
+}
+
 // Input mode / action state (T058, T061)
 // ---------------------------------------------------------------------------
 
@@ -517,10 +528,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     // State: cached PR detail data for sidebar tabs (HashMap cache + debounce).
     let mut detail_cache = hooks.use_state(HashMap::<u64, PrDetail>::new);
-    // Pending detail request: (octocrab, owner, repo, pr_number, base_ref, head_repo_owner, head_ref)
-    let mut pending_detail = hooks.use_state(
-        || Option::<(Arc<Octocrab>, String, String, u64, String, Option<String>, String)>::None,
-    );
+    // Pending detail request: parameters for the next debounced fetch.
+    let mut pending_detail = hooks.use_state(|| Option::<DetailRequest>::None);
     let mut debounce_gen = hooks.use_state(|| 0u64);
 
     // State: input mode for actions (T058, T061).
@@ -587,8 +596,15 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             } else if current_gen > 0 && current_gen != spawned_gen {
                 // Stable for one full cycle and not yet spawned — fetch now.
                 let req = pending_detail.read().clone();
-                if let Some((octocrab, owner, repo, pr_number, base_ref, head_repo_owner, head_ref_name)) =
-                    req
+                if let Some(DetailRequest {
+                    octocrab,
+                    owner,
+                    repo,
+                    pr_number,
+                    base_ref,
+                    head_repo_owner,
+                    head_ref: head_ref_name,
+                }) = req
                 {
                     spawned_gen = current_gen;
                     let api_cache = api_cache_for_detail.clone();
@@ -606,7 +622,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             // Phase 2: fill behind_by via REST compare when not set.
                             if detail.behind_by.is_none()
                                 && let Some(ref head_owner) = head_repo_owner
-                                && let Ok(behind) = graphql::fetch_compare(
+                            {
+                                match graphql::fetch_compare(
                                     &octocrab,
                                     &owner,
                                     &repo,
@@ -615,8 +632,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     &head_ref_name,
                                 )
                                 .await
-                            {
-                                detail.behind_by = behind;
+                                {
+                                    Ok(behind) => detail.behind_by = behind,
+                                    Err(e) => tracing::debug!(
+                                        "compare API failed for PR #{pr_number}: {e:#}"
+                                    ),
+                                }
                             }
 
                             if rl.is_some() {
@@ -627,8 +648,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             let update = update_cell_from_detail(&detail, &theme_snap);
                             let mut state = prs_state.read().clone();
                             'update: for fd in &mut state.filters {
-                                if let Some(idx) =
-                                    fd.prs.iter().position(|p| p.number == pr_number)
+                                if let Some(idx) = fd.prs.iter().position(|p| p.number == pr_number)
                                 {
                                     fd.rows[idx].insert("update".to_owned(), update);
                                     break 'update;
@@ -1071,32 +1091,54 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             input_mode.set(InputMode::Confirm(PendingAction::Merge));
                             action_status.set(None);
                         }
-                        // Update branch — smart check: only prompt when branch actually needs update.
+                        // Update branch — prefer refined detail-cache status, fall back to coarse.
                         KeyCode::Char('u') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            let state = prs_state.read();
-                            let cur = state
-                                .filters
-                                .get(current_filter_idx)
-                                .and_then(|f| f.prs.get(cursor.get()));
-                            match cur.map(branch_update_status) {
-                                Some(BranchUpdateStatus::UpToDate) => {
+                            let (pr_number, coarse) = {
+                                let state = prs_state.read();
+                                let pr = state
+                                    .filters
+                                    .get(current_filter_idx)
+                                    .and_then(|f| f.prs.get(cursor.get()));
+                                (pr.map(|p| p.number), pr.map(branch_update_status))
+                            };
+                            let effective = pr_number.and_then(|num| {
+                                let cache = detail_cache.read();
+                                cache.get(&num).and_then(effective_update_status)
+                            });
+                            match effective {
+                                Some(MergeStateStatus::Clean) => {
                                     action_status
                                         .set(Some("Branch is already up-to-date".into()));
                                 }
-                                Some(BranchUpdateStatus::HasConflicts) => {
+                                Some(MergeStateStatus::Dirty) => {
                                     action_status.set(Some(
                                         "Cannot auto-update: branch has conflicts".into(),
                                     ));
                                 }
-                                Some(BranchUpdateStatus::NeedsUpdate) => {
+                                Some(MergeStateStatus::Behind) => {
                                     input_mode.set(InputMode::UpdateBranchMethod);
                                     action_status.set(None);
                                 }
-                                Some(BranchUpdateStatus::Unknown) | None => {
-                                    input_mode.set(InputMode::Confirm(
-                                        PendingAction::UpdateBranch,
-                                    ));
-                                    action_status.set(None);
+                                _ => {
+                                    // Refined status unavailable; use coarse signal.
+                                    match coarse {
+                                        Some(BranchUpdateStatus::HasConflicts) => {
+                                            action_status.set(Some(
+                                                "Cannot auto-update: branch has conflicts"
+                                                    .into(),
+                                            ));
+                                        }
+                                        Some(BranchUpdateStatus::NeedsUpdate) => {
+                                            input_mode.set(InputMode::UpdateBranchMethod);
+                                            action_status.set(None);
+                                        }
+                                        _ => {
+                                            input_mode.set(InputMode::Confirm(
+                                                PendingAction::UpdateBranch,
+                                            ));
+                                            action_status.set(None);
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -1562,7 +1604,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             let already_pending = {
                 let guard = pending_detail.read();
                 match *guard {
-                    Some((_, _, _, n, _, _, _)) => n == pr_number,
+                    Some(ref r) => r.pr_number == pr_number,
                     None => false,
                 }
             };
@@ -1572,15 +1614,15 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 if let Some(repo_ref) = &pr.repo
                     && let Some(octocrab) = props.octocrab
                 {
-                    pending_detail.set(Some((
-                        Arc::clone(octocrab),
-                        repo_ref.owner.clone(),
-                        repo_ref.name.clone(),
+                    pending_detail.set(Some(DetailRequest {
+                        octocrab: Arc::clone(octocrab),
+                        owner: repo_ref.owner.clone(),
+                        repo: repo_ref.name.clone(),
                         pr_number,
-                        pr.base_ref.clone(),
-                        pr.head_repo_owner.clone(),
-                        pr.head_ref.clone(),
-                    )));
+                        base_ref: pr.base_ref.clone(),
+                        head_repo_owner: pr.head_repo_owner.clone(),
+                        head_ref: pr.head_ref.clone(),
+                    }));
                     debounce_gen.set(debounce_gen.get() + 1);
                 }
             }
@@ -2190,23 +2232,32 @@ fn build_sidebar_meta(
         match effective_update_status(d) {
             Some(MergeStateStatus::Behind) => {
                 let suffix = d.behind_by.map_or(String::new(), |b| format!(" by {b}"));
-                (Some(format!("↓ Behind{suffix}")), theme.text_warning)
+                (
+                    Some(format!("{} Behind{suffix}", icons.update_needed)),
+                    theme.text_warning,
+                )
             }
-            Some(MergeStateStatus::Dirty) => {
-                (Some("! Conflicts".to_owned()), theme.text_error)
-            }
-            Some(_) => (Some("✓ Up to date".to_owned()), theme.text_success),
+            Some(MergeStateStatus::Dirty) => (
+                Some(format!("{} Conflicts", icons.update_conflict)),
+                theme.text_error,
+            ),
+            Some(_) => (
+                Some(format!("{} Up to date", icons.update_ok)),
+                theme.text_success,
+            ),
             None => (None, theme.text_faint),
         }
     } else {
         match branch_update_status(pr) {
-            BranchUpdateStatus::NeedsUpdate => {
-                (Some("↓ Behind".to_owned()), theme.text_warning)
-            }
-            BranchUpdateStatus::HasConflicts => {
-                (Some("! Conflicts".to_owned()), theme.text_error)
-            }
-            _ => (None, theme.text_faint),
+            BranchUpdateStatus::NeedsUpdate => (
+                Some(format!("{} Behind", icons.update_needed)),
+                theme.text_warning,
+            ),
+            BranchUpdateStatus::HasConflicts => (
+                Some(format!("{} Conflicts", icons.update_conflict)),
+                theme.text_error,
+            ),
+            BranchUpdateStatus::Unknown => (None, theme.text_faint),
         }
     };
 
@@ -2277,10 +2328,7 @@ mod tests {
         }
     }
 
-    fn detail_with(
-        mergeable: Option<MergeableState>,
-        behind_by: Option<u32>,
-    ) -> PrDetail {
+    fn detail_with(mergeable: Option<MergeableState>, behind_by: Option<u32>) -> PrDetail {
         PrDetail {
             body: String::new(),
             reviews: vec![],

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::github::types::{
     Actor, AuthorAssociation, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType,
-    Issue, IssueState, Label, MergeableState, MergeStateStatus, PrState, PullRequest,
+    Issue, IssueState, Label, MergeStateStatus, MergeableState, PrState, PullRequest,
     ReactionGroups, RepoRef, Review, ReviewDecision, ReviewState, ReviewThread, TimelineEvent,
 };
 
@@ -743,10 +743,7 @@ impl RawPullRequest {
                 .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
                 .unwrap_or_default(),
             merge_state_status: self.merge_state_status,
-            head_repo_owner: self
-                .head_repository
-                .as_ref()
-                .map(|r| r.owner.login.clone()),
+            head_repo_owner: self.head_repository.as_ref().map(|r| r.owner.login.clone()),
             head_repo_name: self.head_repository.map(|r| r.name),
         }
     }
@@ -1450,15 +1447,15 @@ pub async fn fetch_compare(
     head_owner: &str,
     head_ref: &str,
 ) -> Result<Option<u32>> {
-    let route = format!(
-        "/repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}"
-    );
-    let response: serde_json::Value = octocrab.get(route, None::<&()>).await.with_context(|| {
-        format!(
-            "compare request failed for {base_owner}/{base_repo}: \
+    let route =
+        format!("/repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}");
+    let response: serde_json::Value =
+        octocrab.get(route, None::<&()>).await.with_context(|| {
+            format!(
+                "compare request failed for {base_owner}/{base_repo}: \
              {base_ref}...{head_owner}:{head_ref}"
-        )
-    })?;
+            )
+        })?;
     let behind_by = response["behind_by"]
         .as_u64()
         .and_then(|n| u32::try_from(n).ok());

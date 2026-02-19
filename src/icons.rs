@@ -397,7 +397,10 @@ impl ResolvedIcons {
             pill_right: config.pill_right.clone().unwrap_or(base.pill_right),
             header_update: config.header_update.clone().unwrap_or(base.header_update),
             update_needed: config.update_needed.clone().unwrap_or(base.update_needed),
-            update_conflict: config.update_conflict.clone().unwrap_or(base.update_conflict),
+            update_conflict: config
+                .update_conflict
+                .clone()
+                .unwrap_or(base.update_conflict),
             update_ok: config.update_ok.clone().unwrap_or(base.update_ok),
         }
     }

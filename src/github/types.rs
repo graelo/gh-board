@@ -44,9 +44,12 @@ pub enum MergeStateStatus {
 }
 
 /// Coarse branch update status derived from `MergeStateStatus`.
+///
+/// Only the two definitively-negative states are set from the search query;
+/// `UpToDate` is never returned here — the authoritative positive confirmation
+/// comes from `effective_update_status` after the detail fetch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BranchUpdateStatus {
-    UpToDate,
+pub(crate) enum BranchUpdateStatus {
     NeedsUpdate,
     HasConflicts,
     Unknown,

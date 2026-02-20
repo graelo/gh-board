@@ -534,7 +534,7 @@ pub fn NotificationsView<'a>(
                                         );
                                         if let Some(n) = notif {
                                             let id = n.id.clone();
-                                            eng.send(Request::MarkNotificationRead {
+                                            eng.send(Request::MarkNotificationDone {
                                                 id,
                                                 reply_tx: event_tx.clone(),
                                             });

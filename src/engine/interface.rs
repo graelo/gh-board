@@ -209,6 +209,10 @@ pub enum Request {
         id: String,
         reply_tx: Sender<Event>,
     },
+    MarkNotificationDone {
+        id: String,
+        reply_tx: Sender<Event>,
+    },
     MarkAllNotificationsRead {
         reply_tx: Sender<Event>,
     },

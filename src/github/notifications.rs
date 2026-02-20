@@ -200,7 +200,6 @@ pub async fn mark_all_as_read(octocrab: &Arc<Octocrab>) -> Result<()> {
 /// Mark a notification as done (DELETE /notifications/threads/{id}).
 ///
 /// Not natively supported by octocrab, so we use the raw `_delete` method.
-#[allow(dead_code)]
 pub async fn mark_as_done(octocrab: &Arc<Octocrab>, thread_id: &str) -> Result<()> {
     let route = format!("/notifications/threads/{thread_id}");
     let uri = http::Uri::builder()

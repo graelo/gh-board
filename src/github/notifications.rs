@@ -21,8 +21,10 @@ pub struct NotificationQueryParams {
     pub per_page: u8,
     /// Filter by repo (client-side).
     pub repo: Option<String>,
-    /// Filter by reason (client-side).
+    /// Keep only notifications whose reason matches (client-side).
     pub reason: Option<NotificationReason>,
+    /// Exclude notifications whose reason is in this list (client-side).
+    pub excluded_reasons: Vec<NotificationReason>,
     /// Filter by read/unread status (client-side).
     pub status: Option<NotificationStatus>,
 }
@@ -41,6 +43,8 @@ pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
     for token in filter_str.split_whitespace() {
         if let Some(repo) = token.strip_prefix("repo:") {
             filter.repo = Some(repo.to_owned());
+        } else if let Some(reason_str) = token.strip_prefix("-reason:") {
+            filter.excluded_reasons.push(parse_reason(reason_str));
         } else if let Some(reason_str) = token.strip_prefix("reason:") {
             filter.reason = Some(parse_reason(reason_str));
         } else if let Some(status) = token.strip_prefix("is:") {
@@ -164,6 +168,9 @@ pub async fn fetch_notifications(
     if let Some(reason_filter) = filter.reason {
         notifications.retain(|n| n.reason == reason_filter);
     }
+    if !filter.excluded_reasons.is_empty() {
+        notifications.retain(|n| !filter.excluded_reasons.contains(&n.reason));
+    }
     if let Some(status) = filter.status {
         match status {
             NotificationStatus::Unread => notifications.retain(|n| n.unread),
@@ -279,8 +286,31 @@ mod tests {
         assert_eq!(f.repo.as_deref(), Some("torvalds/linux"));
         assert_eq!(f.reason, Some(NotificationReason::ReviewRequested));
         assert_eq!(f.status, Some(NotificationStatus::Unread));
+        assert!(f.excluded_reasons.is_empty());
         assert!(!f.all);
         assert_eq!(f.per_page, 100);
+    }
+
+    #[test]
+    fn parse_excluded_reason_single() {
+        let f = parse_filters("is:unread -reason:subscribed", 50);
+        assert_eq!(f.status, Some(NotificationStatus::Unread));
+        assert!(f.reason.is_none());
+        assert_eq!(f.excluded_reasons, vec![NotificationReason::Subscribed]);
+    }
+
+    #[test]
+    fn parse_excluded_reason_multiple() {
+        let f = parse_filters("is:unread -reason:subscribed -reason:review_requested", 50);
+        assert_eq!(f.status, Some(NotificationStatus::Unread));
+        assert!(f.reason.is_none());
+        assert_eq!(
+            f.excluded_reasons,
+            vec![
+                NotificationReason::Subscribed,
+                NotificationReason::ReviewRequested,
+            ]
+        );
     }
 
     #[test]

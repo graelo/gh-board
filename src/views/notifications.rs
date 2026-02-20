@@ -324,6 +324,12 @@ pub fn NotificationsView<'a>(
             filter: modified_filter,
             reply_tx: event_tx.clone(),
         });
+
+        // Register all filters for background refresh (engine owns the schedule).
+        eng.send(Request::RegisterNotificationsRefresh {
+            filter_configs: filters_cfg.to_vec(),
+            notify_tx: event_tx.clone(),
+        });
     }
 
     // Poll engine events and update local state.

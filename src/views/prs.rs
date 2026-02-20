@@ -727,7 +727,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             let prs_for_prefetch: Vec<PrRef> = prs
                                 .iter()
                                 .take(prefetch_limit)
-                                .filter(|pr| !detail_snap.contains_key(&pr.number))
+                                .filter(|pr| {
+                                    !detail_snap.contains_key(&pr.number)
+                                        && pr.state == crate::github::types::PrState::Open
+                                })
                                 .filter_map(|pr| {
                                     pr.repo.as_ref().map(|r| PrRef {
                                         owner: r.owner.clone(),

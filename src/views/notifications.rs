@@ -251,6 +251,9 @@ pub fn NotificationsView<'a>(
     let mut action_status = hooks.use_state(|| Option::<String>::None);
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
 
+    // Whether RegisterNotificationsRefresh has been sent to the engine yet.
+    let mut refresh_registered = hooks.use_state(|| false);
+
     // State: per-filter fetch tracking (lazy: only fetch the active filter).
     let mut filter_fetch_times =
         hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
@@ -296,6 +299,17 @@ pub fn NotificationsView<'a>(
         .copied()
         .unwrap_or(false);
 
+    // Register all filters for background refresh once at mount.
+    if !refresh_registered.get()
+        && let Some(ref eng) = engine
+    {
+        eng.send(Request::RegisterNotificationsRefresh {
+            filter_configs: filters_cfg.to_vec(),
+            notify_tx: event_tx.clone(),
+        });
+        refresh_registered.set(true);
+    }
+
     if active_needs_fetch
         && !active_in_flight
         && is_active
@@ -324,12 +338,6 @@ pub fn NotificationsView<'a>(
             filter_idx,
             filter: modified_filter,
             reply_tx: event_tx.clone(),
-        });
-
-        // Register all filters for background refresh (engine owns the schedule).
-        eng.send(Request::RegisterNotificationsRefresh {
-            filter_configs: filters_cfg.to_vec(),
-            notify_tx: event_tx.clone(),
         });
     }
 

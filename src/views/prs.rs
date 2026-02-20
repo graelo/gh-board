@@ -549,6 +549,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
     let mut filter_in_flight = hooks.use_state(move || vec![false; filter_count]);
 
+    // Whether RegisterPrsRefresh has been sent to the engine yet.
+    let mut refresh_registered = hooks.use_state(|| false);
+
     // State: loaded filter data (non-Copy, use .read()/.set()).
     let initial_filters = vec![FilterData::default(); filter_count];
     let mut prs_state = hooks.use_state(move || PrsState {
@@ -635,6 +638,17 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .copied()
         .unwrap_or(false);
 
+    // Register all filters for background refresh once at mount.
+    if !refresh_registered.get()
+        && let Some(ref eng) = engine
+    {
+        eng.send(Request::RegisterPrsRefresh {
+            filter_configs: filters_cfg.to_vec(),
+            notify_tx: event_tx.clone(),
+        });
+        refresh_registered.set(true);
+    }
+
     if active_needs_fetch
         && !active_in_flight
         && is_active
@@ -664,13 +678,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             filter_idx,
             filter: modified_filter,
             reply_tx: event_tx.clone(),
-        });
-
-        // Register for background refresh (engine handles interval).
-        let all_filters: Vec<_> = filters_cfg.to_vec();
-        engine.send(Request::RegisterPrsRefresh {
-            filter_configs: all_filters,
-            notify_tx: event_tx.clone(),
         });
     }
 

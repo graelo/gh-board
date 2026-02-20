@@ -332,6 +332,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
     let mut force_refresh = hooks.use_state(|| false);
 
+    // Whether RegisterIssuesRefresh has been sent to the engine yet.
+    let mut refresh_registered = hooks.use_state(|| false);
+
     // State: search query (T087).
     let search_query = hooks.use_state(String::new);
 
@@ -418,6 +421,17 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         .copied()
         .unwrap_or(false);
 
+    // Register all filters for background refresh once at mount.
+    if !refresh_registered.get()
+        && let Some(ref eng) = engine
+    {
+        eng.send(Request::RegisterIssuesRefresh {
+            filter_configs: filters_cfg.to_vec(),
+            notify_tx: event_tx.clone(),
+        });
+        refresh_registered.set(true);
+    }
+
     if active_needs_fetch
         && !active_in_flight
         && is_active
@@ -452,12 +466,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             filter: modified_filter,
             force,
             reply_tx: event_tx.clone(),
-        });
-
-        // Register all filters for background refresh (engine owns the schedule).
-        engine_ref.send(Request::RegisterIssuesRefresh {
-            filter_configs: filters_cfg.to_vec(),
-            notify_tx: event_tx.clone(),
         });
     }
 

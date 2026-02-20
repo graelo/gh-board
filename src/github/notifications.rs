@@ -29,14 +29,25 @@ pub struct NotificationQueryParams {
     pub status: Option<NotificationStatus>,
 }
 
-/// Parse a filter string like `"repo:owner/name reason:mention is:unread"`
-/// into a `NotificationQueryParams`.
+/// Parse a filter string into a `NotificationQueryParams`.
+///
+/// Supported qualifiers:
+/// - *(no qualifier)* — unread only (default, matches the web UI inbox)
+/// - `is:unread` — unread only (explicit)
+/// - `is:read` — read/done (not unread); fetches all from API, then filters client-side
+/// - `is:all` — everything (unread + read + done)
+/// - `-is:unread` — same as `is:read`
+/// - `-is:read` — same as `is:unread`
+/// - `reason:<value>` / `-reason:<value>` — include/exclude by notification reason
+/// - `repo:<owner/name>` — restrict to a specific repository
+///
+/// Example: `"repo:owner/name reason:mention is:unread"`
 pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
     #[allow(clippy::cast_possible_truncation)]
     let per_page = limit.min(100) as u8;
     let mut filter = NotificationQueryParams {
         per_page,
-        all: true,
+        all: false,
         ..Default::default()
     };
 
@@ -47,6 +58,18 @@ pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
             filter.excluded_reasons.push(parse_reason(reason_str));
         } else if let Some(reason_str) = token.strip_prefix("reason:") {
             filter.reason = Some(parse_reason(reason_str));
+        } else if let Some(status) = token.strip_prefix("-is:") {
+            match status {
+                "unread" => {
+                    filter.status = Some(NotificationStatus::Read);
+                    filter.all = true;
+                }
+                "read" => {
+                    filter.status = Some(NotificationStatus::Unread);
+                    filter.all = false;
+                }
+                _ => {}
+            }
         } else if let Some(status) = token.strip_prefix("is:") {
             match status {
                 "unread" => {
@@ -57,7 +80,7 @@ pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
                     filter.status = Some(NotificationStatus::Read);
                     filter.all = true;
                 }
-                "all" | "done" => {
+                "all" => {
                     filter.status = None;
                     filter.all = true;
                 }
@@ -247,7 +270,7 @@ mod tests {
     #[test]
     fn parse_empty_filter() {
         let f = parse_filters("", 30);
-        assert!(f.all);
+        assert!(!f.all, "default should be unread-only");
         assert_eq!(f.per_page, 30);
         assert!(f.repo.is_none());
         assert!(f.reason.is_none());
@@ -318,6 +341,22 @@ mod tests {
         let f = parse_filters("is:all", 30);
         assert!(f.all);
         assert!(f.status.is_none());
+    }
+
+    #[test]
+    fn parse_negated_is_unread() {
+        // -is:unread means "read only" — same as is:read
+        let f = parse_filters("-is:unread", 30);
+        assert!(f.all);
+        assert_eq!(f.status, Some(NotificationStatus::Read));
+    }
+
+    #[test]
+    fn parse_negated_is_read() {
+        // -is:read means "unread only" — same as is:unread
+        let f = parse_filters("-is:read", 30);
+        assert!(!f.all);
+        assert_eq!(f.status, Some(NotificationStatus::Unread));
     }
 
     #[test]

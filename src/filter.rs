@@ -50,8 +50,9 @@ pub(crate) enum ReadFilter {
 ///
 /// Supported prefixes:
 /// - `repo:owner/name`
-/// - `reason:mention`
+/// - `reason:<value>` / `-reason:<value>`
 /// - `is:unread` / `is:read` / `is:all`
+/// - `-is:unread` (same as `is:read`) / `-is:read` (same as `is:unread`)
 ///
 /// Remaining text is used for free-text matching.
 pub(crate) fn parse_notification_query(query: &str) -> NotificationQuery {
@@ -63,11 +64,17 @@ pub(crate) fn parse_notification_query(query: &str) -> NotificationQuery {
             result.repo = Some(val.to_lowercase());
         } else if let Some(val) = token.strip_prefix("reason:") {
             result.reason = Some(val.to_lowercase());
+        } else if let Some(val) = token.strip_prefix("-is:") {
+            result.read_filter = match val.to_lowercase().as_str() {
+                "unread" => Some(ReadFilter::Read),
+                "read" => Some(ReadFilter::Unread),
+                _ => None,
+            };
         } else if let Some(val) = token.strip_prefix("is:") {
             result.read_filter = match val.to_lowercase().as_str() {
                 "unread" => Some(ReadFilter::Unread),
                 "read" => Some(ReadFilter::Read),
-                "all" | "done" => Some(ReadFilter::All),
+                "all" => Some(ReadFilter::All),
                 _ => None,
             };
         } else {
@@ -300,6 +307,18 @@ mod tests {
     fn parse_is_all() {
         let q = parse_notification_query("is:all");
         assert_eq!(q.read_filter, Some(ReadFilter::All));
+    }
+
+    #[test]
+    fn parse_negated_is_unread() {
+        let q = parse_notification_query("-is:unread");
+        assert_eq!(q.read_filter, Some(ReadFilter::Read));
+    }
+
+    #[test]
+    fn parse_negated_is_read() {
+        let q = parse_notification_query("-is:read");
+        assert_eq!(q.read_filter, Some(ReadFilter::Unread));
     }
 
     #[test]

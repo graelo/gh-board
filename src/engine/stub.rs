@@ -74,6 +74,18 @@ impl StubEngine {
                         message: "no detail in stub".into(),
                     });
                 }
+                Request::FetchRepoLabels { reply_tx, .. } => {
+                    let _ = reply_tx.send(Event::RepoLabelsFetched {
+                        labels: vec![],
+                        rate_limit: None,
+                    });
+                }
+                Request::FetchRepoCollaborators { reply_tx, .. } => {
+                    let _ = reply_tx.send(Event::RepoCollaboratorsFetched {
+                        logins: vec![],
+                        rate_limit: None,
+                    });
+                }
 
                 // Refresh registration — ignored by stub
                 Request::RegisterPrsRefresh { .. }

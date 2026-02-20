@@ -52,6 +52,8 @@ pub enum Request {
     FetchIssues {
         filter_idx: usize,
         filter: IssueFilter,
+        /// Skip the moka cache and fetch fresh data from the GitHub API.
+        force: bool,
         reply_tx: Sender<Event>,
     },
     FetchNotifications {
@@ -72,6 +74,16 @@ pub enum Request {
         owner: String,
         repo: String,
         number: u64,
+        reply_tx: Sender<Event>,
+    },
+    FetchRepoLabels {
+        owner: String,
+        repo: String,
+        reply_tx: Sender<Event>,
+    },
+    FetchRepoCollaborators {
+        owner: String,
+        repo: String,
         reply_tx: Sender<Event>,
     },
     /// Prefetch PR details for a list of PRs (includes branch refs for the compare call).
@@ -254,6 +266,14 @@ pub enum Event {
     IssueDetailFetched {
         number: u64,
         detail: IssueDetail,
+    },
+    RepoLabelsFetched {
+        labels: Vec<String>,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    RepoCollaboratorsFetched {
+        logins: Vec<String>,
+        rate_limit: Option<RateLimitInfo>,
     },
     /// Unified error event for all fetch or mutation failures.
     FetchError {

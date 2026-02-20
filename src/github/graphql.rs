@@ -140,7 +140,6 @@ query IssueDetail($owner: String!, $repo: String!, $number: Int!) {
 }
 ";
 
-#[allow(dead_code)]
 const REPOSITORY_LABELS_QUERY: &str = r"
 query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
   rateLimit { limit remaining cost }
@@ -152,7 +151,6 @@ query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
 }
 ";
 
-#[allow(dead_code)]
 const REPOSITORY_COLLABORATORS_QUERY: &str = r"
 query RepositoryCollaborators($owner: String!, $repo: String!, $first: Int!) {
   rateLimit { limit remaining cost }
@@ -1450,7 +1448,6 @@ pub async fn fetch_compare(
 // Q4: Repository Labels (T083)
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
 #[derive(Serialize)]
 struct RepoLabelsVariables {
     owner: String,
@@ -1458,7 +1455,6 @@ struct RepoLabelsVariables {
     first: u32,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoLabelsData {
     #[serde(rename = "rateLimit", default)]
@@ -1466,19 +1462,16 @@ struct RepoLabelsData {
     repository: Option<RepoLabelsRepo>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoLabelsRepo {
     labels: Option<RepoLabelsConnection>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoLabelsConnection {
     nodes: Option<Vec<RawRepoLabel>>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RawRepoLabel {
     name: String,
@@ -1487,7 +1480,6 @@ struct RawRepoLabel {
 }
 
 /// A repository label with name, color, and optional description.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoLabel {
     pub name: String,
@@ -1495,7 +1487,6 @@ pub struct RepoLabel {
     pub description: Option<String>,
 }
 
-#[allow(dead_code)]
 #[derive(Serialize)]
 struct RepoCollaboratorsVariables {
     owner: String,
@@ -1503,7 +1494,6 @@ struct RepoCollaboratorsVariables {
     first: u32,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoCollaboratorsData {
     #[serde(rename = "rateLimit", default)]
@@ -1511,19 +1501,16 @@ struct RepoCollaboratorsData {
     repository: Option<RepoCollaboratorsRepo>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoCollaboratorsRepo {
     collaborators: Option<RepoCollaboratorsConnection>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoCollaboratorsConnection {
     nodes: Option<Vec<RawCollaborator>>,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RawCollaborator {
     login: String,
@@ -1535,7 +1522,6 @@ struct RawCollaborator {
 /// if a fresh entry exists.
 ///
 /// Returns `(labels, rate_limit)`. On cache hit, `rate_limit` is `None`.
-#[allow(dead_code)]
 pub async fn fetch_repo_labels(
     octocrab: &Arc<Octocrab>,
     owner: &str,
@@ -1609,7 +1595,6 @@ pub async fn fetch_repo_labels(
 /// if a fresh entry exists.
 ///
 /// Returns `(logins, rate_limit)`. On cache hit, `rate_limit` is `None`.
-#[allow(dead_code)]
 pub async fn fetch_repo_collaborators(
     octocrab: &Arc<Octocrab>,
     owner: &str,

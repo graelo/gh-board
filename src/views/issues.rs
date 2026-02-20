@@ -324,10 +324,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let input_mode = hooks.use_state(|| InputMode::Normal);
     let input_buffer = hooks.use_state(String::new);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
-    let label_candidates = hooks.use_state(Vec::<String>::new);
+    let mut label_candidates = hooks.use_state(Vec::<String>::new);
     let label_selection = hooks.use_state(|| 0usize);
-    let assignee_candidates = hooks.use_state(Vec::<String>::new);
+    let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
     let assignee_selection = hooks.use_state(|| 0usize);
+
+    // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
+    let mut force_refresh = hooks.use_state(|| false);
 
     // State: search query (T087).
     let search_query = hooks.use_state(String::new);
@@ -438,10 +441,23 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             modified_filter.filters = format!("{} repo:{repo}", cfg.filters);
         }
 
+        // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
+        let force = force_refresh.get();
+        if force {
+            force_refresh.set(false);
+        }
+
         engine_ref.send(Request::FetchIssues {
             filter_idx,
             filter: modified_filter,
+            force,
             reply_tx: event_tx.clone(),
+        });
+
+        // Register all filters for background refresh (engine owns the schedule).
+        engine_ref.send(Request::RegisterIssuesRefresh {
+            filter_configs: filters_cfg.to_vec(),
+            notify_tx: event_tx.clone(),
         });
     }
 
@@ -547,6 +563,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         }
                         Event::MutationOk { description } => {
                             action_status.set(Some(format!("✓ {description}")));
+                            force_refresh.set(true);
                             let mut state = issues_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
                                 state.filters[current_filter_for_poll] = FilterData::default();
@@ -566,6 +583,16 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
+                        }
+                        Event::RepoLabelsFetched { labels, .. } => {
+                            label_candidates.set(labels);
+                        }
+                        Event::RepoCollaboratorsFetched { logins, .. } => {
+                            let mut combined = assignee_candidates.read().clone();
+                            combined.extend(logins);
+                            combined.sort();
+                            combined.dedup();
+                            assignee_candidates.set(combined);
                         }
                         _ => {}
                     }
@@ -720,6 +747,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             rate_limit_state,
                             sidebar_tab,
                             pending_detail,
+                            force_refresh,
                         );
                     }
                 }
@@ -1547,7 +1575,7 @@ fn handle_normal_input(
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
     mut action_status: State<Option<String>>,
-    _label_candidates: State<Vec<String>>,
+    mut label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
     mut assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
@@ -1563,6 +1591,7 @@ fn handle_normal_input(
     _rate_limit_state: State<Option<RateLimitInfo>>,
     mut sidebar_tab: State<SidebarTab>,
     mut pending_detail: State<DetailRequest>,
+    mut force_refresh: State<bool>,
 ) {
     match code {
         KeyCode::Char('q') => {
@@ -1601,12 +1630,21 @@ fn handle_normal_input(
             action_status.set(None);
         }
         KeyCode::Char('L') => {
-            // Fetch labels for autocomplete.
-            // Note: label fetching via engine not yet wired; leave label_candidates empty for now.
             input_mode.set(InputMode::Label);
             input_buffer.set(String::new());
             label_selection.set(0);
+            label_candidates.set(Vec::new());
             action_status.set(None);
+            if let Some(engine) = engine
+                && let Some((owner, repo, _)) =
+                    get_current_issue_info(&issues_state, current_filter_idx, cursor.get())
+            {
+                engine.send(Request::FetchRepoLabels {
+                    owner,
+                    repo,
+                    reply_tx: event_tx.clone(),
+                });
+            }
         }
         // Quick self-assign (Ctrl+a) - immediate action without text input
         KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -1665,6 +1703,17 @@ fn handle_normal_input(
 
             input_buffer.set(current_assignees);
             assignee_candidates.set(candidates); // Set immediately, no async fetch
+            // Also fetch real collaborators from engine to augment local candidates.
+            if let Some(engine) = engine
+                && let Some((owner, repo, _)) =
+                    get_current_issue_info(&issues_state, current_filter_idx, cursor.get())
+            {
+                engine.send(Request::FetchRepoCollaborators {
+                    owner,
+                    repo,
+                    reply_tx: event_tx.clone(),
+                });
+            }
         }
         KeyCode::Char('A') => {
             // Unassign: fire immediately for the first assignee.
@@ -1734,6 +1783,7 @@ fn handle_normal_input(
         }
         // Retry / refresh
         KeyCode::Char('r') => {
+            force_refresh.set(true);
             let idx = active_filter.get();
             let mut state = issues_state.read().clone();
             if idx < state.filters.len() {

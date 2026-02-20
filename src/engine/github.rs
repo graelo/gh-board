@@ -124,6 +124,7 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
         Request::FetchIssues {
             filter_idx,
             filter,
+            force,
             reply_tx,
         } => {
             let host = filter.host.as_deref().unwrap_or("github.com");
@@ -132,7 +133,8 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
             };
             let cache = client.cache();
             let limit = filter.limit.unwrap_or(100);
-            match graphql::search_issues_all(&octocrab, &filter.filters, limit, Some(&cache)).await
+            let cache_opt = if force { None } else { Some(&cache) };
+            match graphql::search_issues_all(&octocrab, &filter.filters, limit, cache_opt).await
             {
                 Ok((issues, rate_limit)) => {
                     scheduler.mark_fetched(filter_idx, ViewKind::Issues);
@@ -866,6 +868,69 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                     let _ = reply_tx.send(Event::MutationError {
                         description: format!("Unsubscribe from notification {id}"),
                         message: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        // --- Fetch Repo Labels ---
+        Request::FetchRepoLabels { owner, repo, reply_tx } => {
+            let Some(octocrab) =
+                get_octocrab(client, "github.com", &reply_tx, "FetchRepoLabels")
+            else {
+                return;
+            };
+            let cache = client.cache();
+            match graphql::fetch_repo_labels(&octocrab, &owner, &repo, Some(&cache)).await {
+                Ok((labels, rate_limit)) => {
+                    tracing::debug!(
+                        "engine: sending RepoLabelsFetched {owner}/{repo} count={}",
+                        labels.len()
+                    );
+                    let _ = reply_tx.send(Event::RepoLabelsFetched {
+                        labels: labels.into_iter().map(|l| l.name).collect(),
+                        rate_limit,
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: FetchRepoLabels {owner}/{repo} error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("FetchRepoLabels {owner}/{repo}"),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
+                    });
+                }
+            }
+        }
+
+        // --- Fetch Repo Collaborators ---
+        Request::FetchRepoCollaborators { owner, repo, reply_tx } => {
+            let Some(octocrab) =
+                get_octocrab(client, "github.com", &reply_tx, "FetchRepoCollaborators")
+            else {
+                return;
+            };
+            let cache = client.cache();
+            match graphql::fetch_repo_collaborators(&octocrab, &owner, &repo, Some(&cache)).await {
+                Ok((logins, rate_limit)) => {
+                    tracing::debug!(
+                        "engine: sending RepoCollaboratorsFetched {owner}/{repo} count={}",
+                        logins.len()
+                    );
+                    let _ = reply_tx.send(Event::RepoCollaboratorsFetched { logins, rate_limit });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: FetchRepoCollaborators {owner}/{repo} error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("FetchRepoCollaborators {owner}/{repo}"),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
                     });
                 }
             }

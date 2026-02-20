@@ -6,7 +6,8 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::actions::{issue_actions, pr_actions};
 use crate::config::types::AppConfig;
 use crate::github::{
-    client::GitHubClient, graphql, notifications as notif,
+    client::GitHubClient,
+    graphql, notifications as notif,
     rate_limit::{format_rate_limit_message, is_rate_limited},
 };
 
@@ -134,8 +135,7 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
             let cache = client.cache();
             let limit = filter.limit.unwrap_or(100);
             let cache_opt = if force { None } else { Some(&cache) };
-            match graphql::search_issues_all(&octocrab, &filter.filters, limit, cache_opt).await
-            {
+            match graphql::search_issues_all(&octocrab, &filter.filters, limit, cache_opt).await {
                 Ok((issues, rate_limit)) => {
                     scheduler.mark_fetched(filter_idx, ViewKind::Issues);
                     tracing::debug!(
@@ -221,20 +221,13 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                         && let Some(ref head_owner) = head_repo_owner
                     {
                         match graphql::fetch_compare(
-                            &octocrab,
-                            &owner,
-                            &repo,
-                            &base_ref,
-                            head_owner,
-                            &head_ref,
+                            &octocrab, &owner, &repo, &base_ref, head_owner, &head_ref,
                         )
                         .await
                         {
                             Ok(n) => detail.behind_by = n,
                             Err(e) => {
-                                tracing::debug!(
-                                    "engine: compare API failed for #{number}: {e:#}"
-                                );
+                                tracing::debug!("engine: compare API failed for #{number}: {e:#}");
                             }
                         }
                     }
@@ -874,9 +867,12 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
         }
 
         // --- Fetch Repo Labels ---
-        Request::FetchRepoLabels { owner, repo, reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "FetchRepoLabels")
+        Request::FetchRepoLabels {
+            owner,
+            repo,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchRepoLabels")
             else {
                 return;
             };
@@ -907,7 +903,11 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
         }
 
         // --- Fetch Repo Collaborators ---
-        Request::FetchRepoCollaborators { owner, repo, reply_tx } => {
+        Request::FetchRepoCollaborators {
+            owner,
+            repo,
+            reply_tx,
+        } => {
             let Some(octocrab) =
                 get_octocrab(client, "github.com", &reply_tx, "FetchRepoCollaborators")
             else {

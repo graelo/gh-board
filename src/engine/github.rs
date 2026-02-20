@@ -5,7 +5,10 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::actions::{issue_actions, pr_actions};
 use crate::config::types::AppConfig;
-use crate::github::{client::GitHubClient, graphql, notifications as notif};
+use crate::github::{
+    client::GitHubClient, graphql, notifications as notif,
+    rate_limit::{format_rate_limit_message, is_rate_limited},
+};
 
 use super::interface::{Engine, EngineHandle, Event, Request};
 use super::refresh::{DueEntry, FilterConfig, RefreshScheduler, ViewKind};
@@ -107,7 +110,11 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                     tracing::debug!("engine: FetchPrs[{filter_idx}] error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchPrs[{filter_idx}]"),
-                        message: e.to_string(),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
                     });
                 }
             }
@@ -143,7 +150,11 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                     tracing::debug!("engine: FetchIssues[{filter_idx}] error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchIssues[{filter_idx}]"),
-                        message: e.to_string(),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
                     });
                 }
             }
@@ -177,7 +188,11 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                     tracing::debug!("engine: FetchNotifications[{filter_idx}] error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchNotifications[{filter_idx}]"),
-                        message: e.to_string(),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
                     });
                 }
             }
@@ -232,7 +247,11 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                     tracing::debug!("engine: FetchPrDetail #{number} error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchPrDetail #{number}"),
-                        message: e.to_string(),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
                     });
                 }
             }
@@ -260,7 +279,11 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                     tracing::debug!("engine: FetchIssueDetail #{number} error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchIssueDetail #{number}"),
-                        message: e.to_string(),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
                     });
                 }
             }

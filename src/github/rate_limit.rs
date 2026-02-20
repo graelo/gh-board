@@ -6,7 +6,6 @@
 //! - GraphQL errors containing "rate limit"
 
 /// Check whether an error message indicates a GitHub rate limit.
-#[allow(dead_code)]
 pub(crate) fn is_rate_limited(error: &anyhow::Error) -> bool {
     let msg = format!("{error:#}").to_lowercase();
     msg.contains("rate limit")
@@ -17,7 +16,6 @@ pub(crate) fn is_rate_limited(error: &anyhow::Error) -> bool {
 }
 
 /// Format a user-friendly message for a rate-limit error.
-#[allow(dead_code)]
 pub(crate) fn format_rate_limit_message(error: &anyhow::Error) -> String {
     let msg = format!("{error:#}");
     if msg.to_lowercase().contains("secondary rate limit") {

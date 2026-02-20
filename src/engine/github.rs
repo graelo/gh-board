@@ -60,7 +60,7 @@ impl GitHubEngine {
                             break;
                         }
                         Some(req) => {
-                            handle_request(req, &mut client, &mut scheduler).await;
+                            handle_request(req, &mut client, &mut scheduler, tick_dur).await;
                         }
                     }
                 }
@@ -77,7 +77,12 @@ impl GitHubEngine {
 // ---------------------------------------------------------------------------
 
 #[allow(clippy::too_many_lines)]
-async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut RefreshScheduler) {
+async fn handle_request(
+    req: Request,
+    client: &mut GitHubClient,
+    scheduler: &mut RefreshScheduler,
+    refresh_interval: Duration,
+) {
     tracing::debug!("engine: received request");
     match req {
         // --- Fetch PRs ---
@@ -338,22 +343,19 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
             filter_configs,
             notify_tx,
         } => {
-            let interval = Duration::from_secs(600); // default; engine owns the interval
-            scheduler.register_prs(filter_configs, interval, &notify_tx);
+            scheduler.register_prs(filter_configs, refresh_interval, &notify_tx);
         }
         Request::RegisterIssuesRefresh {
             filter_configs,
             notify_tx,
         } => {
-            let interval = Duration::from_secs(600);
-            scheduler.register_issues(filter_configs, interval, &notify_tx);
+            scheduler.register_issues(filter_configs, refresh_interval, &notify_tx);
         }
         Request::RegisterNotificationsRefresh {
             filter_configs,
             notify_tx,
         } => {
-            let interval = Duration::from_secs(600);
-            scheduler.register_notifications(filter_configs, interval, &notify_tx);
+            scheduler.register_notifications(filter_configs, refresh_interval, &notify_tx);
         }
 
         // -----------------------------------------------------------------------
@@ -980,15 +982,9 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                 let Ok(octocrab) = client.octocrab_for(host) else {
                     continue;
                 };
-                let cache = client.cache();
                 let limit = pr_filter.limit.unwrap_or(100);
-                match graphql::search_pull_requests_all(
-                    &octocrab,
-                    &pr_filter.filters,
-                    limit,
-                    Some(&cache),
-                )
-                .await
+                match graphql::search_pull_requests_all(&octocrab, &pr_filter.filters, limit, None)
+                    .await
                 {
                     Ok((prs, rate_limit)) => {
                         scheduler.mark_fetched(filter_idx, ViewKind::Prs);
@@ -1012,15 +1008,9 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                 let Ok(octocrab) = client.octocrab_for(host) else {
                     continue;
                 };
-                let cache = client.cache();
                 let limit = issue_filter.limit.unwrap_or(100);
-                match graphql::search_issues_all(
-                    &octocrab,
-                    &issue_filter.filters,
-                    limit,
-                    Some(&cache),
-                )
-                .await
+                match graphql::search_issues_all(&octocrab, &issue_filter.filters, limit, None)
+                    .await
                 {
                     Ok((issues, rate_limit)) => {
                         scheduler.mark_fetched(filter_idx, ViewKind::Issues);

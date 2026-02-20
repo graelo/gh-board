@@ -86,6 +86,10 @@ pub enum Request {
         repo: String,
         reply_tx: Sender<Event>,
     },
+    /// Fetch current GraphQL rate-limit info (minimal query, cost = 1).
+    FetchRateLimit {
+        reply_tx: Sender<Event>,
+    },
     /// Prefetch PR details for a list of PRs (includes branch refs for the compare call).
     PrefetchPrDetails {
         prs: Vec<PrRef>,

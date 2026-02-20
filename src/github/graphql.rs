@@ -1662,3 +1662,50 @@ pub async fn fetch_repo_collaborators(
 
     Ok((logins, rate_limit))
 }
+
+// ---------------------------------------------------------------------------
+// Standalone rate-limit query
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_QUERY: &str = r"
+query RateLimit {
+  rateLimit { limit remaining cost }
+}
+";
+
+#[derive(Serialize)]
+struct NoVariables {}
+
+#[derive(Debug, Deserialize)]
+struct RateLimitOnlyData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
+}
+
+/// Fetch current GraphQL rate-limit info with a minimal query (cost = 1).
+pub async fn fetch_rate_limit(octocrab: &Arc<Octocrab>) -> Result<Option<RateLimitInfo>> {
+    let payload = GraphQLPayload {
+        query: RATE_LIMIT_QUERY,
+        variables: NoVariables {},
+    };
+
+    let response: GraphQLResponse<RateLimitOnlyData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL rate limit request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    Ok(data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    }))
+}

@@ -936,6 +936,27 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
             }
         }
 
+        // --- Fetch Rate Limit ---
+        Request::FetchRateLimit { reply_tx } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchRateLimit")
+            else {
+                return;
+            };
+            match graphql::fetch_rate_limit(&octocrab).await {
+                Ok(Some(info)) => {
+                    tracing::debug!(
+                        "engine: sending RateLimitUpdated remaining={}",
+                        info.remaining
+                    );
+                    let _ = reply_tx.send(Event::RateLimitUpdated { info });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::debug!("engine: FetchRateLimit error: {e}");
+                }
+            }
+        }
+
         Request::Shutdown => unreachable!("handled at run_loop level"),
     }
 }

@@ -87,6 +87,16 @@ impl StubEngine {
                     });
                 }
 
+                Request::FetchRateLimit { reply_tx } => {
+                    let _ = reply_tx.send(Event::RateLimitUpdated {
+                        info: crate::types::RateLimitInfo {
+                            limit: 5000,
+                            remaining: 5000,
+                            cost: 1,
+                        },
+                    });
+                }
+
                 // Refresh registration — ignored by stub
                 Request::RegisterPrsRefresh { .. }
                 | Request::RegisterIssuesRefresh { .. }

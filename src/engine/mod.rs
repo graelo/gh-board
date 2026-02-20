@@ -6,6 +6,6 @@ mod refresh;
 pub mod stub;
 
 pub use github::GitHubEngine;
-pub use interface::{Engine, EngineHandle, Event, Request};
+pub use interface::{Engine, EngineHandle, Event, PrRef, Request};
 pub use refresh::RefreshScheduler;
 pub use stub::StubEngine;

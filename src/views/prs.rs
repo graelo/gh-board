@@ -16,7 +16,7 @@ use crate::components::table::{
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::PrFilter;
-use crate::engine::{EngineHandle, Event, Request};
+use crate::engine::{EngineHandle, Event, PrRef, Request};
 use crate::filter;
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine};
@@ -362,11 +362,8 @@ fn update_cell_from_detail(detail: &PrDetail, theme: &ResolvedTheme) -> Cell {
 // Detail request (debounce)
 // ---------------------------------------------------------------------------
 
-/// Parameters needed to fetch sidebar detail for a PR.
-/// `base_ref`, `head_repo_owner`, `head_ref` are stored for completeness but the
-/// engine now handles the compare call internally so they are not read here.
+/// Parameters needed to fetch sidebar detail for a PR (including the compare call).
 #[derive(Clone)]
-#[allow(dead_code)]
 struct DetailRequest {
     owner: String,
     repo: String,
@@ -601,9 +598,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     owner,
                     repo,
                     pr_number,
-                    base_ref: _,
-                    head_repo_owner: _,
-                    head_ref: _,
+                    base_ref,
+                    head_repo_owner,
+                    head_ref,
                 }) = req
                 {
                     spawned_gen = current_gen;
@@ -612,6 +609,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             owner: owner.clone(),
                             repo: repo.clone(),
                             number: pr_number,
+                            base_ref,
+                            head_repo_owner,
+                            head_ref,
                             reply_tx: event_tx_for_debounce.clone(),
                         });
                     }
@@ -717,14 +717,19 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             let titles: Vec<String> =
                                 prs.iter().map(|pr| pr.title.clone()).collect();
                             let pr_count = prs.len();
-                            let prs_for_prefetch: Vec<(String, String, u64)> = prs
+                            let prs_for_prefetch: Vec<PrRef> = prs
                                 .iter()
                                 .take(prefetch_limit)
                                 .filter(|pr| !detail_snap.contains_key(&pr.number))
                                 .filter_map(|pr| {
-                                    pr.repo
-                                        .as_ref()
-                                        .map(|r| (r.owner.clone(), r.name.clone(), pr.number))
+                                    pr.repo.as_ref().map(|r| PrRef {
+                                        owner: r.owner.clone(),
+                                        repo: r.name.clone(),
+                                        number: pr.number,
+                                        base_ref: pr.base_ref.clone(),
+                                        head_repo_owner: pr.head_repo_owner.clone(),
+                                        head_ref: pr.head_ref.clone(),
+                                    })
                                 })
                                 .collect();
                             let filter_data = FilterData {

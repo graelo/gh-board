@@ -98,6 +98,9 @@ fn stub_engine_detail_returns_fetch_error() {
         owner: "example".into(),
         repo: "repo".into(),
         number: 1,
+        base_ref: "main".into(),
+        head_repo_owner: None,
+        head_ref: "feature".into(),
         reply_tx: tx,
     });
 

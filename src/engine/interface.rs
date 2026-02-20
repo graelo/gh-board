@@ -29,6 +29,16 @@ pub trait Engine: Send + 'static {
     fn start(self) -> EngineHandle;
 }
 
+/// All fields needed by the engine to fetch a single PR detail including the compare call.
+pub struct PrRef {
+    pub owner: String,
+    pub repo: String,
+    pub number: u64,
+    pub base_ref: String,
+    pub head_repo_owner: Option<String>,
+    pub head_ref: String,
+}
+
 /// All operations the UI layer can send to the engine.
 pub enum Request {
     // -----------------------------------------------------------------------
@@ -53,6 +63,9 @@ pub enum Request {
         owner: String,
         repo: String,
         number: u64,
+        base_ref: String,
+        head_repo_owner: Option<String>,
+        head_ref: String,
         reply_tx: Sender<Event>,
     },
     FetchIssueDetail {
@@ -61,9 +74,9 @@ pub enum Request {
         number: u64,
         reply_tx: Sender<Event>,
     },
-    /// Prefetch PR details for a list of `(owner, repo, number)` triples.
+    /// Prefetch PR details for a list of PRs (includes branch refs for the compare call).
     PrefetchPrDetails {
-        prs: Vec<(String, String, u64)>,
+        prs: Vec<PrRef>,
         reply_tx: Sender<Event>,
     },
 

@@ -188,6 +188,9 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
             owner,
             repo,
             number,
+            base_ref,
+            head_repo_owner,
+            head_ref,
             reply_tx,
         } => {
             let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchPrDetail")
@@ -196,7 +199,28 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
             };
             let cache = client.cache();
             match graphql::fetch_pr_detail(&octocrab, &owner, &repo, number, Some(&cache)).await {
-                Ok((detail, rate_limit)) => {
+                Ok((mut detail, rate_limit)) => {
+                    if detail.behind_by.is_none()
+                        && let Some(ref head_owner) = head_repo_owner
+                    {
+                        match graphql::fetch_compare(
+                            &octocrab,
+                            &owner,
+                            &repo,
+                            &base_ref,
+                            head_owner,
+                            &head_ref,
+                        )
+                        .await
+                        {
+                            Ok(n) => detail.behind_by = n,
+                            Err(e) => {
+                                tracing::debug!(
+                                    "engine: compare API failed for #{number}: {e:#}"
+                                );
+                            }
+                        }
+                    }
                     tracing::debug!("engine: sending PrDetailFetched #{number}");
                     let _ = reply_tx.send(Event::PrDetailFetched {
                         number,
@@ -249,10 +273,33 @@ async fn handle_request(req: Request, client: &mut GitHubClient, scheduler: &mut
                 return;
             };
             let cache = client.cache();
-            for (owner, repo, number) in prs {
-                match graphql::fetch_pr_detail(&octocrab, &owner, &repo, number, Some(&cache)).await
+            for pr in prs {
+                let number = pr.number;
+                match graphql::fetch_pr_detail(&octocrab, &pr.owner, &pr.repo, number, Some(&cache))
+                    .await
                 {
-                    Ok((detail, rate_limit)) => {
+                    Ok((mut detail, rate_limit)) => {
+                        if detail.behind_by.is_none()
+                            && let Some(ref head_owner) = pr.head_repo_owner
+                        {
+                            match graphql::fetch_compare(
+                                &octocrab,
+                                &pr.owner,
+                                &pr.repo,
+                                &pr.base_ref,
+                                head_owner,
+                                &pr.head_ref,
+                            )
+                            .await
+                            {
+                                Ok(n) => detail.behind_by = n,
+                                Err(e) => {
+                                    tracing::debug!(
+                                        "engine: compare API failed for #{number}: {e:#}"
+                                    );
+                                }
+                            }
+                        }
                         tracing::debug!("engine: sending PrDetailFetched #{number} (prefetch)");
                         let _ = reply_tx.send(Event::PrDetailFetched {
                             number,

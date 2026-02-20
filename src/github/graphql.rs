@@ -1418,7 +1418,6 @@ pub async fn fetch_issue_detail(
 // Compare API (REST — branch update status)
 // ---------------------------------------------------------------------------
 
-#[allow(dead_code)]
 /// Fetch how many commits behind `base_ref` the head branch is.
 ///
 /// Uses `GET /repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}`.

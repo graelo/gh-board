@@ -61,8 +61,6 @@ pub enum BuiltinAction {
     // Issues
     LabelAction,
     // Notifications
-    MarkDone,
-    MarkAllDone,
     MarkRead,
     MarkAllRead,
     Unsubscribe,
@@ -111,8 +109,6 @@ impl BuiltinAction {
             "merge" => Self::Merge,
             "update_from_base" => Self::UpdateFromBase,
             "label" => Self::LabelAction,
-            "mark_done" => Self::MarkDone,
-            "mark_all_done" => Self::MarkAllDone,
             "mark_read" => Self::MarkRead,
             "mark_all_read" => Self::MarkAllRead,
             "unsubscribe" => Self::Unsubscribe,
@@ -159,8 +155,6 @@ impl BuiltinAction {
             Self::Merge => "Merge",
             Self::UpdateFromBase => "Update from base branch",
             Self::LabelAction => "Label (autocomplete)",
-            Self::MarkDone => "Mark as done",
-            Self::MarkAllDone => "Mark all as done",
             Self::MarkRead => "Mark as read",
             Self::MarkAllRead => "Mark all as read",
             Self::Unsubscribe => "Unsubscribe",
@@ -326,8 +320,6 @@ pub(crate) fn default_issues() -> Vec<Keybinding> {
 /// Default Notification view keybindings.
 pub(crate) fn default_notifications() -> Vec<Keybinding> {
     vec![
-        kb("d", "mark_done", "Mark as done"),
-        kb("D", "mark_all_done", "Mark all as done"),
         kb("m", "mark_read", "Mark as read"),
         kb("M", "mark_all_read", "Mark all as read"),
         kb("u", "unsubscribe", "Unsubscribe"),

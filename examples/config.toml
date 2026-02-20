@@ -114,7 +114,7 @@ title = "Unread"
 #   repo:<owner/name>
 #   reason:<reason>  (subscribed, review_requested, mention, author, comment,
 #                     assign, state_change, ci_activity, team_mention, security_alert)
-#   is:unread, is:read, is:done, is:all
+#   is:unread, is:read, is:all
 filters = "is:unread"
 
 [[notifications_filters]]

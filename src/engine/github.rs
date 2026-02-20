@@ -784,27 +784,6 @@ async fn handle_request(
         // -----------------------------------------------------------------------
         // Mutation operations — Notification
         // -----------------------------------------------------------------------
-        Request::MarkNotificationDone { id, reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "MarkNotificationDone")
-            else {
-                return;
-            };
-            match notif::mark_as_done(&octocrab, &id).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Marked notification {id} as done"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Mark notification {id} as done"),
-                        message: e.to_string(),
-                    });
-                }
-            }
-        }
-
         Request::MarkNotificationRead { id, reply_tx } => {
             let Some(octocrab) =
                 get_octocrab(client, "github.com", &reply_tx, "MarkNotificationRead")

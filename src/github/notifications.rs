@@ -227,26 +227,6 @@ pub async fn mark_all_as_read(octocrab: &Arc<Octocrab>) -> Result<()> {
     Ok(())
 }
 
-/// Mark a notification as done (DELETE /notifications/threads/{id}).
-///
-/// Not natively supported by octocrab, so we use the raw `_delete` method.
-pub async fn mark_as_done(octocrab: &Arc<Octocrab>, thread_id: &str) -> Result<()> {
-    let route = format!("/notifications/threads/{thread_id}");
-    let uri = http::Uri::builder()
-        .path_and_query(route)
-        .build()
-        .context("building URI for mark-as-done")?;
-    let response = octocrab
-        ._delete(uri, None::<&()>)
-        .await
-        .context("marking notification as done")?;
-    octocrab::map_github_error(response)
-        .await
-        .map(drop)
-        .context("mark-as-done API error")?;
-    Ok(())
-}
-
 /// Unsubscribe from a notification thread.
 pub async fn unsubscribe(octocrab: &Arc<Octocrab>, thread_id: &str) -> Result<()> {
     let id: u64 = thread_id.parse().context("invalid notification id")?;

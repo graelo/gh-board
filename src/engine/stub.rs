@@ -119,7 +119,6 @@ impl StubEngine {
                 | Request::AssignIssue { reply_tx, .. }
                 | Request::UnassignIssue { reply_tx, .. }
                 | Request::MarkNotificationRead { reply_tx, .. }
-                | Request::MarkNotificationDone { reply_tx, .. }
                 | Request::MarkAllNotificationsRead { reply_tx }
                 | Request::UnsubscribeNotification { reply_tx, .. } => {
                     let _ = reply_tx.send(Event::MutationOk {

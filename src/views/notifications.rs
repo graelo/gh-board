@@ -139,10 +139,8 @@ fn notification_to_row(
 /// Destructive or bulk actions that require confirmation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PendingAction {
-    MarkAllDone,
     MarkAllRead,
     Unsubscribe,
-    MarkDone,
 }
 
 /// Input modes for the notifications view.
@@ -541,41 +539,6 @@ pub fn NotificationsView<'a>(
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
-                                    PendingAction::MarkAllDone => {
-                                        // Mark all as done: mark each notification as read
-                                        // (GitHub doesn't have a "mark as done" bulk API via
-                                        // our engine; use MarkAllNotificationsRead as best effort).
-                                        eng.send(Request::MarkAllNotificationsRead {
-                                            reply_tx: event_tx.clone(),
-                                        });
-                                        clear_filter(notif_state, current_filter_idx);
-                                        cursor.set(0);
-                                        scroll_offset.set(0);
-                                    }
-                                    PendingAction::MarkDone => {
-                                        let notif = get_current_notification(
-                                            &notif_state,
-                                            current_filter_idx,
-                                            cursor.get(),
-                                        );
-                                        if let Some(n) = notif {
-                                            let id = n.id.clone();
-                                            eng.send(Request::MarkNotificationDone {
-                                                id,
-                                                reply_tx: event_tx.clone(),
-                                            });
-                                            remove_notification(
-                                                notif_state,
-                                                current_filter_idx,
-                                                cursor.get(),
-                                            );
-                                            clamp_cursor(
-                                                cursor,
-                                                scroll_offset,
-                                                total_rows.saturating_sub(1),
-                                            );
-                                        }
-                                    }
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -701,11 +664,6 @@ pub fn NotificationsView<'a>(
                         // Notification actions
                         // -------------------------------------------------------
 
-                        // Mark as done (d) — with confirmation
-                        KeyCode::Char('d') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            input_mode.set(InputMode::Confirm(PendingAction::MarkDone));
-                            action_status.set(None);
-                        }
                         // Mark as read (m) — immediate, no confirm
                         KeyCode::Char('m') => {
                             if let Some(ref eng) = engine_for_keys {
@@ -736,11 +694,6 @@ pub fn NotificationsView<'a>(
                         // Mark all as read (M) — confirm first
                         KeyCode::Char('M') => {
                             input_mode.set(InputMode::Confirm(PendingAction::MarkAllRead));
-                            action_status.set(None);
-                        }
-                        // Mark all as done (D) — confirm first
-                        KeyCode::Char('D') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::MarkAllDone));
                             action_status.set(None);
                         }
                         // Unsubscribe (u, plain — not Ctrl+u) — confirm first
@@ -911,12 +864,10 @@ pub fn NotificationsView<'a>(
     let rendered_text_input = match &current_mode {
         InputMode::Confirm(action) => {
             let prompt = match action {
-                PendingAction::MarkAllDone => "Mark ALL notifications as done? (y/n)",
                 PendingAction::MarkAllRead => "Mark ALL notifications as read? (y/n)",
                 PendingAction::Unsubscribe => {
                     "Unsubscribe from this thread? This is irreversible. (y/n)"
                 }
-                PendingAction::MarkDone => "Mark this notification as done? (y/n)",
             };
             Some(RenderedTextInput::build(
                 prompt,

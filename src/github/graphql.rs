@@ -13,6 +13,9 @@ use crate::github::types::{
     TimelineEvent,
 };
 
+// Re-export types moved to crate::types so existing importers continue to work.
+pub use crate::types::{IssueDetail, PrDetail, RateLimitInfo};
+
 // ---------------------------------------------------------------------------
 // GraphQL query strings
 // ---------------------------------------------------------------------------
@@ -137,6 +140,7 @@ query IssueDetail($owner: String!, $repo: String!, $number: Int!) {
 }
 ";
 
+#[allow(dead_code)]
 const REPOSITORY_LABELS_QUERY: &str = r"
 query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
   rateLimit { limit remaining cost }
@@ -148,6 +152,7 @@ query RepositoryLabels($owner: String!, $repo: String!, $first: Int!) {
 }
 ";
 
+#[allow(dead_code)]
 const REPOSITORY_COLLABORATORS_QUERY: &str = r"
 query RepositoryCollaborators($owner: String!, $repo: String!, $first: Int!) {
   rateLimit { limit remaining cost }
@@ -250,14 +255,6 @@ struct RawRateLimit {
     limit: u32,
     remaining: u32,
     cost: u32,
-}
-
-/// Public rate limit info extracted from GraphQL responses.
-#[derive(Debug, Clone)]
-pub struct RateLimitInfo {
-    pub limit: u32,
-    pub remaining: u32,
-    pub cost: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1090,28 +1087,6 @@ pub async fn search_issues_all(
 // PR detail API (Q2 — sidebar tabs)
 // ---------------------------------------------------------------------------
 
-/// Detailed PR data fetched for the sidebar tabs.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct PrDetail {
-    pub body: String,
-    pub reviews: Vec<Review>,
-    pub review_threads: Vec<ReviewThread>,
-    pub timeline_events: Vec<TimelineEvent>,
-    pub commits: Vec<Commit>,
-    pub files: Vec<File>,
-    /// Mergeability from the detail query (`mergeable` field).
-    pub mergeable: Option<MergeableState>,
-    /// How many commits behind base this PR is (from REST compare API).
-    pub behind_by: Option<u32>,
-}
-
-/// Detailed Issue data fetched for the sidebar tabs.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct IssueDetail {
-    pub body: String,
-    pub timeline_events: Vec<TimelineEvent>,
-}
-
 // ---------------------------------------------------------------------------
 // Issue detail response types
 // ---------------------------------------------------------------------------
@@ -1443,6 +1418,7 @@ pub async fn fetch_issue_detail(
 // Compare API (REST — branch update status)
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 /// Fetch how many commits behind `base_ref` the head branch is.
 ///
 /// Uses `GET /repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}`.
@@ -1475,6 +1451,7 @@ pub async fn fetch_compare(
 // Q4: Repository Labels (T083)
 // ---------------------------------------------------------------------------
 
+#[allow(dead_code)]
 #[derive(Serialize)]
 struct RepoLabelsVariables {
     owner: String,
@@ -1482,6 +1459,7 @@ struct RepoLabelsVariables {
     first: u32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoLabelsData {
     #[serde(rename = "rateLimit", default)]
@@ -1489,16 +1467,19 @@ struct RepoLabelsData {
     repository: Option<RepoLabelsRepo>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoLabelsRepo {
     labels: Option<RepoLabelsConnection>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoLabelsConnection {
     nodes: Option<Vec<RawRepoLabel>>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RawRepoLabel {
     name: String,
@@ -1507,6 +1488,7 @@ struct RawRepoLabel {
 }
 
 /// A repository label with name, color, and optional description.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RepoLabel {
     pub name: String,
@@ -1514,6 +1496,7 @@ pub struct RepoLabel {
     pub description: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Serialize)]
 struct RepoCollaboratorsVariables {
     owner: String,
@@ -1521,6 +1504,7 @@ struct RepoCollaboratorsVariables {
     first: u32,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoCollaboratorsData {
     #[serde(rename = "rateLimit", default)]
@@ -1528,16 +1512,19 @@ struct RepoCollaboratorsData {
     repository: Option<RepoCollaboratorsRepo>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoCollaboratorsRepo {
     collaborators: Option<RepoCollaboratorsConnection>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RepoCollaboratorsConnection {
     nodes: Option<Vec<RawCollaborator>>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 struct RawCollaborator {
     login: String,
@@ -1549,6 +1536,7 @@ struct RawCollaborator {
 /// if a fresh entry exists.
 ///
 /// Returns `(labels, rate_limit)`. On cache hit, `rate_limit` is `None`.
+#[allow(dead_code)]
 pub async fn fetch_repo_labels(
     octocrab: &Arc<Octocrab>,
     owner: &str,
@@ -1622,6 +1610,7 @@ pub async fn fetch_repo_labels(
 /// if a fresh entry exists.
 ///
 /// Returns `(logins, rate_limit)`. On cache hit, `rate_limit` is `None`.
+#[allow(dead_code)]
 pub async fn fetch_repo_collaborators(
     octocrab: &Arc<Octocrab>,
     owner: &str,

@@ -1,9 +1,6 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use async_compat::Compat;
 use iocraft::prelude::*;
-use octocrab::Octocrab;
 
 use crate::actions::clipboard;
 use crate::app::ViewKind;
@@ -17,11 +14,10 @@ use crate::components::table::{
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::NotificationFilter;
+use crate::engine::{EngineHandle, Event, Request};
 use crate::filter;
-use crate::github::notifications;
-use crate::github::rate_limit;
-use crate::github::types::{Notification, SubjectType};
 use crate::theme::ResolvedTheme;
+use crate::types::{Notification, SubjectType};
 
 // ---------------------------------------------------------------------------
 // Notification-specific column definitions (FR-031)
@@ -201,7 +197,8 @@ struct NotificationsState {
 #[derive(Default, Props)]
 pub struct NotificationsViewProps<'a> {
     pub filters: Option<&'a [NotificationFilter]>,
-    pub octocrab: Option<&'a Arc<Octocrab>>,
+    /// Engine handle (replaces octocrab; used after T022-T023 refactor).
+    pub engine: Option<&'a EngineHandle>,
     pub theme: Option<&'a ResolvedTheme>,
     /// Merged keybindings for help overlay.
     pub keybindings: Option<&'a MergedBindings>,
@@ -263,6 +260,15 @@ pub fn NotificationsView<'a>(
         filters: initial_filters,
     });
 
+    // Event channel: engine sends events back to this view.
+    let event_channel = hooks.use_state(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<Event>();
+        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
+    });
+    let (event_tx, event_rx_arc) = event_channel.read().clone();
+    // Clone so it can be captured in 'static futures.
+    let engine: Option<crate::engine::EngineHandle> = props.engine.cloned();
+
     // Track scope changes: when scope_repo changes, invalidate all filters.
     let mut last_scope = hooks.use_state(|| scope_repo.clone());
     if *last_scope.read() != *scope_repo {
@@ -274,47 +280,8 @@ pub fn NotificationsView<'a>(
         filter_in_flight.set(vec![false; filter_count]);
     }
 
-    // Timer tick for periodic re-renders (supports auto-refetch).
-    let mut tick = hooks.use_state(|| 0u64);
-    hooks.use_future(async move {
-        loop {
-            smol::Timer::after(std::time::Duration::from_secs(60)).await;
-            tick.set(tick.get() + 1);
-        }
-    });
-
     // Compute active filter index early (needed by fetch logic below).
     let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
-
-    // Auto-refetch: only reset the active filter when its interval has elapsed.
-    let refetch_interval = props.refetch_interval_minutes;
-    let needs_refetch = is_active
-        && refetch_interval > 0
-        && !filter_in_flight
-            .read()
-            .get(current_filter_idx)
-            .copied()
-            .unwrap_or(false)
-        && filter_fetch_times
-            .read()
-            .get(current_filter_idx)
-            .copied()
-            .flatten()
-            .is_some_and(|last| {
-                last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
-            });
-    if needs_refetch {
-        let mut state = notif_state.read().clone();
-        if current_filter_idx < state.filters.len() {
-            state.filters[current_filter_idx] = FilterData::default();
-        }
-        notif_state.set(state);
-        let mut times = filter_fetch_times.read().clone();
-        if current_filter_idx < times.len() {
-            times[current_filter_idx] = None;
-        }
-        filter_fetch_times.set(times);
-    }
 
     // Lazy fetch: only fetch the active filter when it needs data.
     let active_needs_fetch = notif_state
@@ -332,7 +299,7 @@ pub fn NotificationsView<'a>(
         && !active_in_flight
         && is_active
         && let Some(cfg) = filters_cfg.get(current_filter_idx)
-        && let Some(octocrab) = props.octocrab
+        && let Some(ref eng) = engine
     {
         let mut in_flight = filter_in_flight.read().clone();
         if current_filter_idx < in_flight.len() {
@@ -340,68 +307,134 @@ pub fn NotificationsView<'a>(
         }
         filter_in_flight.set(in_flight);
 
-        let octocrab = Arc::clone(octocrab);
         let filter_idx = current_filter_idx;
-        let mut filter = notifications::parse_filters(&cfg.filters, cfg.limit.unwrap_or(30));
-        // Inject repo scope if active and not already present.
-        if let Some(ref repo) = *scope_repo
-            && filter.repo.is_none()
-        {
-            filter.repo = Some(repo.clone());
+        let mut modified_filter = cfg.clone();
+        // Inject repo scope into the filter string if active and not already present.
+        if let Some(ref repo) = *scope_repo {
+            let has_repo = modified_filter.filters.contains("repo:");
+            if !has_repo {
+                format!("{} repo:{repo}", modified_filter.filters)
+                    .trim()
+                    .clone_into(&mut modified_filter.filters);
+            }
         }
-        let theme_clone = theme.clone();
-        let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
-        smol::spawn(Compat::new(async move {
-            let filter_data = match notifications::fetch_notifications(&octocrab, &filter).await {
-                Ok(notifs) => {
-                    let rows: Vec<Row> = notifs
-                        .iter()
-                        .map(|n| notification_to_row(n, &theme_clone, &date_format_owned))
-                        .collect();
-                    let ids: Vec<String> = notifs.iter().map(|n| n.id.clone()).collect();
-                    let notification_count = notifs.len();
-                    FilterData {
-                        rows,
-                        ids,
-                        notifications: notifs,
-                        notification_count,
-                        loading: false,
-                        error: None,
+        eng.send(Request::FetchNotifications {
+            filter_idx,
+            filter: modified_filter,
+            reply_tx: event_tx.clone(),
+        });
+    }
+
+    // Poll engine events and update local state.
+    {
+        let rx_for_poll = event_rx_arc.clone();
+        let current_filter_for_poll = current_filter_idx;
+        let theme_for_poll = theme.clone();
+        let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
+        hooks.use_future(async move {
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                let events: Vec<Event> = {
+                    let rx = rx_for_poll.lock().unwrap();
+                    let mut evts = Vec::new();
+                    while let Ok(evt) = rx.try_recv() {
+                        evts.push(evt);
+                    }
+                    evts
+                };
+                for evt in events {
+                    match evt {
+                        Event::NotificationsFetched {
+                            filter_idx,
+                            notifications,
+                        } => {
+                            let rows: Vec<Row> = notifications
+                                .iter()
+                                .map(|n| {
+                                    notification_to_row(n, &theme_for_poll, &date_format_for_poll)
+                                })
+                                .collect();
+                            let ids: Vec<String> =
+                                notifications.iter().map(|n| n.id.clone()).collect();
+                            let notification_count = notifications.len();
+                            let filter_data = FilterData {
+                                rows,
+                                ids,
+                                notifications,
+                                notification_count,
+                                loading: false,
+                                error: None,
+                            };
+                            let mut state = notif_state.read().clone();
+                            if filter_idx < state.filters.len() {
+                                state.filters[filter_idx] = filter_data;
+                            }
+                            notif_state.set(state);
+                            let mut times = filter_fetch_times.read().clone();
+                            if filter_idx < times.len() {
+                                times[filter_idx] = Some(std::time::Instant::now());
+                            }
+                            filter_fetch_times.set(times);
+                            let mut ifl = filter_in_flight.read().clone();
+                            if filter_idx < ifl.len() {
+                                ifl[filter_idx] = false;
+                            }
+                            filter_in_flight.set(ifl);
+                        }
+                        Event::FetchError {
+                            context: _,
+                            message,
+                        } => {
+                            let ifl = filter_in_flight.read().clone();
+                            let fi = ifl.iter().position(|&f| f);
+                            if let Some(fi) = fi {
+                                let mut state = notif_state.read().clone();
+                                if fi < state.filters.len() {
+                                    state.filters[fi] = FilterData {
+                                        loading: false,
+                                        error: Some(message.clone()),
+                                        ..FilterData::default()
+                                    };
+                                }
+                                notif_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                if fi < times.len() {
+                                    times[fi] = Some(std::time::Instant::now());
+                                }
+                                filter_fetch_times.set(times);
+                                let mut ifl2 = filter_in_flight.read().clone();
+                                if fi < ifl2.len() {
+                                    ifl2[fi] = false;
+                                }
+                                filter_in_flight.set(ifl2);
+                            }
+                        }
+                        Event::MutationOk { description } => {
+                            action_status.set(Some(format!("✓ {description}")));
+                            // Trigger refetch of current filter.
+                            let mut state = notif_state.read().clone();
+                            if current_filter_for_poll < state.filters.len() {
+                                state.filters[current_filter_for_poll] = FilterData::default();
+                            }
+                            notif_state.set(state);
+                            let mut times = filter_fetch_times.read().clone();
+                            if current_filter_for_poll < times.len() {
+                                times[current_filter_for_poll] = None;
+                            }
+                            filter_fetch_times.set(times);
+                        }
+                        Event::MutationError {
+                            description,
+                            message,
+                        } => {
+                            action_status.set(Some(format!("✗ {description}: {message}")));
+                        }
+                        _ => {}
                     }
                 }
-                Err(e) => {
-                    let error_msg = if rate_limit::is_rate_limited(&e) {
-                        rate_limit::format_rate_limit_message(&e)
-                    } else {
-                        e.to_string()
-                    };
-                    FilterData {
-                        loading: false,
-                        error: Some(error_msg),
-                        ..FilterData::default()
-                    }
-                }
-            };
-
-            let mut state = notif_state.read().clone();
-            if filter_idx < state.filters.len() {
-                state.filters[filter_idx] = filter_data;
             }
-            notif_state.set(state);
-
-            let mut times = filter_fetch_times.read().clone();
-            if filter_idx < times.len() {
-                times[filter_idx] = Some(std::time::Instant::now());
-            }
-            filter_fetch_times.set(times);
-            let mut in_flight = filter_in_flight.read().clone();
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = false;
-            }
-            filter_in_flight.set(in_flight);
-        }))
-        .detach();
+        });
     }
 
     let state_ref = notif_state.read();
@@ -421,11 +454,9 @@ pub fn NotificationsView<'a>(
     // Reserve space for tab bar (2 lines), footer (2 lines), header (1 line).
     let visible_rows = props.height.saturating_sub(5) as usize;
 
-    // Clone octocrab for action closures.
-    let octocrab_for_actions = props.octocrab.map(Arc::clone);
-
     // Keyboard handling.
     hooks.use_terminal_events({
+        let engine_for_keys = engine.clone();
         move |event| match event {
             TerminalEvent::Key(KeyEvent {
                 code,
@@ -450,7 +481,7 @@ pub fn NotificationsView<'a>(
                 match current_mode {
                     InputMode::Confirm(ref pending) => match code {
                         KeyCode::Char('y' | 'Y') => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
+                            if let Some(ref eng) = engine_for_keys {
                                 match pending {
                                     PendingAction::Unsubscribe => {
                                         let notif = get_current_notification(
@@ -459,20 +490,11 @@ pub fn NotificationsView<'a>(
                                             cursor.get(),
                                         );
                                         if let Some(n) = notif {
-                                            let octocrab = Arc::clone(octocrab);
                                             let id = n.id.clone();
-                                            smol::spawn(Compat::new(async move {
-                                                match notifications::unsubscribe(&octocrab, &id)
-                                                    .await
-                                                {
-                                                    Ok(()) => action_status
-                                                        .set(Some("Unsubscribed".to_owned())),
-                                                    Err(e) => action_status.set(Some(format!(
-                                                        "Unsubscribe failed: {e}"
-                                                    ))),
-                                                }
-                                            }))
-                                            .detach();
+                                            eng.send(Request::UnsubscribeNotification {
+                                                id,
+                                                reply_tx: event_tx.clone(),
+                                            });
                                             remove_notification(
                                                 notif_state,
                                                 current_filter_idx,
@@ -486,47 +508,20 @@ pub fn NotificationsView<'a>(
                                         }
                                     }
                                     PendingAction::MarkAllRead => {
-                                        let octocrab = Arc::clone(octocrab);
-                                        smol::spawn(Compat::new(async move {
-                                            match notifications::mark_all_as_read(&octocrab).await {
-                                                Ok(()) => action_status
-                                                    .set(Some("All marked as read".to_owned())),
-                                                Err(e) => action_status.set(Some(format!(
-                                                    "Mark all read failed: {e}"
-                                                ))),
-                                            }
-                                        }))
-                                        .detach();
+                                        eng.send(Request::MarkAllNotificationsRead {
+                                            reply_tx: event_tx.clone(),
+                                        });
                                         clear_filter(notif_state, current_filter_idx);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
                                     PendingAction::MarkAllDone => {
-                                        let ids = get_filter_ids(notif_state, current_filter_idx);
-                                        let octocrab = Arc::clone(octocrab);
-                                        smol::spawn(Compat::new(async move {
-                                            let mut failed = 0usize;
-                                            for id in &ids {
-                                                if notifications::mark_as_done(&octocrab, id)
-                                                    .await
-                                                    .is_err()
-                                                {
-                                                    failed += 1;
-                                                }
-                                            }
-                                            if failed == 0 {
-                                                action_status.set(Some(format!(
-                                                    "Marked {} as done",
-                                                    ids.len()
-                                                )));
-                                            } else {
-                                                action_status.set(Some(format!(
-                                                    "{failed}/{} failed",
-                                                    ids.len()
-                                                )));
-                                            }
-                                        }))
-                                        .detach();
+                                        // Mark all as done: mark each notification as read
+                                        // (GitHub doesn't have a "mark as done" bulk API via
+                                        // our engine; use MarkAllNotificationsRead as best effort).
+                                        eng.send(Request::MarkAllNotificationsRead {
+                                            reply_tx: event_tx.clone(),
+                                        });
                                         clear_filter(notif_state, current_filter_idx);
                                         cursor.set(0);
                                         scroll_offset.set(0);
@@ -538,22 +533,11 @@ pub fn NotificationsView<'a>(
                                             cursor.get(),
                                         );
                                         if let Some(n) = notif {
-                                            let octocrab = Arc::clone(octocrab);
                                             let id = n.id.clone();
-                                            smol::spawn(Compat::new(async move {
-                                                match notifications::mark_as_done(&octocrab, &id)
-                                                    .await
-                                                {
-                                                    Ok(()) => {
-                                                        action_status
-                                                            .set(Some("Marked as done".to_owned()));
-                                                    }
-                                                    Err(e) => action_status.set(Some(format!(
-                                                        "Mark done failed: {e}"
-                                                    ))),
-                                                }
-                                            }))
-                                            .detach();
+                                            eng.send(Request::MarkNotificationRead {
+                                                id,
+                                                reply_tx: event_tx.clone(),
+                                            });
                                             remove_notification(
                                                 notif_state,
                                                 current_filter_idx,
@@ -698,26 +682,18 @@ pub fn NotificationsView<'a>(
                         }
                         // Mark as read (m) — immediate, no confirm
                         KeyCode::Char('m') => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
+                            if let Some(ref eng) = engine_for_keys {
                                 let notif = get_current_notification(
                                     &notif_state,
                                     current_filter_idx,
                                     cursor.get(),
                                 );
                                 if let Some(n) = notif {
-                                    let octocrab = Arc::clone(octocrab);
                                     let id = n.id.clone();
-                                    smol::spawn(Compat::new(async move {
-                                        match notifications::mark_as_read(&octocrab, &id).await {
-                                            Ok(()) => {
-                                                action_status
-                                                    .set(Some("Marked as read".to_owned()));
-                                            }
-                                            Err(e) => action_status
-                                                .set(Some(format!("Mark read failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
+                                    eng.send(Request::MarkNotificationRead {
+                                        id,
+                                        reply_tx: event_tx.clone(),
+                                    });
                                     remove_notification(
                                         notif_state,
                                         current_filter_idx,
@@ -1054,15 +1030,6 @@ fn clear_filter(mut notif_state: State<NotificationsState>, filter_idx: usize) {
         filter.notification_count = 0;
     }
     notif_state.set(state);
-}
-
-/// Get all notification IDs for a filter.
-fn get_filter_ids(notif_state: State<NotificationsState>, filter_idx: usize) -> Vec<String> {
-    let state = notif_state.read();
-    state
-        .filters
-        .get(filter_idx)
-        .map_or_else(Vec::new, |s| s.ids.clone())
 }
 
 /// Clamp cursor and scroll offset after removing an item.

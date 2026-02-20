@@ -9,7 +9,7 @@ use gh_board::color::ColorDepth;
 use gh_board::config::builtin_themes;
 use gh_board::config::keybindings::MergedBindings;
 use gh_board::config::loader;
-use gh_board::github::client::GitHubClient;
+use gh_board::engine::{Engine, GitHubEngine};
 use gh_board::theme::{Background, ResolvedTheme};
 
 #[derive(Parser)]
@@ -89,32 +89,22 @@ fn main() -> Result<()> {
         .install_default()
         .expect("failed to install default CryptoProvider");
 
-    // Build a Tokio runtime. Octocrab (via tower's BufferLayer) requires a
-    // Tokio reactor to be active when constructing its HTTP service, so we
-    // enter the runtime context before creating the client.
-    let tokio_rt = tokio::runtime::Runtime::new()?;
-    let _guard = tokio_rt.enter();
-
-    // Create GitHub client and get the default host octocrab instance.
-    let mut gh_client = GitHubClient::new(config.github.refetch_interval_minutes);
-    let default_host = "github.com";
-    let octocrab = gh_client.octocrab_for(default_host)?;
-    let api_cache = gh_client.cache();
+    // Start the GitHub backend engine in a dedicated OS thread (owns its own
+    // Tokio runtime). Dropping `engine_handle` at the end of `main` closes the
+    // sender channel, signalling the engine to shut down.
+    let engine_handle = GitHubEngine::new(config.clone()).start();
 
     tracing::info!("gh-board starting");
 
     let cwd = std::env::current_dir().ok();
     let detected_repo = cwd.as_deref().and_then(gh_board::git::detect_repo);
 
-    // Enter fullscreen TUI. iocraft uses smol internally; the Tokio runtime
-    // context remains active so that octocrab/tower calls (wrapped in
-    // async-compat's `Compat`) can reach the reactor.
+    // Enter fullscreen TUI (iocraft uses smol internally).
     smol::block_on(
         element! {
             App(
                 config: &config,
-                octocrab: &octocrab,
-                api_cache: &api_cache,
+                engine: &engine_handle,
                 theme: &theme,
                 keybindings: &keybindings,
                 color_depth,

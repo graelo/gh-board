@@ -1,12 +1,11 @@
 use gh_board::color::ColorDepth;
 use gh_board::components::sidebar::SidebarTab;
 use gh_board::components::sidebar_tabs;
-use gh_board::github::graphql::PrDetail;
-use gh_board::github::types::{
-    Actor, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType, PrState,
+use gh_board::theme::ResolvedTheme;
+use gh_board::types::{
+    Actor, CheckConclusion, CheckRun, CheckStatus, Commit, File, FileChangeType, PrDetail, PrState,
     PullRequest, Review, ReviewState, TimelineEvent,
 };
-use gh_board::theme::ResolvedTheme;
 
 fn test_theme() -> ResolvedTheme {
     use gh_board::config::types::Theme;
@@ -32,7 +31,7 @@ fn test_pr() -> PullRequest {
         deletions: 5,
         head_ref: "feature-branch".to_owned(),
         base_ref: "main".to_owned(),
-        labels: vec![gh_board::github::types::Label {
+        labels: vec![gh_board::types::Label {
             name: "bug".to_owned(),
             color: "ff0000".to_owned(),
         }],
@@ -64,7 +63,7 @@ fn test_pr() -> PullRequest {
         updated_at: Utc::now(),
         created_at: Utc::now(),
         url: "https://github.com/owner/repo/pull/42".to_owned(),
-        repo: Some(gh_board::github::types::RepoRef {
+        repo: Some(gh_board::types::RepoRef {
             owner: "owner".to_owned(),
             name: "repo".to_owned(),
         }),

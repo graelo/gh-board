@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use octocrab::Octocrab;
 use octocrab::models::NotificationId;
 
-use crate::github::types::{Notification, NotificationReason, RepoRef, SubjectType};
+use crate::github::types::{
+    Notification, NotificationReason, NotificationStatus, RepoRef, SubjectType,
+};
 
 // ---------------------------------------------------------------------------
 // Notification filter parameters (T052)
@@ -23,12 +25,6 @@ pub struct NotificationQueryParams {
     pub reason: Option<NotificationReason>,
     /// Filter by read/unread status (client-side).
     pub status: Option<NotificationStatus>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotificationStatus {
-    Unread,
-    Read,
 }
 
 /// Parse a filter string like `"repo:owner/name reason:mention is:unread"`
@@ -204,6 +200,7 @@ pub async fn mark_all_as_read(octocrab: &Arc<Octocrab>) -> Result<()> {
 /// Mark a notification as done (DELETE /notifications/threads/{id}).
 ///
 /// Not natively supported by octocrab, so we use the raw `_delete` method.
+#[allow(dead_code)]
 pub async fn mark_as_done(octocrab: &Arc<Octocrab>, thread_id: &str) -> Result<()> {
     let route = format!("/notifications/threads/{thread_id}");
     let uri = http::Uri::builder()

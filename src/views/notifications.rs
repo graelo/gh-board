@@ -17,7 +17,7 @@ use crate::config::types::NotificationFilter;
 use crate::engine::{EngineHandle, Event, Request};
 use crate::filter;
 use crate::theme::ResolvedTheme;
-use crate::types::{Notification, SubjectType};
+use crate::types::{Notification, RateLimitInfo, SubjectType};
 
 // ---------------------------------------------------------------------------
 // Notification-specific column definitions (FR-031)
@@ -249,6 +249,7 @@ pub fn NotificationsView<'a>(
     let mut search_query = hooks.use_state(String::new);
     let mut help_visible = hooks.use_state(|| false);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
 
     // State: per-filter fetch tracking (lazy: only fetch the active filter).
     let mut filter_fetch_times =
@@ -435,6 +436,9 @@ pub fn NotificationsView<'a>(
                             message,
                         } => {
                             action_status.set(Some(format!("✗ {description}: {message}")));
+                        }
+                        Event::RateLimitUpdated { info } => {
+                            rate_limit_state.set(Some(info));
                         }
                         _ => {}
                     }
@@ -944,13 +948,14 @@ pub fn NotificationsView<'a>(
         Some(repo) => repo.clone(),
         None => "all repos".to_owned(),
     };
+    let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
     let rendered_footer = RenderedFooter::build(
         ViewKind::Notifications,
         &theme.icons,
         scope_label,
         context_text,
         updated_text,
-        String::new(),
+        rate_limit_text,
         depth,
         [
             Some(theme.footer_prs),
@@ -986,7 +991,7 @@ pub fn NotificationsView<'a>(
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
 
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+            View(flex_grow: 1.0, flex_direction: FlexDirection::Column, overflow: Overflow::Hidden) {
                 ScrollableTable(table: rendered_table)
             }
 

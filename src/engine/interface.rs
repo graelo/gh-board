@@ -47,6 +47,8 @@ pub enum Request {
     FetchPrs {
         filter_idx: usize,
         filter: PrFilter,
+        /// Skip the moka cache and fetch fresh data from the GitHub API.
+        force: bool,
         reply_tx: Sender<Event>,
     },
     FetchIssues {

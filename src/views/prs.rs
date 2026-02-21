@@ -551,6 +551,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Set by 'R' keypress; consumed by render body to fetch all filters eagerly.
     let mut refresh_all = hooks.use_state(|| false);
 
+    // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
+    let mut force_refresh = hooks.use_state(|| false);
+
     // Whether RegisterPrsRefresh has been sent to the engine yet.
     let mut refresh_registered = hooks.use_state(|| false);
 
@@ -674,6 +677,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             engine.send(Request::FetchPrs {
                 filter_idx,
                 filter: modified_filter,
+                force: true,
                 reply_tx: event_tx.clone(),
             });
         }
@@ -703,9 +707,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             modified_filter.filters = format!("{} repo:{repo}", cfg.filters);
         }
 
+        // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
+        let force = force_refresh.get();
+        if force {
+            force_refresh.set(false);
+        }
+
         engine.send(Request::FetchPrs {
             filter_idx,
             filter: modified_filter,
+            force,
             reply_tx: event_tx.clone(),
         });
     }
@@ -1370,6 +1381,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         // Retry / refresh (active filter only)
                         KeyCode::Char('r') => {
+                            force_refresh.set(true);
                             let idx = active_filter.get();
                             let mut state = prs_state.read().clone();
                             if idx < state.filters.len() {
@@ -1382,6 +1394,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             }
                             filter_fetch_times.set(times);
                             pending_detail.set(None);
+                            detail_cache.set(HashMap::new());
                             cursor.set(0);
                             scroll_offset.set(0);
                         }
@@ -1396,6 +1409,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             times.fill(None);
                             filter_fetch_times.set(times);
                             pending_detail.set(None);
+                            detail_cache.set(HashMap::new());
                             cursor.set(0);
                             scroll_offset.set(0);
                             // Signal the render body to eagerly fetch all filters.

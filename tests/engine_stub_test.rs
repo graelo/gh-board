@@ -33,6 +33,7 @@ fn stub_engine_fetch_prs_returns_fixture_data() {
     handle.send(Request::FetchPrs {
         filter_idx: 0,
         filter,
+        force: false,
         reply_tx: tx,
     });
 

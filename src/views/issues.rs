@@ -1019,6 +1019,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 }
                                 filter_fetch_times.set(times);
                                 pending_detail.set(None);
+                                detail_cache.set(HashMap::new());
                                 cursor.set(0);
                                 scroll_offset.set(0);
                             }
@@ -1033,6 +1034,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 times.fill(None);
                                 filter_fetch_times.set(times);
                                 pending_detail.set(None);
+                                detail_cache.set(HashMap::new());
                                 cursor.set(0);
                                 scroll_offset.set(0);
                                 refresh_all.set(true);

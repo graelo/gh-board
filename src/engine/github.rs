@@ -89,6 +89,7 @@ async fn handle_request(
         Request::FetchPrs {
             filter_idx,
             filter,
+            force,
             reply_tx,
         } => {
             let host = filter.host.as_deref().unwrap_or("github.com");
@@ -97,7 +98,8 @@ async fn handle_request(
             };
             let cache = client.cache();
             let limit = filter.limit.unwrap_or(100);
-            match graphql::search_pull_requests_all(&octocrab, &filter.filters, limit, Some(&cache))
+            let cache_opt = if force { None } else { Some(&cache) };
+            match graphql::search_pull_requests_all(&octocrab, &filter.filters, limit, cache_opt)
                 .await
             {
                 Ok((prs, rate_limit)) => {

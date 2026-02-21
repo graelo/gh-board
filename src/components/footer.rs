@@ -4,8 +4,8 @@ use iocraft::prelude::*;
 
 use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::github::graphql::RateLimitInfo;
 use crate::icons::ResolvedIcons;
+use crate::types::RateLimitInfo;
 
 // ---------------------------------------------------------------------------
 // Footer component — structured status bar

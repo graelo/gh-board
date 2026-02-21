@@ -1,12 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
-use async_compat::Compat;
 use iocraft::prelude::*;
-use moka::future::Cache;
-use octocrab::Octocrab;
 
-use crate::actions::{clipboard, pr_actions};
+use crate::actions::clipboard;
 use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::footer::{self, Footer, RenderedFooter};
@@ -20,15 +16,15 @@ use crate::components::table::{
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::PrFilter;
-use crate::filter;
-use crate::github::graphql::{self, PrDetail, RateLimitInfo};
-use crate::github::rate_limit;
-use crate::github::types::{
-    AuthorAssociation, BranchUpdateStatus, MergeStateStatus, MergeableState, PullRequest,
-};
+use crate::engine::{EngineHandle, Event, PrRef, Request};
+use crate::filter::{self, apply_scope};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine};
 use crate::theme::ResolvedTheme;
+use crate::types::{
+    AuthorAssociation, BranchUpdateStatus, MergeStateStatus, MergeableState, PrDetail, PullRequest,
+    RateLimitInfo,
+};
 
 // ---------------------------------------------------------------------------
 // PR-specific column definitions (FR-011)
@@ -194,7 +190,7 @@ fn pr_to_row(
         None => {
             // Infer from latestReviews when reviewDecision is null
             // (repos without required review branch protection).
-            use crate::github::types::ReviewState;
+            use crate::types::ReviewState;
             if pr
                 .reviews
                 .iter()
@@ -271,7 +267,7 @@ fn aggregate_ci_status(
     checks: &[crate::github::types::CheckRun],
     theme: &ResolvedTheme,
 ) -> (String, AppColor) {
-    use crate::github::types::{CheckConclusion, CheckStatus};
+    use crate::types::{CheckConclusion, CheckStatus};
 
     let icons = &theme.icons;
 
@@ -366,10 +362,9 @@ fn update_cell_from_detail(detail: &PrDetail, theme: &ResolvedTheme) -> Cell {
 // Detail request (debounce)
 // ---------------------------------------------------------------------------
 
-/// Parameters needed to fetch sidebar detail for a PR.
+/// Parameters needed to fetch sidebar detail for a PR (including the compare call).
 #[derive(Clone)]
 struct DetailRequest {
-    octocrab: Arc<Octocrab>,
     owner: String,
     repo: String,
     pr_number: u64,
@@ -455,10 +450,8 @@ struct PrsState {
 pub struct PrsViewProps<'a> {
     /// PR filter configs.
     pub filters: Option<&'a [PrFilter]>,
-    /// Octocrab instance for fetching.
-    pub octocrab: Option<&'a Arc<Octocrab>>,
-    /// Moka API response cache.
-    pub api_cache: Option<&'a Cache<String, String>>,
+    /// Engine handle.
+    pub engine: Option<&'a EngineHandle>,
     /// Resolved theme.
     pub theme: Option<&'a ResolvedTheme>,
     /// Merged keybindings for help overlay.
@@ -525,7 +518,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let mut preview_open = hooks.use_state(|| false);
     let mut preview_scroll = hooks.use_state(|| 0usize);
 
-    // State: sidebar tab (T072 — FR-014).
+    // State: sidebar tab.
     let mut sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
 
     // State: cached PR detail data for sidebar tabs (HashMap cache + debounce).
@@ -534,12 +527,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let mut pending_detail = hooks.use_state(|| Option::<DetailRequest>::None);
     let mut debounce_gen = hooks.use_state(|| 0u64);
 
-    // State: input mode for actions (T058, T061).
+    // State: input mode for actions.
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut input_buffer = hooks.use_state(String::new);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
 
-    // State: search query (T087).
+    // State: search query.
     let mut search_query = hooks.use_state(String::new);
 
     // State: assignee autocomplete.
@@ -555,6 +548,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let mut filter_fetch_times =
         hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
     let mut filter_in_flight = hooks.use_state(move || vec![false; filter_count]);
+    // Set by 'R' keypress; consumed by render body to fetch all filters eagerly.
+    let mut refresh_all = hooks.use_state(|| false);
+
+    // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
+    let mut force_refresh = hooks.use_state(|| false);
+
+    // Whether RegisterPrsRefresh has been sent to the engine yet.
+    let mut refresh_registered = hooks.use_state(|| false);
 
     // State: loaded filter data (non-Copy, use .read()/.set()).
     let initial_filters = vec![FilterData::default(); filter_count];
@@ -572,20 +573,24 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         });
         filter_fetch_times.set(vec![None; filter_count]);
         filter_in_flight.set(vec![false; filter_count]);
+        refresh_registered.set(false);
     }
 
-    // Timer tick for periodic re-renders (supports auto-refetch).
-    let mut tick = hooks.use_state(|| 0u64);
-    hooks.use_future(async move {
-        loop {
-            smol::Timer::after(std::time::Duration::from_secs(60)).await;
-            tick.set(tick.get() + 1);
-        }
+    // Per-view event channel: engine sends results here, polling future processes them.
+    let event_channel = hooks.use_state(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<Event>();
+        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
     });
+    let (event_tx, event_rx_arc) = event_channel.read().clone();
+    // Clone the EngineHandle so it can be captured in 'static use_future closures.
+    let engine: Option<EngineHandle> = props.engine.cloned();
+    // Pre-clone for each consumer: debounce future, polling future, fetch trigger, keyboard handler.
+    let engine_for_poll = engine.clone();
+    let engine_for_keyboard = engine.clone();
 
-    // Debounce future: waits for cursor to settle, then spawns the detail fetch directly.
-    let api_cache_for_detail = props.api_cache.cloned();
-    let theme_for_debounce = theme.clone();
+    // Debounce future: waits for cursor to settle, then sends FetchPrDetail to engine.
+    let engine_for_debounce = engine.clone();
+    let event_tx_for_debounce = event_tx.clone();
     hooks.use_future(async move {
         let mut last_gen = 0u64;
         let mut spawned_gen = 0u64;
@@ -599,71 +604,26 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 // Stable for one full cycle and not yet spawned — fetch now.
                 let req = pending_detail.read().clone();
                 if let Some(DetailRequest {
-                    octocrab,
                     owner,
                     repo,
                     pr_number,
                     base_ref,
                     head_repo_owner,
-                    head_ref: head_ref_name,
+                    head_ref,
                 }) = req
                 {
                     spawned_gen = current_gen;
-                    let api_cache = api_cache_for_detail.clone();
-                    let theme_snap = theme_for_debounce.clone();
-                    smol::spawn(Compat::new(async move {
-                        if let Ok((mut detail, rl)) = graphql::fetch_pr_detail(
-                            &octocrab,
-                            &owner,
-                            &repo,
-                            pr_number,
-                            api_cache.as_ref(),
-                        )
-                        .await
-                        {
-                            // Phase 2: fill behind_by via REST compare when not set.
-                            if detail.behind_by.is_none()
-                                && let Some(ref head_owner) = head_repo_owner
-                            {
-                                match graphql::fetch_compare(
-                                    &octocrab,
-                                    &owner,
-                                    &repo,
-                                    &base_ref,
-                                    head_owner,
-                                    &head_ref_name,
-                                )
-                                .await
-                                {
-                                    Ok(behind) => detail.behind_by = behind,
-                                    Err(e) => tracing::debug!(
-                                        "compare API failed for PR #{pr_number}: {e:#}"
-                                    ),
-                                }
-                            }
-
-                            if rl.is_some() {
-                                rate_limit_state.set(rl);
-                            }
-
-                            // Phase 2: update the "update" cell in the table row.
-                            let update = update_cell_from_detail(&detail, &theme_snap);
-                            let mut state = prs_state.read().clone();
-                            'update: for fd in &mut state.filters {
-                                if let Some(idx) = fd.prs.iter().position(|p| p.number == pr_number)
-                                {
-                                    fd.rows[idx].insert("update".to_owned(), update);
-                                    break 'update;
-                                }
-                            }
-                            prs_state.set(state);
-
-                            let mut cache = detail_cache.read().clone();
-                            cache.insert(pr_number, detail);
-                            detail_cache.set(cache);
-                        }
-                    }))
-                    .detach();
+                    if let Some(ref eng) = engine_for_debounce {
+                        eng.send(Request::FetchPrDetail {
+                            owner: owner.clone(),
+                            repo: repo.clone(),
+                            number: pr_number,
+                            base_ref,
+                            head_repo_owner,
+                            head_ref,
+                            reply_tx: event_tx_for_debounce.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -671,36 +631,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     // Compute active filter index early (needed by fetch logic below).
     let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
-
-    // Auto-refetch: only reset the active filter when its interval has elapsed.
-    let refetch_interval = props.refetch_interval_minutes;
-    let needs_refetch = is_active
-        && refetch_interval > 0
-        && !filter_in_flight
-            .read()
-            .get(current_filter_idx)
-            .copied()
-            .unwrap_or(false)
-        && filter_fetch_times
-            .read()
-            .get(current_filter_idx)
-            .copied()
-            .flatten()
-            .is_some_and(|last| {
-                last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
-            });
-    if needs_refetch {
-        let mut state = prs_state.read().clone();
-        if current_filter_idx < state.filters.len() {
-            state.filters[current_filter_idx] = FilterData::default();
-        }
-        prs_state.set(state);
-        let mut times = filter_fetch_times.read().clone();
-        if current_filter_idx < times.len() {
-            times[current_filter_idx] = None;
-        }
-        filter_fetch_times.set(times);
-    }
 
     // Lazy fetch: only fetch the active filter when it needs data.
     let active_needs_fetch = prs_state
@@ -714,11 +644,51 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .copied()
         .unwrap_or(false);
 
-    if active_needs_fetch
+    // Register all filters for background refresh once at mount (or after scope change).
+    if !refresh_registered.get()
+        && let Some(ref eng) = engine
+    {
+        let scoped_configs: Vec<_> = filters_cfg
+            .iter()
+            .map(|cfg| {
+                let mut modified = cfg.clone();
+                modified.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
+                modified
+            })
+            .collect();
+        eng.send(Request::RegisterPrsRefresh {
+            filter_configs: scoped_configs,
+            notify_tx: event_tx.clone(),
+        });
+        refresh_registered.set(true);
+    }
+
+    if refresh_all.get()
+        && is_active
+        && let Some(ref engine) = engine
+    {
+        // 'R' was pressed: reset the flag and eagerly fetch every filter.
+        refresh_all.set(false);
+        let mut in_flight = filter_in_flight.read().clone();
+        for (filter_idx, cfg) in filters_cfg.iter().enumerate() {
+            if filter_idx < in_flight.len() {
+                in_flight[filter_idx] = true;
+            }
+            let mut modified_filter = cfg.clone();
+            modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
+            engine.send(Request::FetchPrs {
+                filter_idx,
+                filter: modified_filter,
+                force: true,
+                reply_tx: event_tx.clone(),
+            });
+        }
+        filter_in_flight.set(in_flight);
+    } else if active_needs_fetch
         && !active_in_flight
         && is_active
         && let Some(cfg) = filters_cfg.get(current_filter_idx)
-        && let Some(octocrab) = props.octocrab
+        && let Some(ref engine) = engine
     {
         // Mark this filter as in-flight.
         let mut in_flight = filter_in_flight.read().clone();
@@ -727,185 +697,198 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         }
         filter_in_flight.set(in_flight);
 
-        let octocrab = Arc::clone(octocrab);
-        let api_cache = props.api_cache.cloned();
         let filter_idx = current_filter_idx;
-        let mut filters = cfg.filters.clone();
-        // Inject repo scope if active and not already present.
-        if let Some(ref repo) = *scope_repo
-            && !filters.split_whitespace().any(|t| t.starts_with("repo:"))
-        {
-            filters = format!("{filters} repo:{repo}");
+        let mut modified_filter = cfg.clone();
+        modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
+
+        // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
+        let force = force_refresh.get();
+        if force {
+            force_refresh.set(false);
         }
-        let limit = cfg.limit.unwrap_or(30);
-        let theme_clone = theme.clone();
-        let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
+
+        engine.send(Request::FetchPrs {
+            filter_idx,
+            filter: modified_filter,
+            force,
+            reply_tx: event_tx.clone(),
+        });
+    }
+
+    // Polling future: receive engine events every 100ms and update state.
+    {
+        let rx_for_poll = event_rx_arc.clone();
+        let theme_for_poll = theme.clone();
+        let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
         let prefetch_limit = props.prefetch_pr_details as usize;
-        // Phase 3: snapshot detail cache so already-fetched detail backfills rows.
-        let detail_cache_snap = detail_cache.read().clone();
-
-        smol::spawn(Compat::new(async move {
-            let filter_data = match graphql::search_pull_requests_all(
-                &octocrab,
-                &filters,
-                limit,
-                api_cache.as_ref(),
-            )
-            .await
-            {
-                Ok((prs, rl)) => {
-                    if rl.is_some() {
-                        rate_limit_state.set(rl);
+        let current_filter_for_poll = current_filter_idx;
+        let engine = engine_for_poll;
+        let event_tx = event_tx.clone();
+        hooks.use_future(async move {
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                let events: Vec<Event> = {
+                    let rx = rx_for_poll.lock().unwrap();
+                    let mut evts = Vec::new();
+                    while let Ok(evt) = rx.try_recv() {
+                        evts.push(evt);
                     }
-                    let rows: Vec<Row> = prs
-                        .iter()
-                        .map(|pr| {
-                            let detail = detail_cache_snap.get(&pr.number);
-                            pr_to_row(pr, &theme_clone, &date_format_owned, detail)
-                        })
-                        .collect();
-                    let bodies: Vec<String> = prs.iter().map(|pr| pr.body.clone()).collect();
-                    let titles: Vec<String> = prs.iter().map(|pr| pr.title.clone()).collect();
-                    let pr_count = prs.len();
-                    FilterData {
-                        rows,
-                        bodies,
-                        titles,
-                        prs,
-                        pr_count,
-                        loading: false,
-                        error: None,
-                    }
-                }
-                Err(e) => {
-                    let error_msg = if rate_limit::is_rate_limited(&e) {
-                        rate_limit::format_rate_limit_message(&e)
-                    } else {
-                        e.to_string()
-                    };
-                    FilterData {
-                        loading: false,
-                        error: Some(error_msg),
-                        ..FilterData::default()
-                    }
-                }
-            };
-
-            // Capture PRs for prefetch before filter_data is moved into state.
-            // Only prefetch when the list succeeded (error implies empty prs, but be explicit).
-            let prs_for_prefetch: Vec<PullRequest> = if filter_data.error.is_none() {
-                filter_data
-                    .prs
-                    .iter()
-                    .take(prefetch_limit)
-                    .cloned()
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
-            // Update only this filter.
-            let mut state = prs_state.read().clone();
-            if filter_idx < state.filters.len() {
-                state.filters[filter_idx] = filter_data;
-            }
-            prs_state.set(state);
-
-            // Record fetch time and clear in-flight.
-            let mut times = filter_fetch_times.read().clone();
-            if filter_idx < times.len() {
-                times[filter_idx] = Some(std::time::Instant::now());
-            }
-            filter_fetch_times.set(times);
-            let mut in_flight = filter_in_flight.read().clone();
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = false;
-            }
-            filter_in_flight.set(in_flight);
-
-            // Background prefetch: sequentially fetch full details for the first N PRs.
-            if !prs_for_prefetch.is_empty() {
-                let octocrab_pf = Arc::clone(&octocrab);
-                let api_cache_pf = api_cache.clone();
-                let theme_pf = theme_clone.clone();
-
-                smol::spawn(Compat::new(async move {
-                    for pr in prs_for_prefetch {
-                        // Skip PRs already in the in-component cache.
-                        if detail_cache.read().contains_key(&pr.number) {
-                            continue;
+                    evts
+                };
+                for evt in events {
+                    match evt {
+                        Event::PrsFetched {
+                            filter_idx,
+                            prs,
+                            rate_limit,
+                        } => {
+                            if rate_limit.is_some() {
+                                rate_limit_state.set(rate_limit);
+                            }
+                            let detail_snap = detail_cache.read().clone();
+                            let rows: Vec<Row> = prs
+                                .iter()
+                                .map(|pr| {
+                                    let detail = detail_snap.get(&pr.number);
+                                    pr_to_row(pr, &theme_for_poll, &date_format_for_poll, detail)
+                                })
+                                .collect();
+                            let bodies: Vec<String> =
+                                prs.iter().map(|pr| pr.body.clone()).collect();
+                            let titles: Vec<String> =
+                                prs.iter().map(|pr| pr.title.clone()).collect();
+                            let pr_count = prs.len();
+                            let prs_for_prefetch: Vec<PrRef> = prs
+                                .iter()
+                                .take(prefetch_limit)
+                                .filter(|pr| {
+                                    !detail_snap.contains_key(&pr.number)
+                                        && pr.state == crate::github::types::PrState::Open
+                                })
+                                .filter_map(|pr| {
+                                    pr.repo.as_ref().map(|r| PrRef {
+                                        owner: r.owner.clone(),
+                                        repo: r.name.clone(),
+                                        number: pr.number,
+                                        base_ref: pr.base_ref.clone(),
+                                        head_repo_owner: pr.head_repo_owner.clone(),
+                                        head_ref: pr.head_ref.clone(),
+                                    })
+                                })
+                                .collect();
+                            let filter_data = FilterData {
+                                rows,
+                                bodies,
+                                titles,
+                                prs,
+                                pr_count,
+                                loading: false,
+                                error: None,
+                            };
+                            let mut state = prs_state.read().clone();
+                            if filter_idx < state.filters.len() {
+                                state.filters[filter_idx] = filter_data;
+                            }
+                            prs_state.set(state);
+                            let mut times = filter_fetch_times.read().clone();
+                            if filter_idx < times.len() {
+                                times[filter_idx] = Some(std::time::Instant::now());
+                            }
+                            filter_fetch_times.set(times);
+                            let mut ifl = filter_in_flight.read().clone();
+                            if filter_idx < ifl.len() {
+                                ifl[filter_idx] = false;
+                            }
+                            filter_in_flight.set(ifl);
+                            // Trigger prefetch via engine.
+                            if !prs_for_prefetch.is_empty()
+                                && let Some(ref eng) = engine
+                            {
+                                eng.send(Request::PrefetchPrDetails {
+                                    prs: prs_for_prefetch,
+                                    reply_tx: event_tx.clone(),
+                                });
+                            }
                         }
-                        let Some(ref repo) = pr.repo else { continue };
-                        let (owner, repo_name) = (repo.owner.clone(), repo.name.clone());
-
-                        match graphql::fetch_pr_detail(
-                            &octocrab_pf,
-                            &owner,
-                            &repo_name,
-                            pr.number,
-                            api_cache_pf.as_ref(),
-                        )
-                        .await
-                        {
-                            Ok((mut detail, rl)) => {
-                                if detail.behind_by.is_none()
-                                    && let Some(ref head_owner) = pr.head_repo_owner
-                                {
-                                    match graphql::fetch_compare(
-                                        &octocrab_pf,
-                                        &owner,
-                                        &repo_name,
-                                        &pr.base_ref,
-                                        head_owner,
-                                        &pr.head_ref,
-                                    )
-                                    .await
-                                    {
-                                        Ok(behind) => detail.behind_by = behind,
-                                        Err(e) => tracing::debug!(
-                                            "compare API failed for PR #{}: {e:#}",
-                                            pr.number
-                                        ),
-                                    }
+                        Event::PrDetailFetched {
+                            number,
+                            detail,
+                            rate_limit,
+                        } => {
+                            if rate_limit.is_some() {
+                                rate_limit_state.set(rate_limit);
+                            }
+                            // Update the "update" cell in the table row.
+                            let update = update_cell_from_detail(&detail, &theme_for_poll);
+                            let mut state = prs_state.read().clone();
+                            'update: for fd in &mut state.filters {
+                                if let Some(idx) = fd.prs.iter().position(|p| p.number == number) {
+                                    fd.rows[idx].insert("update".to_owned(), update);
+                                    break 'update;
                                 }
-
-                                if rl.is_some() {
-                                    rate_limit_state.set(rl);
-                                }
-
-                                let update_cell = update_cell_from_detail(&detail, &theme_pf);
+                            }
+                            prs_state.set(state);
+                            let mut cache = detail_cache.read().clone();
+                            cache.insert(number, detail);
+                            detail_cache.set(cache);
+                        }
+                        Event::FetchError {
+                            context: _,
+                            message,
+                        } => {
+                            // Find the in-flight filter and mark it as error.
+                            let in_flight = filter_in_flight.read().clone();
+                            let error_filter_idx = in_flight.iter().position(|&f| f);
+                            if let Some(fi) = error_filter_idx {
                                 let mut state = prs_state.read().clone();
-                                'pf: for fd in &mut state.filters {
-                                    if let Some(idx) =
-                                        fd.prs.iter().position(|p| p.number == pr.number)
-                                    {
-                                        fd.rows[idx].insert("update".to_owned(), update_cell);
-                                        break 'pf;
-                                    }
+                                if fi < state.filters.len() {
+                                    state.filters[fi] = FilterData {
+                                        loading: false,
+                                        error: Some(message.clone()),
+                                        ..FilterData::default()
+                                    };
                                 }
                                 prs_state.set(state);
-
-                                let mut cache = detail_cache.read().clone();
-                                cache.insert(pr.number, detail);
-                                detail_cache.set(cache);
-                            }
-                            Err(e) => {
-                                tracing::debug!("prefetch failed for PR #{}: {e:#}", pr.number);
-                                if rate_limit::is_rate_limited(&e) {
-                                    tracing::warn!(
-                                        "rate-limited during prefetch at PR #{}, stopping",
-                                        pr.number
-                                    );
-                                    break;
+                                let mut times = filter_fetch_times.read().clone();
+                                if fi < times.len() {
+                                    times[fi] = Some(std::time::Instant::now());
                                 }
+                                filter_fetch_times.set(times);
+                                let mut ifl = filter_in_flight.read().clone();
+                                if fi < ifl.len() {
+                                    ifl[fi] = false;
+                                }
+                                filter_in_flight.set(ifl);
                             }
                         }
+                        Event::MutationOk { description } => {
+                            action_status.set(Some(format!("✓ {description}")));
+                            // Trigger a refetch of the active filter.
+                            let mut state = prs_state.read().clone();
+                            if current_filter_for_poll < state.filters.len() {
+                                state.filters[current_filter_for_poll] = FilterData::default();
+                            }
+                            prs_state.set(state);
+                            let mut times = filter_fetch_times.read().clone();
+                            if current_filter_for_poll < times.len() {
+                                times[current_filter_for_poll] = None;
+                            }
+                            filter_fetch_times.set(times);
+                        }
+                        Event::MutationError {
+                            description,
+                            message,
+                        } => {
+                            action_status.set(Some(format!("✗ {description}: {message}")));
+                        }
+                        Event::RateLimitUpdated { info } => {
+                            rate_limit_state.set(Some(info));
+                        }
+                        _ => {}
                     }
-                }))
-                .detach();
+                }
             }
-        }))
-        .detach();
+        });
     }
 
     // Read current state for rendering.
@@ -928,10 +911,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Each PR row occupies 2 terminal lines (info + subtitle).
     let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
 
-    // Clone octocrab and cache for action closures.
-    let octocrab_for_actions = props.octocrab.map(Arc::clone);
-    let api_cache_for_refresh = props.api_cache.cloned();
     let repo_paths = props.repo_paths.cloned().unwrap_or_default();
+    // Engine handle for the keyboard handler closure.
+    let engine = engine_for_keyboard;
 
     // Keyboard handling.
     hooks.use_terminal_events({
@@ -967,7 +949,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             &prs_state,
                             current_filter_idx,
                             cursor.get(),
-                            octocrab_for_actions.as_ref(),
+                            engine.as_ref(),
+                            &event_tx,
                             assignee_candidates,
                             assignee_selection,
                         );
@@ -976,31 +959,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // Submit comment with Ctrl+D.
                         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
                             let comment_text = input_buffer.read().clone();
-                            if !comment_text.is_empty()
-                                && let Some(ref octocrab) = octocrab_for_actions
-                            {
+                            if !comment_text.is_empty() {
                                 let pr_info = get_current_pr_info(
                                     &prs_state,
                                     current_filter_idx,
                                     cursor.get(),
                                 );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    let text = comment_text.clone();
-                                    smol::spawn(Compat::new(async move {
-                                        match pr_actions::add_comment(
-                                            &octocrab, &owner, &repo, number, &text,
-                                        )
-                                        .await
-                                        {
-                                            Ok(()) => action_status.set(Some(format!(
-                                                "Comment added to PR #{number}"
-                                            ))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Comment failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
+                                if let Some((owner, repo, number)) = pr_info
+                                    && let Some(ref eng) = engine
+                                {
+                                    eng.send(Request::AddPrComment {
+                                        owner: owner.clone(),
+                                        repo: repo.clone(),
+                                        number,
+                                        body: comment_text.clone(),
+                                        reply_tx: event_tx.clone(),
+                                    });
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -1032,66 +1006,61 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     },
                     InputMode::Confirm(ref pending) => match code {
                         KeyCode::Char('y' | 'Y') => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    let action = pending.clone();
-                                    let action_name = match pending {
-                                        PendingAction::Close => "Closed",
-                                        PendingAction::Reopen => "Reopened",
-                                        PendingAction::Merge => "Merged",
-                                        PendingAction::Approve => "Approved",
-                                        PendingAction::UpdateBranch => "Updated branch for",
-                                        PendingAction::ReadyForReview => "Marked",
-                                    };
-                                    let action_label = action_name.to_owned();
-                                    smol::spawn(Compat::new(async move {
-                                        let result = match action {
-                                            PendingAction::Close => {
-                                                pr_actions::close(&octocrab, &owner, &repo, number)
-                                                    .await
-                                            }
-                                            PendingAction::Reopen => {
-                                                pr_actions::reopen(&octocrab, &owner, &repo, number)
-                                                    .await
-                                            }
-                                            PendingAction::Merge => {
-                                                pr_actions::merge(&octocrab, &owner, &repo, number)
-                                                    .await
-                                            }
-                                            PendingAction::Approve => {
-                                                pr_actions::approve(&octocrab, &owner, &repo, number, None)
-                                                    .await
-                                            }
-                                            PendingAction::UpdateBranch => {
-                                                pr_actions::update_branch(&octocrab, &owner, &repo, number)
-                                                    .await
-                                            }
-                                            PendingAction::ReadyForReview => {
-                                                pr_actions::ready_for_review(&octocrab, &owner, &repo, number)
-                                                    .await
-                                            }
-                                        };
-                                        match result {
-                                            Ok(()) => {
-                                                let msg = match action {
-                                                    PendingAction::ReadyForReview => {
-                                                        format!("{action_label} PR #{number} ready for review")
-                                                    }
-                                                    _ => format!("{action_label} PR #{number}"),
-                                                };
-                                                action_status.set(Some(msg));
-                                            }
-                                            Err(e) => action_status
-                                                .set(Some(format!("{action_label} failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
+                            let pr_info =
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
+                            if let Some((owner, repo, number)) = pr_info
+                                && let Some(ref eng) = engine
+                            {
+                                match pending {
+                                    PendingAction::Close => {
+                                        eng.send(Request::ClosePr {
+                                            owner: owner.clone(),
+                                            repo: repo.clone(),
+                                            number,
+                                            reply_tx: event_tx.clone(),
+                                        });
+                                    }
+                                    PendingAction::Reopen => {
+                                        eng.send(Request::ReopenPr {
+                                            owner: owner.clone(),
+                                            repo: repo.clone(),
+                                            number,
+                                            reply_tx: event_tx.clone(),
+                                        });
+                                    }
+                                    PendingAction::Merge => {
+                                        eng.send(Request::MergePr {
+                                            owner: owner.clone(),
+                                            repo: repo.clone(),
+                                            number,
+                                            reply_tx: event_tx.clone(),
+                                        });
+                                    }
+                                    PendingAction::Approve => {
+                                        eng.send(Request::ApprovePr {
+                                            owner: owner.clone(),
+                                            repo: repo.clone(),
+                                            number,
+                                            body: None,
+                                            reply_tx: event_tx.clone(),
+                                        });
+                                    }
+                                    PendingAction::UpdateBranch => {
+                                        eng.send(Request::UpdateBranch {
+                                            owner: owner.clone(),
+                                            repo: repo.clone(),
+                                            number,
+                                            reply_tx: event_tx.clone(),
+                                        });
+                                    }
+                                    PendingAction::ReadyForReview => {
+                                        eng.send(Request::ReadyForReview {
+                                            owner: owner.clone(),
+                                            repo: repo.clone(),
+                                            number,
+                                            reply_tx: event_tx.clone(),
+                                        });
+                                    }
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -1205,8 +1174,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             });
                             match effective {
                                 Some(MergeStateStatus::Clean) => {
-                                    action_status
-                                        .set(Some("Branch is already up-to-date".into()));
+                                    action_status.set(Some("Branch is already up-to-date".into()));
                                 }
                                 Some(MergeStateStatus::Dirty) => {
                                     action_status.set(Some(
@@ -1222,8 +1190,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     match coarse {
                                         Some(BranchUpdateStatus::HasConflicts) => {
                                             action_status.set(Some(
-                                                "Cannot auto-update: branch has conflicts"
-                                                    .into(),
+                                                "Cannot auto-update: branch has conflicts".into(),
                                             ));
                                         }
                                         Some(BranchUpdateStatus::NeedsUpdate) => {
@@ -1250,7 +1217,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             let pr_info =
                                 get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
                             if let Some((owner, repo, number)) = pr_info {
-                                match pr_actions::open_diff(&owner, &repo, number) {
+                                match crate::actions::local::open_diff(&owner, &repo, number) {
                                     Ok(msg) => action_status.set(Some(msg)),
                                     Err(e) => {
                                         action_status.set(Some(format!("Diff error: {e}")));
@@ -1270,7 +1237,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     .as_ref()
                                     .map(crate::github::types::RepoRef::full_name)
                                     .unwrap_or_default();
-                                match pr_actions::checkout_branch(
+                                match crate::actions::local::checkout_branch(
                                     &pr.head_ref,
                                     &repo_name,
                                     &repo_paths,
@@ -1282,38 +1249,20 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 }
                             }
                         }
-                        // Quick self-assign (Ctrl+a) - immediate action without text input
+                        // Quick self-assign (Ctrl+a) - engine resolves "@me" to current user.
                         KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    smol::spawn(Compat::new(async move {
-                                        let result = async {
-                                            let user = octocrab.current().user().await?;
-                                            pr_actions::assign(
-                                                &octocrab,
-                                                &owner,
-                                                &repo,
-                                                number,
-                                                &[user.login],
-                                            )
-                                            .await
-                                        }
-                                        .await;
-                                        match result {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Assigned to PR #{number}"))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Assign failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                }
+                            let pr_info =
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
+                            if let Some((owner, repo, number)) = pr_info
+                                && let Some(ref eng) = engine
+                            {
+                                eng.send(Request::AssignPr {
+                                    owner,
+                                    repo,
+                                    number,
+                                    logins: vec!["@me".to_owned()],
+                                    reply_tx: event_tx.clone(),
+                                });
                             }
                         }
                         // Assign (text input for any user)
@@ -1324,15 +1273,21 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
                             // Get current PR and build candidates from its data
                             let (current_assignees, candidates) = {
-                                let pr_info = get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
+                                let pr_info = get_current_pr_info(
+                                    &prs_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
                                 if let Some((_owner, _repo, number)) = pr_info {
                                     let state = prs_state.read();
-                                    let pr = state.filters
+                                    let pr = state
+                                        .filters
                                         .get(current_filter_idx)
                                         .and_then(|s| s.prs.iter().find(|p| p.number == number));
 
                                     if let Some(pr) = pr {
-                                        let assignees = pr.assignees
+                                        let assignees = pr
+                                            .assignees
                                             .iter()
                                             .map(|a| a.login.as_str())
                                             .collect::<Vec<_>>()
@@ -1358,40 +1313,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             };
 
                             input_buffer.set(current_assignees);
-                            assignee_candidates.set(candidates);  // Set immediately, no async fetch
+                            assignee_candidates.set(candidates); // Set immediately, no async fetch
                         }
-                        // Unassign (self)
+                        // Unassign (self) - engine resolves "@me" to current user.
                         KeyCode::Char('A') => {
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    smol::spawn(Compat::new(async move {
-                                        let result = async {
-                                            let user = octocrab.current().user().await?;
-                                            pr_actions::unassign(
-                                                &octocrab,
-                                                &owner,
-                                                &repo,
-                                                number,
-                                                &user.login,
-                                            )
-                                            .await
-                                        }
-                                        .await;
-                                        match result {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Unassigned from PR #{number}"))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Unassign failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                }
+                            let pr_info =
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
+                            if let Some((owner, repo, number)) = pr_info
+                                && let Some(ref eng) = engine
+                            {
+                                eng.send(Request::UnassignPr {
+                                    owner,
+                                    repo,
+                                    number,
+                                    login: "@me".to_owned(),
+                                    reply_tx: event_tx.clone(),
+                                });
                             }
                         }
                         // --- Clipboard & Browser (T091, T092) ---
@@ -1438,9 +1375,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         // Retry / refresh (active filter only)
                         KeyCode::Char('r') => {
-                            if let Some(c) = &api_cache_for_refresh {
-                                c.invalidate_all();
-                            }
+                            force_refresh.set(true);
                             let idx = active_filter.get();
                             let mut state = prs_state.read().clone();
                             if idx < state.filters.len() {
@@ -1453,10 +1388,28 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             }
                             filter_fetch_times.set(times);
                             pending_detail.set(None);
+                            detail_cache.set(HashMap::new());
                             cursor.set(0);
                             scroll_offset.set(0);
                         }
-                        // --- Search (T087) ---
+                        // Refresh all filters
+                        KeyCode::Char('R') => {
+                            let mut state = prs_state.read().clone();
+                            for filter in &mut state.filters {
+                                *filter = FilterData::default();
+                            }
+                            prs_state.set(state);
+                            let mut times = filter_fetch_times.read().clone();
+                            times.fill(None);
+                            filter_fetch_times.set(times);
+                            pending_detail.set(None);
+                            detail_cache.set(HashMap::new());
+                            cursor.set(0);
+                            scroll_offset.set(0);
+                            // Signal the render body to eagerly fetch all filters.
+                            refresh_all.set(true);
+                        }
+                        // --- Search ---
                         KeyCode::Char('/') => {
                             input_mode.set(InputMode::Search);
                             search_query.set(String::new());
@@ -1580,29 +1533,17 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     InputMode::UpdateBranchMethod => match code {
                         // Merge-update (only merge strategy supported).
                         KeyCode::Char('m' | 'M') => {
-                            // Reuse Confirm flow to actually trigger the update.
-                            if let Some(ref octocrab) = octocrab_for_actions {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = pr_info {
-                                    let octocrab = Arc::clone(octocrab);
-                                    smol::spawn(Compat::new(async move {
-                                        match pr_actions::update_branch(
-                                            &octocrab, &owner, &repo, number,
-                                        )
-                                        .await
-                                        {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Updated branch for PR #{number}"))),
-                                            Err(e) => action_status
-                                                .set(Some(format!("Update branch failed: {e}"))),
-                                        }
-                                    }))
-                                    .detach();
-                                }
+                            let pr_info =
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
+                            if let Some((owner, repo, number)) = pr_info
+                                && let Some(ref eng) = engine
+                            {
+                                eng.send(Request::UpdateBranch {
+                                    owner: owner.clone(),
+                                    repo: repo.clone(),
+                                    number,
+                                    reply_tx: event_tx.clone(),
+                                });
                             }
                             input_mode.set(InputMode::Normal);
                         }
@@ -1709,11 +1650,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
             if !already_cached && !already_pending {
                 // Store fetch params; debounce future will spawn fetch when stable.
-                if let Some(repo_ref) = &pr.repo
-                    && let Some(octocrab) = props.octocrab
-                {
+                if let Some(repo_ref) = &pr.repo {
                     pending_detail.set(Some(DetailRequest {
-                        octocrab: Arc::clone(octocrab),
                         owner: repo_ref.owner.clone(),
                         repo: repo_ref.name.clone(),
                         pr_number,
@@ -2079,11 +2017,12 @@ fn handle_assign_input(
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    mut action_status: State<Option<String>>,
+    _action_status: State<Option<String>>,
     prs_state: &State<PrsState>,
     filter_idx: usize,
     cursor: usize,
-    octocrab_for_actions: Option<&Arc<Octocrab>>,
+    engine: Option<&EngineHandle>,
+    event_tx: &std::sync::mpsc::Sender<Event>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
 ) {
@@ -2132,40 +2071,20 @@ fn handle_assign_input(
                 format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
             };
 
-            if !final_input.trim().is_empty()
-                && let Some(octocrab) = octocrab_for_actions
-            {
+            if !final_input.trim().is_empty() {
                 let info = get_current_pr_info(prs_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let octocrab = Arc::clone(octocrab);
-                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
-
-                    smol::spawn(Compat::new(async move {
-                        let result = async {
-                            // Replace @me with current user
-                            if needs_me {
-                                let user = octocrab.current().user().await?;
-                                for username in &mut usernames {
-                                    if username == "@me" {
-                                        username.clone_from(&user.login);
-                                    }
-                                }
-                            }
-
-                            pr_actions::assign(&octocrab, &owner, &repo, number, &usernames).await
-                        }
-                        .await;
-
-                        let count = usernames.len();
-                        match result {
-                            Ok(()) if count == 1 => action_status
-                                .set(Some(format!("Assigned {} to PR #{number}", usernames[0]))),
-                            Ok(()) => action_status
-                                .set(Some(format!("Assigned {count} users to PR #{number}"))),
-                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
-                        }
-                    }))
-                    .detach();
+                if let Some((owner, repo, number)) = info
+                    && let Some(eng) = engine
+                {
+                    let (usernames, _needs_me) = parse_assignee_input(&final_input);
+                    // Engine resolves "@me" to authenticated user login.
+                    eng.send(Request::AssignPr {
+                        owner,
+                        repo,
+                        number,
+                        logins: usernames,
+                        reply_tx: event_tx.clone(),
+                    });
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -2197,51 +2116,28 @@ fn handle_assign_input(
             let filtered =
                 crate::components::text_input::filter_suggestions(&candidates, current_word);
 
-            // If user selected from suggestions, replace current word with selection
-            // Otherwise, keep the buffer as-is
             let final_input = if filtered.is_empty() {
-                buf.clone() // No suggestions, use typed input
+                buf.clone()
             } else {
                 let sel = assignee_selection
                     .get()
                     .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
+                format!("{}{}", prefix, filtered[sel])
             };
 
-            if !final_input.trim().is_empty()
-                && let Some(octocrab) = octocrab_for_actions
-            {
+            if !final_input.trim().is_empty() {
                 let info = get_current_pr_info(prs_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let octocrab = Arc::clone(octocrab);
-                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
-
-                    smol::spawn(Compat::new(async move {
-                        let result = async {
-                            // Replace @me with current user
-                            if needs_me {
-                                let user = octocrab.current().user().await?;
-                                for username in &mut usernames {
-                                    if username == "@me" {
-                                        username.clone_from(&user.login);
-                                    }
-                                }
-                            }
-
-                            pr_actions::assign(&octocrab, &owner, &repo, number, &usernames).await
-                        }
-                        .await;
-
-                        let count = usernames.len();
-                        match result {
-                            Ok(()) if count == 1 => action_status
-                                .set(Some(format!("Assigned {} to PR #{number}", usernames[0]))),
-                            Ok(()) => action_status
-                                .set(Some(format!("Assigned {count} users to PR #{number}"))),
-                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
-                        }
-                    }))
-                    .detach();
+                if let Some((owner, repo, number)) = info
+                    && let Some(eng) = engine
+                {
+                    let (usernames, _needs_me) = parse_assignee_input(&final_input);
+                    eng.send(Request::AssignPr {
+                        owner,
+                        repo,
+                        number,
+                        logins: usernames,
+                        reply_tx: event_tx.clone(),
+                    });
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -2386,8 +2282,7 @@ fn default_theme() -> ResolvedTheme {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::github::graphql::PrDetail;
-    use crate::github::types::{MergeableState, PullRequest};
+    use crate::types::{MergeableState, PrDetail, PullRequest};
 
     fn pr_with_status(status: Option<MergeStateStatus>) -> PullRequest {
         PullRequest {

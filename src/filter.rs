@@ -2,6 +2,22 @@ use crate::components::table::Row;
 use crate::github::types::Notification;
 
 // ---------------------------------------------------------------------------
+// Scope injection helper
+// ---------------------------------------------------------------------------
+
+/// Append `repo:<scope>` to `filters` if a scope is active and `repo:` is not
+/// already present as a token.  Trims the result so an empty base string
+/// doesn't produce a leading space.
+pub(crate) fn apply_scope(filters: &str, scope: Option<&str>) -> String {
+    match scope {
+        Some(repo) if !filters.split_whitespace().any(|t| t.starts_with("repo:")) => {
+            format!("{filters} repo:{repo}").trim().to_owned()
+        }
+        _ => filters.to_owned(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Generic row filter (T088)
 // ---------------------------------------------------------------------------
 
@@ -50,8 +66,9 @@ pub(crate) enum ReadFilter {
 ///
 /// Supported prefixes:
 /// - `repo:owner/name`
-/// - `reason:mention`
+/// - `reason:<value>` / `-reason:<value>`
 /// - `is:unread` / `is:read` / `is:all`
+/// - `-is:unread` (same as `is:read`) / `-is:read` (same as `is:unread`)
 ///
 /// Remaining text is used for free-text matching.
 pub(crate) fn parse_notification_query(query: &str) -> NotificationQuery {
@@ -63,11 +80,17 @@ pub(crate) fn parse_notification_query(query: &str) -> NotificationQuery {
             result.repo = Some(val.to_lowercase());
         } else if let Some(val) = token.strip_prefix("reason:") {
             result.reason = Some(val.to_lowercase());
+        } else if let Some(val) = token.strip_prefix("-is:") {
+            result.read_filter = match val.to_lowercase().as_str() {
+                "unread" => Some(ReadFilter::Read),
+                "read" => Some(ReadFilter::Unread),
+                _ => None,
+            };
         } else if let Some(val) = token.strip_prefix("is:") {
             result.read_filter = match val.to_lowercase().as_str() {
                 "unread" => Some(ReadFilter::Unread),
                 "read" => Some(ReadFilter::Read),
-                "all" | "done" => Some(ReadFilter::All),
+                "all" => Some(ReadFilter::All),
                 _ => None,
             };
         } else {
@@ -193,6 +216,44 @@ mod tests {
         }
     }
 
+    // --- apply_scope tests ---
+
+    #[test]
+    fn apply_scope_no_scope() {
+        assert_eq!(apply_scope("is:open", None), "is:open");
+    }
+
+    #[test]
+    fn apply_scope_appends_repo() {
+        assert_eq!(
+            apply_scope("is:open", Some("owner/repo")),
+            "is:open repo:owner/repo"
+        );
+    }
+
+    #[test]
+    fn apply_scope_empty_base_trims() {
+        assert_eq!(apply_scope("", Some("owner/repo")), "repo:owner/repo");
+    }
+
+    #[test]
+    fn apply_scope_already_has_repo_token() {
+        // repo: already present as a token — must not duplicate.
+        assert_eq!(
+            apply_scope("repo:other/repo is:open", Some("owner/repo")),
+            "repo:other/repo is:open"
+        );
+    }
+
+    #[test]
+    fn apply_scope_norepo_prefix_not_confused() {
+        // "norepo:" should not be mistaken for "repo:".
+        assert_eq!(
+            apply_scope("norepo:foo is:open", Some("owner/repo")),
+            "norepo:foo is:open repo:owner/repo"
+        );
+    }
+
     // --- filter_rows tests ---
 
     #[test]
@@ -300,6 +361,18 @@ mod tests {
     fn parse_is_all() {
         let q = parse_notification_query("is:all");
         assert_eq!(q.read_filter, Some(ReadFilter::All));
+    }
+
+    #[test]
+    fn parse_negated_is_unread() {
+        let q = parse_notification_query("-is:unread");
+        assert_eq!(q.read_filter, Some(ReadFilter::Read));
+    }
+
+    #[test]
+    fn parse_negated_is_read() {
+        let q = parse_notification_query("-is:read");
+        assert_eq!(q.read_filter, Some(ReadFilter::Unread));
     }
 
     #[test]

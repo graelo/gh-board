@@ -1,16 +1,14 @@
 use std::path::Path;
-use std::sync::Arc;
 
 use iocraft::prelude::*;
-use moka::future::Cache;
-use octocrab::Octocrab;
 
 use crate::color::ColorDepth;
 use crate::config::keybindings::MergedBindings;
 use crate::config::types::{AppConfig, Scope};
-use crate::github::types::RepoRef;
+use crate::engine::EngineHandle;
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
+use crate::types::RepoRef;
 use crate::views::issues::IssuesView;
 use crate::views::notifications::NotificationsView;
 use crate::views::prs::PrsView;
@@ -62,8 +60,7 @@ impl ViewKind {
 #[derive(Default, Props)]
 pub struct AppProps<'a> {
     pub config: Option<&'a AppConfig>,
-    pub octocrab: Option<&'a Arc<Octocrab>>,
-    pub api_cache: Option<&'a Cache<String, String>>,
+    pub engine: Option<&'a EngineHandle>,
     pub theme: Option<&'a ResolvedTheme>,
     pub keybindings: Option<&'a MergedBindings>,
     pub color_depth: ColorDepth,
@@ -170,8 +167,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             ) {
                 PrsView(
                     filters: filters_pr,
-                    octocrab: props.octocrab,
-                    api_cache: props.api_cache,
+                    engine: props.engine,
                     theme,
                     keybindings,
                     color_depth: depth,
@@ -198,8 +194,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             ) {
                 IssuesView(
                     filters: filters_issue,
-                    octocrab: props.octocrab,
-                    api_cache: props.api_cache,
+                    engine: props.engine,
                     theme,
                     keybindings,
                     color_depth: depth,
@@ -224,7 +219,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             ) {
                 NotificationsView(
                     filters: filters_notif,
-                    octocrab: props.octocrab,
+                    engine: props.engine,
                     theme,
                     keybindings,
                     color_depth: depth,

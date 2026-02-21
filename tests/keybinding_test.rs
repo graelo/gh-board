@@ -298,8 +298,6 @@ fn builtin_action_roundtrip() {
         "merge",
         "update_from_base",
         "label",
-        "mark_done",
-        "mark_all_done",
         "mark_read",
         "mark_all_read",
         "unsubscribe",

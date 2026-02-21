@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use octocrab::Octocrab;
 use octocrab::models::NotificationId;
 
-use crate::github::types::{Notification, NotificationReason, RepoRef, SubjectType};
+use crate::github::types::{
+    Notification, NotificationReason, NotificationStatus, RepoRef, SubjectType,
+};
 
 // ---------------------------------------------------------------------------
 // Notification filter parameters (T052)
@@ -19,34 +21,55 @@ pub struct NotificationQueryParams {
     pub per_page: u8,
     /// Filter by repo (client-side).
     pub repo: Option<String>,
-    /// Filter by reason (client-side).
+    /// Keep only notifications whose reason matches (client-side).
     pub reason: Option<NotificationReason>,
+    /// Exclude notifications whose reason is in this list (client-side).
+    pub excluded_reasons: Vec<NotificationReason>,
     /// Filter by read/unread status (client-side).
     pub status: Option<NotificationStatus>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum NotificationStatus {
-    Unread,
-    Read,
-}
-
-/// Parse a filter string like `"repo:owner/name reason:mention is:unread"`
-/// into a `NotificationQueryParams`.
+/// Parse a filter string into a `NotificationQueryParams`.
+///
+/// Supported qualifiers:
+/// - *(no qualifier)* — unread only (default, matches the web UI inbox)
+/// - `is:unread` — unread only (explicit)
+/// - `is:read` — read/done (not unread); fetches all from API, then filters client-side
+/// - `is:all` — everything (unread + read + done)
+/// - `-is:unread` — same as `is:read`
+/// - `-is:read` — same as `is:unread`
+/// - `reason:<value>` / `-reason:<value>` — include/exclude by notification reason
+/// - `repo:<owner/name>` — restrict to a specific repository
+///
+/// Example: `"repo:owner/name reason:mention is:unread"`
 pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
     #[allow(clippy::cast_possible_truncation)]
     let per_page = limit.min(100) as u8;
     let mut filter = NotificationQueryParams {
         per_page,
-        all: true,
+        all: false,
         ..Default::default()
     };
 
     for token in filter_str.split_whitespace() {
         if let Some(repo) = token.strip_prefix("repo:") {
             filter.repo = Some(repo.to_owned());
+        } else if let Some(reason_str) = token.strip_prefix("-reason:") {
+            filter.excluded_reasons.push(parse_reason(reason_str));
         } else if let Some(reason_str) = token.strip_prefix("reason:") {
             filter.reason = Some(parse_reason(reason_str));
+        } else if let Some(status) = token.strip_prefix("-is:") {
+            match status {
+                "unread" => {
+                    filter.status = Some(NotificationStatus::Read);
+                    filter.all = true;
+                }
+                "read" => {
+                    filter.status = Some(NotificationStatus::Unread);
+                    filter.all = false;
+                }
+                _ => {}
+            }
         } else if let Some(status) = token.strip_prefix("is:") {
             match status {
                 "unread" => {
@@ -57,7 +80,7 @@ pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
                     filter.status = Some(NotificationStatus::Read);
                     filter.all = true;
                 }
-                "all" | "done" => {
+                "all" => {
                     filter.status = None;
                     filter.all = true;
                 }
@@ -168,6 +191,9 @@ pub async fn fetch_notifications(
     if let Some(reason_filter) = filter.reason {
         notifications.retain(|n| n.reason == reason_filter);
     }
+    if !filter.excluded_reasons.is_empty() {
+        notifications.retain(|n| !filter.excluded_reasons.contains(&n.reason));
+    }
     if let Some(status) = filter.status {
         match status {
             NotificationStatus::Unread => notifications.retain(|n| n.unread),
@@ -201,26 +227,6 @@ pub async fn mark_all_as_read(octocrab: &Arc<Octocrab>) -> Result<()> {
     Ok(())
 }
 
-/// Mark a notification as done (DELETE /notifications/threads/{id}).
-///
-/// Not natively supported by octocrab, so we use the raw `_delete` method.
-pub async fn mark_as_done(octocrab: &Arc<Octocrab>, thread_id: &str) -> Result<()> {
-    let route = format!("/notifications/threads/{thread_id}");
-    let uri = http::Uri::builder()
-        .path_and_query(route)
-        .build()
-        .context("building URI for mark-as-done")?;
-    let response = octocrab
-        ._delete(uri, None::<&()>)
-        .await
-        .context("marking notification as done")?;
-    octocrab::map_github_error(response)
-        .await
-        .map(drop)
-        .context("mark-as-done API error")?;
-    Ok(())
-}
-
 /// Unsubscribe from a notification thread.
 pub async fn unsubscribe(octocrab: &Arc<Octocrab>, thread_id: &str) -> Result<()> {
     let id: u64 = thread_id.parse().context("invalid notification id")?;
@@ -244,7 +250,7 @@ mod tests {
     #[test]
     fn parse_empty_filter() {
         let f = parse_filters("", 30);
-        assert!(f.all);
+        assert!(!f.all, "default should be unread-only");
         assert_eq!(f.per_page, 30);
         assert!(f.repo.is_none());
         assert!(f.reason.is_none());
@@ -283,8 +289,31 @@ mod tests {
         assert_eq!(f.repo.as_deref(), Some("torvalds/linux"));
         assert_eq!(f.reason, Some(NotificationReason::ReviewRequested));
         assert_eq!(f.status, Some(NotificationStatus::Unread));
+        assert!(f.excluded_reasons.is_empty());
         assert!(!f.all);
         assert_eq!(f.per_page, 100);
+    }
+
+    #[test]
+    fn parse_excluded_reason_single() {
+        let f = parse_filters("is:unread -reason:subscribed", 50);
+        assert_eq!(f.status, Some(NotificationStatus::Unread));
+        assert!(f.reason.is_none());
+        assert_eq!(f.excluded_reasons, vec![NotificationReason::Subscribed]);
+    }
+
+    #[test]
+    fn parse_excluded_reason_multiple() {
+        let f = parse_filters("is:unread -reason:subscribed -reason:review_requested", 50);
+        assert_eq!(f.status, Some(NotificationStatus::Unread));
+        assert!(f.reason.is_none());
+        assert_eq!(
+            f.excluded_reasons,
+            vec![
+                NotificationReason::Subscribed,
+                NotificationReason::ReviewRequested,
+            ]
+        );
     }
 
     #[test]
@@ -292,6 +321,22 @@ mod tests {
         let f = parse_filters("is:all", 30);
         assert!(f.all);
         assert!(f.status.is_none());
+    }
+
+    #[test]
+    fn parse_negated_is_unread() {
+        // -is:unread means "read only" — same as is:read
+        let f = parse_filters("-is:unread", 30);
+        assert!(f.all);
+        assert_eq!(f.status, Some(NotificationStatus::Read));
+    }
+
+    #[test]
+    fn parse_negated_is_read() {
+        // -is:read means "unread only" — same as is:unread
+        let f = parse_filters("-is:read", 30);
+        assert!(!f.all);
+        assert_eq!(f.status, Some(NotificationStatus::Unread));
     }
 
     #[test]

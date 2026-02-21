@@ -1,12 +1,8 @@
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
-use async_compat::Compat;
 use iocraft::prelude::*;
-use moka::future::Cache;
-use octocrab::Octocrab;
 
-use crate::actions::{clipboard, issue_actions};
+use crate::actions::clipboard;
 use crate::app::ViewKind;
 use crate::color::ColorDepth;
 use crate::components::footer::{self, Footer, RenderedFooter};
@@ -20,19 +16,19 @@ use crate::components::table::{
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::IssueFilter;
-use crate::filter;
-use crate::github::graphql::{self, IssueDetail, RateLimitInfo};
-use crate::github::rate_limit;
-use crate::github::types::Issue;
+use crate::engine::{EngineHandle, Event, Request};
+use crate::filter::{self, apply_scope};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
+use crate::types::RateLimitInfo;
+use crate::types::{Issue, IssueDetail};
 
 /// Issue sidebar only shows Overview and Activity tabs.
 const ISSUE_TABS: &[SidebarTab] = &[SidebarTab::Overview, SidebarTab::Activity];
 
-/// Pending detail fetch request: (octocrab, owner, repo, number).
-type DetailRequest = Option<(Arc<Octocrab>, String, String, u64)>;
+/// Pending detail fetch request: (owner, repo, number).
+type DetailRequest = Option<(String, String, u64)>;
 
 // ---------------------------------------------------------------------------
 // Issue-specific column definitions (FR-021)
@@ -265,8 +261,8 @@ struct IssuesState {
 #[derive(Default, Props)]
 pub struct IssuesViewProps<'a> {
     pub filters: Option<&'a [IssueFilter]>,
-    pub octocrab: Option<&'a Arc<Octocrab>>,
-    pub api_cache: Option<&'a Cache<String, String>>,
+    /// Engine handle.
+    pub engine: Option<&'a EngineHandle>,
     pub theme: Option<&'a ResolvedTheme>,
     /// Merged keybindings for help overlay.
     pub keybindings: Option<&'a MergedBindings>,
@@ -310,14 +306,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         0.45
     };
 
-    let active_filter = hooks.use_state(|| 0usize);
-    let cursor = hooks.use_state(|| 0usize);
-    let scroll_offset = hooks.use_state(|| 0usize);
-    let preview_open = hooks.use_state(|| false);
-    let preview_scroll = hooks.use_state(|| 0usize);
+    let mut active_filter = hooks.use_state(|| 0usize);
+    let mut cursor = hooks.use_state(|| 0usize);
+    let mut scroll_offset = hooks.use_state(|| 0usize);
+    let mut preview_open = hooks.use_state(|| false);
+    let mut preview_scroll = hooks.use_state(|| 0usize);
 
     // State: sidebar tab.
-    let sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
+    let mut sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
 
     // State: cached issue detail data for sidebar tabs (HashMap cache + debounce).
     let mut detail_cache = hooks.use_state(HashMap::<u64, IssueDetail>::new);
@@ -325,16 +321,22 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut debounce_gen = hooks.use_state(|| 0u64);
 
     // Action state.
-    let input_mode = hooks.use_state(|| InputMode::Normal);
-    let input_buffer = hooks.use_state(String::new);
-    let action_status = hooks.use_state(|| Option::<String>::None);
-    let label_candidates = hooks.use_state(Vec::<String>::new);
-    let label_selection = hooks.use_state(|| 0usize);
-    let assignee_candidates = hooks.use_state(Vec::<String>::new);
-    let assignee_selection = hooks.use_state(|| 0usize);
+    let mut input_mode = hooks.use_state(|| InputMode::Normal);
+    let mut input_buffer = hooks.use_state(String::new);
+    let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut label_candidates = hooks.use_state(Vec::<String>::new);
+    let mut label_selection = hooks.use_state(|| 0usize);
+    let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
+    let mut assignee_selection = hooks.use_state(|| 0usize);
+
+    // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
+    let mut force_refresh = hooks.use_state(|| false);
+
+    // Whether RegisterIssuesRefresh has been sent to the engine yet.
+    let mut refresh_registered = hooks.use_state(|| false);
 
     // State: search query (T087).
-    let search_query = hooks.use_state(String::new);
+    let mut search_query = hooks.use_state(String::new);
 
     let mut help_visible = hooks.use_state(|| false);
 
@@ -345,6 +347,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut filter_fetch_times =
         hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
     let mut filter_in_flight = hooks.use_state(move || vec![false; filter_count]);
+    // Set by 'R' keypress; consumed by render body to fetch all filters eagerly.
+    let mut refresh_all = hooks.use_state(|| false);
 
     let initial_filters = vec![FilterData::default(); filter_count];
     let mut issues_state = hooks.use_state(move || IssuesState {
@@ -360,19 +364,24 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         });
         filter_fetch_times.set(vec![None; filter_count]);
         filter_in_flight.set(vec![false; filter_count]);
+        refresh_registered.set(false);
     }
 
-    // Timer tick for periodic re-renders (supports auto-refetch).
-    let mut tick = hooks.use_state(|| 0u64);
-    hooks.use_future(async move {
-        loop {
-            smol::Timer::after(std::time::Duration::from_secs(60)).await;
-            tick.set(tick.get() + 1);
-        }
+    // Event channel: engine pushes events back to UI.
+    let event_channel = hooks.use_state(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<Event>();
+        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
     });
+    let (event_tx, event_rx_arc) = event_channel.read().clone();
+    // Clone the EngineHandle so it can be captured in 'static use_future closures.
+    let engine: Option<EngineHandle> = props.engine.cloned();
+    // Pre-clone for each consumer: debounce future, polling future, fetch trigger, keyboard handler.
+    let engine_for_poll = engine.clone();
+    let engine_for_keyboard = engine.clone();
 
-    // Debounce future: waits for cursor to settle, then spawns the detail fetch.
-    let api_cache_for_detail = props.api_cache.cloned();
+    // Debounce future: waits for cursor to settle, then sends FetchIssueDetail via engine.
+    let engine_for_debounce = engine.clone();
+    let event_tx_for_debounce = event_tx.clone();
     hooks.use_future(async move {
         let mut last_gen = 0u64;
         let mut spawned_gen = 0u64;
@@ -385,28 +394,16 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             } else if current_gen > 0 && current_gen != spawned_gen {
                 // Stable for one full cycle and not yet spawned — fetch now.
                 let req = pending_detail.read().clone();
-                if let Some((octocrab, owner, repo, issue_number)) = req {
+                if let Some((owner, repo, issue_number)) = req {
                     spawned_gen = current_gen;
-                    let api_cache = api_cache_for_detail.clone();
-                    smol::spawn(Compat::new(async move {
-                        if let Ok((detail, rl)) = graphql::fetch_issue_detail(
-                            &octocrab,
-                            &owner,
-                            &repo,
-                            issue_number,
-                            api_cache.as_ref(),
-                        )
-                        .await
-                        {
-                            if rl.is_some() {
-                                rate_limit_state.set(rl);
-                            }
-                            let mut cache = detail_cache.read().clone();
-                            cache.insert(issue_number, detail);
-                            detail_cache.set(cache);
-                        }
-                    }))
-                    .detach();
+                    if let Some(ref eng) = engine_for_debounce {
+                        eng.send(Request::FetchIssueDetail {
+                            owner: owner.clone(),
+                            repo: repo.clone(),
+                            number: issue_number,
+                            reply_tx: event_tx_for_debounce.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -414,40 +411,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     // Compute active filter index early (needed by fetch logic below).
     let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
-
-    // Auto-refetch: only reset the active filter when its interval has elapsed.
-    let refetch_interval = props.refetch_interval_minutes;
-    let needs_refetch = is_active
-        && refetch_interval > 0
-        && !filter_in_flight
-            .read()
-            .get(current_filter_idx)
-            .copied()
-            .unwrap_or(false)
-        && filter_fetch_times
-            .read()
-            .get(current_filter_idx)
-            .copied()
-            .flatten()
-            .is_some_and(|last| {
-                last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
-            });
-    if needs_refetch {
-        let mut state = issues_state.read().clone();
-        if current_filter_idx < state.filters.len() {
-            state.filters[current_filter_idx] = FilterData::default();
-        }
-        issues_state.set(state);
-        let mut times = filter_fetch_times.read().clone();
-        if current_filter_idx < times.len() {
-            times[current_filter_idx] = None;
-        }
-        filter_fetch_times.set(times);
-    }
-
-    // Clone octocrab and cache for use in action closures.
-    let octocrab_for_actions = props.octocrab.map(Arc::clone);
-    let api_cache_for_actions = props.api_cache.cloned();
 
     // Lazy fetch: only fetch the active filter when it needs data.
     let active_needs_fetch = issues_state
@@ -461,11 +424,51 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         .copied()
         .unwrap_or(false);
 
-    if active_needs_fetch
+    // Register all filters for background refresh once at mount (or after scope change).
+    if !refresh_registered.get()
+        && let Some(ref eng) = engine
+    {
+        let scoped_configs: Vec<_> = filters_cfg
+            .iter()
+            .map(|cfg| {
+                let mut modified = cfg.clone();
+                modified.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
+                modified
+            })
+            .collect();
+        eng.send(Request::RegisterIssuesRefresh {
+            filter_configs: scoped_configs,
+            notify_tx: event_tx.clone(),
+        });
+        refresh_registered.set(true);
+    }
+
+    if refresh_all.get()
+        && is_active
+        && let Some(ref engine_ref) = engine
+    {
+        // 'R' was pressed: reset the flag and eagerly fetch every filter.
+        refresh_all.set(false);
+        let mut in_flight = filter_in_flight.read().clone();
+        for (filter_idx, cfg) in filters_cfg.iter().enumerate() {
+            if filter_idx < in_flight.len() {
+                in_flight[filter_idx] = true;
+            }
+            let mut modified_filter = cfg.clone();
+            modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
+            engine_ref.send(Request::FetchIssues {
+                filter_idx,
+                filter: modified_filter,
+                force: true,
+                reply_tx: event_tx.clone(),
+            });
+        }
+        filter_in_flight.set(in_flight);
+    } else if active_needs_fetch
         && !active_in_flight
         && is_active
         && let Some(cfg) = filters_cfg.get(current_filter_idx)
-        && let Some(octocrab) = props.octocrab
+        && let Some(ref engine_ref) = engine
     {
         let mut in_flight = filter_in_flight.read().clone();
         if current_filter_idx < in_flight.len() {
@@ -473,78 +476,162 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         }
         filter_in_flight.set(in_flight);
 
-        let octocrab = Arc::clone(octocrab);
-        let api_cache = props.api_cache.cloned();
         let filter_idx = current_filter_idx;
-        let mut filters = cfg.filters.clone();
-        // Inject repo scope if active and not already present.
-        if let Some(ref repo) = *scope_repo
-            && !filters.split_whitespace().any(|t| t.starts_with("repo:"))
-        {
-            filters = format!("{filters} repo:{repo}");
+        let mut modified_filter = cfg.clone();
+        modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
+
+        // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
+        let force = force_refresh.get();
+        if force {
+            force_refresh.set(false);
         }
-        let limit = cfg.limit.unwrap_or(30);
-        let theme_clone = theme.clone();
-        let date_format_owned = props.date_format.unwrap_or("relative").to_owned();
 
-        smol::spawn(Compat::new(async move {
-            let filter_data =
-                match graphql::search_issues_all(&octocrab, &filters, limit, api_cache.as_ref())
-                    .await
-                {
-                    Ok((issues, rl)) => {
-                        if rl.is_some() {
-                            rate_limit_state.set(rl);
-                        }
-                        let rows: Vec<Row> = issues
-                            .iter()
-                            .map(|issue| issue_to_row(issue, &theme_clone, &date_format_owned))
-                            .collect();
-                        let bodies: Vec<String> = issues.iter().map(|i| i.body.clone()).collect();
-                        let titles: Vec<String> = issues.iter().map(|i| i.title.clone()).collect();
-                        let issue_count = issues.len();
-                        FilterData {
-                            rows,
-                            bodies,
-                            titles,
-                            issue_count,
-                            loading: false,
-                            error: None,
-                            issues,
-                        }
+        engine_ref.send(Request::FetchIssues {
+            filter_idx,
+            filter: modified_filter,
+            force,
+            reply_tx: event_tx.clone(),
+        });
+    }
+
+    // Event polling: drain events from engine reply channel.
+    {
+        let rx_for_poll = event_rx_arc.clone();
+        let theme_for_poll = theme.clone();
+        let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
+        let current_filter_for_poll = current_filter_idx;
+        let _engine = engine_for_poll;
+        let _event_tx = event_tx.clone();
+        hooks.use_future(async move {
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                let events: Vec<Event> = {
+                    let rx = rx_for_poll.lock().unwrap();
+                    let mut evts = Vec::new();
+                    while let Ok(evt) = rx.try_recv() {
+                        evts.push(evt);
                     }
-                    Err(e) => {
-                        let error_msg = if rate_limit::is_rate_limited(&e) {
-                            rate_limit::format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        };
-                        FilterData {
-                            loading: false,
-                            error: Some(error_msg),
-                            ..FilterData::default()
-                        }
-                    }
+                    evts
                 };
-
-            let mut state = issues_state.read().clone();
-            if filter_idx < state.filters.len() {
-                state.filters[filter_idx] = filter_data;
+                for evt in events {
+                    match evt {
+                        Event::IssuesFetched {
+                            filter_idx,
+                            issues,
+                            rate_limit,
+                        } => {
+                            if rate_limit.is_some() {
+                                rate_limit_state.set(rate_limit);
+                            }
+                            let detail_snap = detail_cache.read().clone();
+                            let rows: Vec<Row> = issues
+                                .iter()
+                                .map(|issue| {
+                                    issue_to_row(issue, &theme_for_poll, &date_format_for_poll)
+                                })
+                                .collect();
+                            let bodies: Vec<String> =
+                                issues.iter().map(|i| i.body.clone()).collect();
+                            let titles: Vec<String> =
+                                issues.iter().map(|i| i.title.clone()).collect();
+                            let issue_count = issues.len();
+                            let filter_data = FilterData {
+                                rows,
+                                bodies,
+                                titles,
+                                issue_count,
+                                issues,
+                                loading: false,
+                                error: None,
+                            };
+                            let _ = detail_snap; // suppress unused warning
+                            let mut state = issues_state.read().clone();
+                            if filter_idx < state.filters.len() {
+                                state.filters[filter_idx] = filter_data;
+                            }
+                            issues_state.set(state);
+                            let mut times = filter_fetch_times.read().clone();
+                            if filter_idx < times.len() {
+                                times[filter_idx] = Some(std::time::Instant::now());
+                            }
+                            filter_fetch_times.set(times);
+                            let mut ifl = filter_in_flight.read().clone();
+                            if filter_idx < ifl.len() {
+                                ifl[filter_idx] = false;
+                            }
+                            filter_in_flight.set(ifl);
+                        }
+                        Event::IssueDetailFetched { number, detail } => {
+                            let mut cache = detail_cache.read().clone();
+                            cache.insert(number, detail);
+                            detail_cache.set(cache);
+                        }
+                        Event::FetchError {
+                            context: _,
+                            message,
+                        } => {
+                            let in_flight_snap = filter_in_flight.read().clone();
+                            let error_fi = in_flight_snap.iter().position(|&f| f);
+                            if let Some(fi) = error_fi {
+                                let mut state = issues_state.read().clone();
+                                if fi < state.filters.len() {
+                                    state.filters[fi] = FilterData {
+                                        loading: false,
+                                        error: Some(message.clone()),
+                                        ..FilterData::default()
+                                    };
+                                }
+                                issues_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                if fi < times.len() {
+                                    times[fi] = Some(std::time::Instant::now());
+                                }
+                                filter_fetch_times.set(times);
+                                let mut ifl = filter_in_flight.read().clone();
+                                if fi < ifl.len() {
+                                    ifl[fi] = false;
+                                }
+                                filter_in_flight.set(ifl);
+                            }
+                        }
+                        Event::MutationOk { description } => {
+                            action_status.set(Some(format!("✓ {description}")));
+                            force_refresh.set(true);
+                            let mut state = issues_state.read().clone();
+                            if current_filter_for_poll < state.filters.len() {
+                                state.filters[current_filter_for_poll] = FilterData::default();
+                            }
+                            issues_state.set(state);
+                            let mut times = filter_fetch_times.read().clone();
+                            if current_filter_for_poll < times.len() {
+                                times[current_filter_for_poll] = None;
+                            }
+                            filter_fetch_times.set(times);
+                        }
+                        Event::MutationError {
+                            description,
+                            message,
+                        } => {
+                            action_status.set(Some(format!("✗ {description}: {message}")));
+                        }
+                        Event::RateLimitUpdated { info } => {
+                            rate_limit_state.set(Some(info));
+                        }
+                        Event::RepoLabelsFetched { labels, .. } => {
+                            label_candidates.set(labels);
+                        }
+                        Event::RepoCollaboratorsFetched { logins, .. } => {
+                            let mut combined = assignee_candidates.read().clone();
+                            combined.extend(logins);
+                            combined.sort();
+                            combined.dedup();
+                            assignee_candidates.set(combined);
+                        }
+                        _ => {}
+                    }
+                }
             }
-            issues_state.set(state);
-
-            let mut times = filter_fetch_times.read().clone();
-            if filter_idx < times.len() {
-                times[filter_idx] = Some(std::time::Instant::now());
-            }
-            filter_fetch_times.set(times);
-            let mut in_flight = filter_in_flight.read().clone();
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = false;
-            }
-            filter_in_flight.set(in_flight);
-        }))
-        .detach();
+        });
     }
 
     let state_ref = issues_state.read();
@@ -563,6 +650,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     };
 
     let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
+
+    // Engine and event_tx clones for the keyboard handler closure.
+    let engine = engine_for_keyboard;
+    let event_tx_kb = event_tx.clone();
 
     // Keyboard handling.
     hooks.use_terminal_events({
@@ -598,7 +689,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             &issues_state,
                             current_filter_idx,
                             cursor.get(),
-                            octocrab_for_actions.as_ref(),
+                            engine.as_ref(),
+                            &event_tx_kb,
                         );
                     }
                     InputMode::Assign => {
@@ -611,7 +703,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             &issues_state,
                             current_filter_idx,
                             cursor.get(),
-                            octocrab_for_actions.as_ref(),
+                            engine.as_ref(),
+                            &event_tx_kb,
                             assignee_candidates,
                             assignee_selection,
                         );
@@ -628,64 +721,452 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             &issues_state,
                             current_filter_idx,
                             cursor.get(),
-                            octocrab_for_actions.as_ref(),
+                            engine.as_ref(),
+                            &event_tx_kb,
                         );
                     }
-                    InputMode::Confirm(ref pending) => {
-                        handle_confirm_input(
-                            code,
-                            pending,
-                            input_mode,
-                            action_status,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            octocrab_for_actions.as_ref(),
-                        );
-                    }
-                    InputMode::Search => {
-                        handle_search_input(
-                            code,
-                            modifiers,
-                            input_mode,
-                            search_query,
-                            cursor,
-                            scroll_offset,
-                        );
-                    }
+                    InputMode::Confirm(ref pending) => match code {
+                        KeyCode::Char('y' | 'Y') => {
+                            let info = get_current_issue_info(
+                                &issues_state,
+                                current_filter_idx,
+                                cursor.get(),
+                            );
+                            if let Some((owner, repo, number)) = info
+                                && let Some(eng) = engine.as_ref()
+                            {
+                                match pending {
+                                    PendingAction::Close => eng.send(Request::CloseIssue {
+                                        owner,
+                                        repo,
+                                        number,
+                                        reply_tx: event_tx_kb.clone(),
+                                    }),
+                                    PendingAction::Reopen => eng.send(Request::ReopenIssue {
+                                        owner,
+                                        repo,
+                                        number,
+                                        reply_tx: event_tx_kb.clone(),
+                                    }),
+                                }
+                            }
+                            input_mode.set(InputMode::Normal);
+                        }
+                        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            action_status.set(Some("Cancelled".to_owned()));
+                        }
+                        _ => {}
+                    },
+                    InputMode::Search => match code {
+                        KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            search_query.set(String::new());
+                        }
+                        KeyCode::Enter => {
+                            input_mode.set(InputMode::Normal);
+                        }
+                        KeyCode::Backspace => {
+                            let mut q = search_query.read().clone();
+                            q.pop();
+                            search_query.set(q);
+                            cursor.set(0);
+                            scroll_offset.set(0);
+                        }
+                        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+                            let mut q = search_query.read().clone();
+                            q.push(ch);
+                            search_query.set(q);
+                            cursor.set(0);
+                            scroll_offset.set(0);
+                        }
+                        _ => {}
+                    },
                     InputMode::Normal => {
-                        handle_normal_input(
-                            code,
-                            modifiers,
-                            should_exit,
-                            switch_view,
-                            switch_view_back,
-                            scope_toggle,
-                            preview_open,
-                            preview_scroll,
-                            cursor,
-                            scroll_offset,
-                            active_filter,
-                            input_mode,
-                            input_buffer,
-                            action_status,
-                            label_candidates,
-                            label_selection,
-                            assignee_candidates,
-                            assignee_selection,
-                            total_rows,
-                            visible_rows,
-                            filter_count,
-                            issues_state,
-                            current_filter_idx,
-                            octocrab_for_actions.as_ref(),
-                            api_cache_for_actions.as_ref(),
-                            filter_fetch_times,
-                            help_visible,
-                            rate_limit_state,
-                            sidebar_tab,
-                            pending_detail,
-                        );
+                        let engine = engine.as_ref();
+                        let event_tx = &event_tx_kb;
+                        match code {
+                            KeyCode::Char('q') => {
+                                if let Some(mut exit) = should_exit {
+                                    exit.set(true);
+                                }
+                            }
+                            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                if let Some(mut exit) = should_exit {
+                                    exit.set(true);
+                                }
+                            }
+                            KeyCode::Char('n') => {
+                                if let Some(mut sv) = switch_view {
+                                    sv.set(true);
+                                }
+                            }
+                            KeyCode::Char('N') => {
+                                if let Some(mut sv) = switch_view_back {
+                                    sv.set(true);
+                                }
+                            }
+                            KeyCode::Char('S') => {
+                                if let Some(mut st) = scope_toggle {
+                                    st.set(true);
+                                }
+                            }
+                            KeyCode::Char('p') => {
+                                preview_open.set(!preview_open.get());
+                                preview_scroll.set(0);
+                            }
+                            // --- Issue Actions ---
+                            KeyCode::Char('c') => {
+                                input_mode.set(InputMode::Comment);
+                                input_buffer.set(String::new());
+                                action_status.set(None);
+                            }
+                            KeyCode::Char('L') => {
+                                input_mode.set(InputMode::Label);
+                                input_buffer.set(String::new());
+                                label_selection.set(0);
+                                label_candidates.set(Vec::new());
+                                action_status.set(None);
+                                if let Some(engine) = engine
+                                    && let Some((owner, repo, _)) = get_current_issue_info(
+                                        &issues_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                    )
+                                {
+                                    engine.send(Request::FetchRepoLabels {
+                                        owner,
+                                        repo,
+                                        reply_tx: event_tx.clone(),
+                                    });
+                                }
+                            }
+                            // Quick self-assign (Ctrl+a) - immediate action without text input
+                            KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, number)) = info
+                                    && let Some(engine) = engine
+                                {
+                                    engine.send(Request::AssignIssue {
+                                        owner,
+                                        repo,
+                                        number,
+                                        logins: vec!["@me".to_owned()],
+                                        reply_tx: event_tx.clone(),
+                                    });
+                                }
+                            }
+                            KeyCode::Char('a') => {
+                                input_mode.set(InputMode::Assign);
+                                assignee_selection.set(0);
+                                action_status.set(None);
+
+                                let (current_assignees, candidates) = {
+                                    let state = issues_state.read();
+                                    let issue = state
+                                        .filters
+                                        .get(current_filter_idx)
+                                        .and_then(|s| s.issues.get(cursor.get()));
+
+                                    if let Some(issue) = issue {
+                                        let assignees = issue
+                                            .assignees
+                                            .iter()
+                                            .map(|a| a.login.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        let assignees_str = if assignees.is_empty() {
+                                            String::new()
+                                        } else {
+                                            format!("{assignees}, ")
+                                        };
+                                        let candidates = build_issue_assignee_candidates(issue);
+                                        (assignees_str, candidates)
+                                    } else {
+                                        (String::new(), Vec::new())
+                                    }
+                                };
+
+                                input_buffer.set(current_assignees);
+                                assignee_candidates.set(candidates);
+                                if let Some(engine) = engine
+                                    && let Some((owner, repo, _)) = get_current_issue_info(
+                                        &issues_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                    )
+                                {
+                                    engine.send(Request::FetchRepoCollaborators {
+                                        owner,
+                                        repo,
+                                        reply_tx: event_tx.clone(),
+                                    });
+                                }
+                            }
+                            KeyCode::Char('A') => {
+                                let state = issues_state.read();
+                                let issue = state
+                                    .filters
+                                    .get(current_filter_idx)
+                                    .and_then(|s| s.issues.get(cursor.get()));
+                                if let Some(issue) = issue
+                                    && let Some(assignee) = issue.assignees.first()
+                                {
+                                    let login = assignee.login.clone();
+                                    if let Some(repo_ref) = &issue.repo {
+                                        let owner = repo_ref.owner.clone();
+                                        let repo = repo_ref.name.clone();
+                                        let number = issue.number;
+                                        if let Some(engine) = engine {
+                                            engine.send(Request::UnassignIssue {
+                                                owner,
+                                                repo,
+                                                number,
+                                                login,
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('x') => {
+                                input_mode.set(InputMode::Confirm(PendingAction::Close));
+                                action_status.set(None);
+                            }
+                            KeyCode::Char('X') => {
+                                input_mode.set(InputMode::Confirm(PendingAction::Reopen));
+                                action_status.set(None);
+                            }
+                            // --- Clipboard & Browser ---
+                            KeyCode::Char('y') => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((_, _, number)) = info {
+                                    let text = number.to_string();
+                                    match clipboard::copy_to_clipboard(&text) {
+                                        Ok(()) => {
+                                            action_status.set(Some(format!("Copied #{number}")));
+                                        }
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Copy failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('Y') => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, number)) = info {
+                                    let url = format!(
+                                        "https://github.com/{owner}/{repo}/issues/{number}"
+                                    );
+                                    match clipboard::copy_to_clipboard(&url) {
+                                        Ok(()) => action_status
+                                            .set(Some(format!("Copied URL for #{number}"))),
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Copy failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('o') => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, number)) = info {
+                                    let url = format!(
+                                        "https://github.com/{owner}/{repo}/issues/{number}"
+                                    );
+                                    match clipboard::open_in_browser(&url) {
+                                        Ok(()) => {
+                                            action_status.set(Some(format!("Opened #{number}")));
+                                        }
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Open failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                            // --- Refresh ---
+                            KeyCode::Char('r') => {
+                                force_refresh.set(true);
+                                let idx = active_filter.get();
+                                let mut state = issues_state.read().clone();
+                                if idx < state.filters.len() {
+                                    state.filters[idx] = FilterData::default();
+                                }
+                                issues_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                if idx < times.len() {
+                                    times[idx] = None;
+                                }
+                                filter_fetch_times.set(times);
+                                pending_detail.set(None);
+                                detail_cache.set(HashMap::new());
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                            }
+                            // Refresh all filters
+                            KeyCode::Char('R') => {
+                                let mut state = issues_state.read().clone();
+                                for filter in &mut state.filters {
+                                    *filter = FilterData::default();
+                                }
+                                issues_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                times.fill(None);
+                                filter_fetch_times.set(times);
+                                pending_detail.set(None);
+                                detail_cache.set(HashMap::new());
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                                refresh_all.set(true);
+                            }
+                            // --- Search ---
+                            KeyCode::Char('/') => {
+                                input_mode.set(InputMode::Search);
+                                action_status.set(None);
+                            }
+                            // --- Navigation ---
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if total_rows > 0 {
+                                    let new_cursor =
+                                        (cursor.get() + 1).min(total_rows.saturating_sub(1));
+                                    cursor.set(new_cursor);
+                                    if new_cursor >= scroll_offset.get() + visible_rows {
+                                        scroll_offset
+                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                    }
+                                    preview_scroll.set(0);
+                                }
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let new_cursor = cursor.get().saturating_sub(1);
+                                cursor.set(new_cursor);
+                                if new_cursor < scroll_offset.get() {
+                                    scroll_offset.set(new_cursor);
+                                }
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('g') => {
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('G') => {
+                                if total_rows > 0 {
+                                    cursor.set(total_rows.saturating_sub(1));
+                                    scroll_offset.set(total_rows.saturating_sub(visible_rows));
+                                    preview_scroll.set(0);
+                                }
+                            }
+                            KeyCode::PageDown => {
+                                if total_rows > 0 {
+                                    let new_cursor = (cursor.get() + visible_rows)
+                                        .min(total_rows.saturating_sub(1));
+                                    cursor.set(new_cursor);
+                                    scroll_offset.set(
+                                        new_cursor.saturating_sub(visible_rows.saturating_sub(1)),
+                                    );
+                                    preview_scroll.set(0);
+                                }
+                            }
+                            KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                if preview_open.get() {
+                                    let half = visible_rows / 2;
+                                    preview_scroll.set(preview_scroll.get() + half);
+                                } else if total_rows > 0 {
+                                    let half = visible_rows / 2;
+                                    let new_cursor =
+                                        (cursor.get() + half).min(total_rows.saturating_sub(1));
+                                    cursor.set(new_cursor);
+                                    if new_cursor >= scroll_offset.get() + visible_rows {
+                                        scroll_offset
+                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                    }
+                                }
+                            }
+                            KeyCode::PageUp => {
+                                let new_cursor = cursor.get().saturating_sub(visible_rows);
+                                cursor.set(new_cursor);
+                                scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                if preview_open.get() {
+                                    let half = visible_rows / 2;
+                                    preview_scroll.set(preview_scroll.get().saturating_sub(half));
+                                } else {
+                                    let half = visible_rows / 2;
+                                    let new_cursor = cursor.get().saturating_sub(half);
+                                    cursor.set(new_cursor);
+                                    if new_cursor < scroll_offset.get() {
+                                        scroll_offset.set(new_cursor);
+                                    }
+                                }
+                            }
+                            // --- Sidebar tab cycling ---
+                            KeyCode::Char(']') => {
+                                let current = sidebar_tab.get();
+                                let idx =
+                                    ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
+                                sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('[') => {
+                                let current = sidebar_tab.get();
+                                let idx =
+                                    ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
+                                sidebar_tab.set(
+                                    ISSUE_TABS[if idx == 0 {
+                                        ISSUE_TABS.len() - 1
+                                    } else {
+                                        idx - 1
+                                    }],
+                                );
+                                preview_scroll.set(0);
+                            }
+                            // --- Filter switching ---
+                            KeyCode::Char('h') | KeyCode::Left => {
+                                if filter_count > 0 {
+                                    let current = active_filter.get();
+                                    active_filter.set(if current == 0 {
+                                        filter_count.saturating_sub(1)
+                                    } else {
+                                        current - 1
+                                    });
+                                    cursor.set(0);
+                                    scroll_offset.set(0);
+                                    preview_scroll.set(0);
+                                    pending_detail.set(None);
+                                }
+                            }
+                            KeyCode::Char('l') | KeyCode::Right => {
+                                if filter_count > 0 {
+                                    active_filter.set((active_filter.get() + 1) % filter_count);
+                                    cursor.set(0);
+                                    scroll_offset.set(0);
+                                    preview_scroll.set(0);
+                                    pending_detail.set(None);
+                                }
+                            }
+                            KeyCode::Char('?') => {
+                                help_visible.set(true);
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -772,7 +1253,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             let already_pending = {
                 let guard = pending_detail.read();
                 match *guard {
-                    Some((_, _, _, n)) => n == issue_number,
+                    Some((_, _, n)) => n == issue_number,
                     None => false,
                 }
             };
@@ -780,10 +1261,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             if !already_cached
                 && !already_pending
                 && let Some(repo_ref) = &issue.repo
-                && let Some(octocrab) = props.octocrab
             {
                 pending_detail.set(Some((
-                    Arc::clone(octocrab),
                     repo_ref.owner.clone(),
                     repo_ref.name.clone(),
                     issue_number,
@@ -1043,44 +1522,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     .into_any()
 }
 
-// ---------------------------------------------------------------------------
-// Keyboard input handlers (extracted to avoid too_many_lines)
-// ---------------------------------------------------------------------------
-
-fn handle_search_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut search_query: State<String>,
-    mut cursor: State<usize>,
-    mut scroll_offset: State<usize>,
-) {
-    match code {
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            search_query.set(String::new());
-        }
-        KeyCode::Enter => {
-            input_mode.set(InputMode::Normal);
-        }
-        KeyCode::Backspace => {
-            let mut q = search_query.read().clone();
-            q.pop();
-            search_query.set(q);
-            cursor.set(0);
-            scroll_offset.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut q = search_query.read().clone();
-            q.push(ch);
-            search_query.set(q);
-            cursor.set(0);
-            scroll_offset.set(0);
-        }
-        _ => {}
-    }
-}
-
 /// Parse comma-separated usernames from input string.
 /// - Splits on commas
 /// - Trims whitespace
@@ -1165,11 +1606,12 @@ fn handle_assign_input(
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    mut action_status: State<Option<String>>,
+    _action_status: State<Option<String>>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
-    octocrab_for_actions: Option<&Arc<Octocrab>>,
+    engine: Option<&EngineHandle>,
+    event_tx: &std::sync::mpsc::Sender<Event>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
 ) {
@@ -1218,43 +1660,19 @@ fn handle_assign_input(
                 format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
             };
 
-            if !final_input.trim().is_empty()
-                && let Some(octocrab) = octocrab_for_actions
-            {
+            if !final_input.trim().is_empty() {
                 let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
-                    let octocrab = Arc::clone(octocrab);
-                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
-
-                    smol::spawn(Compat::new(async move {
-                        let result = async {
-                            // Replace @me with current user
-                            if needs_me {
-                                let user = octocrab.current().user().await?;
-                                for username in &mut usernames {
-                                    if username == "@me" {
-                                        username.clone_from(&user.login);
-                                    }
-                                }
-                            }
-
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &usernames)
-                                .await
-                        }
-                        .await;
-
-                        let count = usernames.len();
-                        match result {
-                            Ok(()) if count == 1 => action_status.set(Some(format!(
-                                "Assigned {} to issue #{number}",
-                                usernames[0]
-                            ))),
-                            Ok(()) => action_status
-                                .set(Some(format!("Assigned {count} users to issue #{number}"))),
-                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
-                        }
-                    }))
-                    .detach();
+                    let (logins, _needs_me) = parse_assignee_input(&final_input);
+                    if let Some(engine) = engine {
+                        engine.send(Request::AssignIssue {
+                            owner,
+                            repo,
+                            number,
+                            logins,
+                            reply_tx: event_tx.clone(),
+                        });
+                    }
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -1297,43 +1715,19 @@ fn handle_assign_input(
                 format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
             };
 
-            if !final_input.trim().is_empty()
-                && let Some(octocrab) = octocrab_for_actions
-            {
+            if !final_input.trim().is_empty() {
                 let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
-                    let octocrab = Arc::clone(octocrab);
-                    let (mut usernames, needs_me) = parse_assignee_input(&final_input);
-
-                    smol::spawn(Compat::new(async move {
-                        let result = async {
-                            // Replace @me with current user
-                            if needs_me {
-                                let user = octocrab.current().user().await?;
-                                for username in &mut usernames {
-                                    if username == "@me" {
-                                        username.clone_from(&user.login);
-                                    }
-                                }
-                            }
-
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &usernames)
-                                .await
-                        }
-                        .await;
-
-                        let count = usernames.len();
-                        match result {
-                            Ok(()) if count == 1 => action_status.set(Some(format!(
-                                "Assigned {} to issue #{number}",
-                                usernames[0]
-                            ))),
-                            Ok(()) => action_status
-                                .set(Some(format!("Assigned {count} users to issue #{number}"))),
-                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
-                        }
-                    }))
-                    .detach();
+                    let (logins, _needs_me) = parse_assignee_input(&final_input);
+                    if let Some(engine) = engine {
+                        engine.send(Request::AssignIssue {
+                            owner,
+                            repo,
+                            number,
+                            logins,
+                            reply_tx: event_tx.clone(),
+                        });
+                    }
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -1351,65 +1745,40 @@ fn handle_text_input(
     current_mode: &InputMode,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    mut action_status: State<Option<String>>,
+    _action_status: State<Option<String>>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
-    octocrab_for_actions: Option<&Arc<Octocrab>>,
+    engine: Option<&EngineHandle>,
+    event_tx: &std::sync::mpsc::Sender<Event>,
 ) {
     match code {
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
             let text = input_buffer.read().clone();
-            if !text.is_empty()
-                && let Some(octocrab) = octocrab_for_actions
-            {
+            if !text.is_empty() {
                 let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info {
-                    let octocrab = Arc::clone(octocrab);
                     let is_comment = *current_mode == InputMode::Comment;
-                    let (mut usernames, needs_me) = if is_comment {
-                        (vec![], false)
-                    } else {
-                        parse_assignee_input(&text)
-                    };
-                    smol::spawn(Compat::new(async move {
-                        let result = if is_comment {
-                            issue_actions::add_comment(&octocrab, &owner, &repo, number, &text)
-                                .await
+                    if let Some(engine) = engine {
+                        if is_comment {
+                            engine.send(Request::AddIssueComment {
+                                owner,
+                                repo,
+                                number,
+                                body: text.clone(),
+                                reply_tx: event_tx.clone(),
+                            });
                         } else {
-                            // Replace @me with current user
-                            if needs_me && let Ok(user) = octocrab.current().user().await {
-                                for username in &mut usernames {
-                                    if username == "@me" {
-                                        username.clone_from(&user.login);
-                                    }
-                                }
-                            }
-                            // Assign mode
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &usernames)
-                                .await
-                        };
-                        let count = usernames.len();
-                        match result {
-                            Ok(()) if is_comment => {
-                                action_status
-                                    .set(Some(format!("Comment added on issue #{number}")));
-                            }
-                            Ok(()) if count == 1 => {
-                                action_status.set(Some(format!(
-                                    "Assigned {} to issue #{number}",
-                                    usernames[0]
-                                )));
-                            }
-                            Ok(()) => {
-                                action_status.set(Some(format!(
-                                    "Assigned {count} users to issue #{number}"
-                                )));
-                            }
-                            Err(e) => action_status.set(Some(format!("Action failed: {e}"))),
+                            let (logins, _needs_me) = parse_assignee_input(&text);
+                            engine.send(Request::AssignIssue {
+                                owner,
+                                repo,
+                                number,
+                                logins,
+                                reply_tx: event_tx.clone(),
+                            });
                         }
-                    }))
-                    .detach();
+                    }
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -1444,13 +1813,14 @@ fn handle_label_input(
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    mut action_status: State<Option<String>>,
+    _action_status: State<Option<String>>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
-    octocrab_for_actions: Option<&Arc<Octocrab>>,
+    engine: Option<&EngineHandle>,
+    event_tx: &std::sync::mpsc::Sender<Event>,
 ) {
     match code {
         KeyCode::Tab | KeyCode::Down => {
@@ -1486,23 +1856,18 @@ fn handle_label_input(
                 filtered[sel].clone()
             };
 
-            if !label.is_empty()
-                && let Some(octocrab) = octocrab_for_actions
-            {
+            if !label.is_empty() {
                 let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let octocrab = Arc::clone(octocrab);
-                    let labels = vec![label.clone()];
-                    smol::spawn(Compat::new(async move {
-                        match issue_actions::add_labels(&octocrab, &owner, &repo, number, &labels)
-                            .await
-                        {
-                            Ok(()) => action_status
-                                .set(Some(format!("Label '{label}' added to issue #{number}"))),
-                            Err(e) => action_status.set(Some(format!("Label failed: {e}"))),
-                        }
-                    }))
-                    .detach();
+                if let Some((owner, repo, number)) = info
+                    && let Some(engine) = engine
+                {
+                    engine.send(Request::AddIssueLabels {
+                        owner,
+                        repo,
+                        number,
+                        labels: vec![label.clone()],
+                        reply_tx: event_tx.clone(),
+                    });
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -1525,446 +1890,6 @@ fn handle_label_input(
             buf.push(ch);
             input_buffer.set(buf);
             label_selection.set(0);
-        }
-        _ => {}
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn handle_confirm_input(
-    code: KeyCode,
-    pending: &PendingAction,
-    mut input_mode: State<InputMode>,
-    mut action_status: State<Option<String>>,
-    issues_state: &State<IssuesState>,
-    filter_idx: usize,
-    cursor: usize,
-    octocrab_for_actions: Option<&Arc<Octocrab>>,
-) {
-    match code {
-        KeyCode::Char('y' | 'Y') => {
-            if let Some(octocrab) = octocrab_for_actions {
-                let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let octocrab = Arc::clone(octocrab);
-                    let action = pending.clone();
-                    let action_name = match pending {
-                        PendingAction::Close => "Closed",
-                        PendingAction::Reopen => "Reopened",
-                    };
-                    let action_label = action_name.to_owned();
-                    smol::spawn(Compat::new(async move {
-                        let result = match action {
-                            PendingAction::Close => {
-                                issue_actions::close(&octocrab, &owner, &repo, number).await
-                            }
-                            PendingAction::Reopen => {
-                                issue_actions::reopen(&octocrab, &owner, &repo, number).await
-                            }
-                        };
-                        match result {
-                            Ok(()) => {
-                                action_status.set(Some(format!("{action_label} issue #{number}")));
-                            }
-                            Err(e) => {
-                                action_status.set(Some(format!("{action_label} failed: {e}")));
-                            }
-                        }
-                    }))
-                    .detach();
-                }
-            }
-            input_mode.set(InputMode::Normal);
-        }
-        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            action_status.set(Some("Cancelled".to_owned()));
-        }
-        _ => {}
-    }
-}
-
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn handle_normal_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    should_exit: Option<State<bool>>,
-    switch_view: Option<State<bool>>,
-    switch_view_back: Option<State<bool>>,
-    scope_toggle: Option<State<bool>>,
-    mut preview_open: State<bool>,
-    mut preview_scroll: State<usize>,
-    mut cursor: State<usize>,
-    mut scroll_offset: State<usize>,
-    mut active_filter: State<usize>,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    mut action_status: State<Option<String>>,
-    mut label_candidates: State<Vec<String>>,
-    mut label_selection: State<usize>,
-    mut assignee_candidates: State<Vec<String>>,
-    mut assignee_selection: State<usize>,
-    total_rows: usize,
-    visible_rows: usize,
-    filter_count: usize,
-    mut issues_state: State<IssuesState>,
-    current_filter_idx: usize,
-    octocrab_for_actions: Option<&Arc<Octocrab>>,
-    api_cache_for_refresh: Option<&Cache<String, String>>,
-    mut filter_fetch_times: State<Vec<Option<std::time::Instant>>>,
-    mut help_visible: State<bool>,
-    mut rate_limit_state: State<Option<RateLimitInfo>>,
-    mut sidebar_tab: State<SidebarTab>,
-    mut pending_detail: State<DetailRequest>,
-) {
-    match code {
-        KeyCode::Char('q') => {
-            if let Some(mut exit) = should_exit {
-                exit.set(true);
-            }
-        }
-        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-            if let Some(mut exit) = should_exit {
-                exit.set(true);
-            }
-        }
-        KeyCode::Char('n') => {
-            if let Some(mut sv) = switch_view {
-                sv.set(true);
-            }
-        }
-        KeyCode::Char('N') => {
-            if let Some(mut sv) = switch_view_back {
-                sv.set(true);
-            }
-        }
-        KeyCode::Char('S') => {
-            if let Some(mut st) = scope_toggle {
-                st.set(true);
-            }
-        }
-        KeyCode::Char('p') => {
-            preview_open.set(!preview_open.get());
-            preview_scroll.set(0);
-        }
-        // --- Issue Actions (T086) ---
-        KeyCode::Char('c') => {
-            input_mode.set(InputMode::Comment);
-            input_buffer.set(String::new());
-            action_status.set(None);
-        }
-        KeyCode::Char('L') => {
-            // Fetch labels for autocomplete.
-            input_mode.set(InputMode::Label);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            action_status.set(None);
-
-            if let Some(octocrab) = octocrab_for_actions {
-                let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-                if let Some((owner, repo, _)) = info {
-                    let octocrab = Arc::clone(octocrab);
-                    let api_cache = api_cache_for_refresh.cloned();
-                    smol::spawn(Compat::new(async move {
-                        if let Ok((labels, rl)) =
-                            graphql::fetch_repo_labels(&octocrab, &owner, &repo, api_cache.as_ref())
-                                .await
-                        {
-                            if rl.is_some() {
-                                rate_limit_state.set(rl);
-                            }
-                            let names: Vec<String> = labels.into_iter().map(|l| l.name).collect();
-                            label_candidates.set(names);
-                        }
-                    }))
-                    .detach();
-                }
-            }
-        }
-        // Quick self-assign (Ctrl+a) - immediate action without text input
-        KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
-            if let Some(octocrab) = octocrab_for_actions {
-                let state = issues_state.read();
-                let issue = state
-                    .filters
-                    .get(current_filter_idx)
-                    .and_then(|s| s.issues.get(cursor.get()));
-                if let Some(issue) = issue
-                    && let Some(repo_ref) = &issue.repo
-                {
-                    let owner = repo_ref.owner.clone();
-                    let repo = repo_ref.name.clone();
-                    let number = issue.number;
-                    let octocrab = Arc::clone(octocrab);
-                    smol::spawn(Compat::new(async move {
-                        let result = async {
-                            let user = octocrab.current().user().await?;
-                            issue_actions::assign(&octocrab, &owner, &repo, number, &[user.login])
-                                .await
-                        }
-                        .await;
-                        match result {
-                            Ok(()) => {
-                                action_status.set(Some(format!("Assigned to issue #{number}")));
-                            }
-                            Err(e) => action_status.set(Some(format!("Assign failed: {e}"))),
-                        }
-                    }))
-                    .detach();
-                }
-            }
-        }
-        KeyCode::Char('a') => {
-            input_mode.set(InputMode::Assign);
-            assignee_selection.set(0);
-            action_status.set(None);
-
-            // Get current issue and build candidates from its data
-            let (current_assignees, candidates) = {
-                let state = issues_state.read();
-                let issue = state
-                    .filters
-                    .get(current_filter_idx)
-                    .and_then(|s| s.issues.get(cursor.get()));
-
-                if let Some(issue) = issue {
-                    let assignees = issue
-                        .assignees
-                        .iter()
-                        .map(|a| a.login.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Add trailing ", " to show all suggestions immediately
-                    let assignees_str = if assignees.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{assignees}, ")
-                    };
-
-                    // Build candidates from Issue data (instant, no API call)
-                    let candidates = build_issue_assignee_candidates(issue);
-
-                    (assignees_str, candidates)
-                } else {
-                    (String::new(), Vec::new())
-                }
-            };
-
-            input_buffer.set(current_assignees);
-            assignee_candidates.set(candidates); // Set immediately, no async fetch
-        }
-        KeyCode::Char('A') => {
-            // Unassign: fire immediately for the first assignee.
-            if let Some(octocrab) = octocrab_for_actions {
-                let state = issues_state.read();
-                let issue = state
-                    .filters
-                    .get(current_filter_idx)
-                    .and_then(|s| s.issues.get(cursor.get()));
-                if let Some(issue) = issue
-                    && let Some(assignee) = issue.assignees.first()
-                {
-                    let login = assignee.login.clone();
-                    if let Some(repo_ref) = &issue.repo {
-                        let owner = repo_ref.owner.clone();
-                        let repo = repo_ref.name.clone();
-                        let number = issue.number;
-                        let octocrab = Arc::clone(octocrab);
-                        smol::spawn(Compat::new(async move {
-                            match issue_actions::unassign(&octocrab, &owner, &repo, number, &login)
-                                .await
-                            {
-                                Ok(()) => action_status
-                                    .set(Some(format!("Unassigned {login} from #{number}"))),
-                                Err(e) => action_status.set(Some(format!("Unassign failed: {e}"))),
-                            }
-                        }))
-                        .detach();
-                    }
-                }
-            }
-        }
-        KeyCode::Char('x') => {
-            input_mode.set(InputMode::Confirm(PendingAction::Close));
-            action_status.set(None);
-        }
-        KeyCode::Char('X') => {
-            input_mode.set(InputMode::Confirm(PendingAction::Reopen));
-            action_status.set(None);
-        }
-        // --- Clipboard & Browser (T091, T092) ---
-        KeyCode::Char('y') => {
-            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-            if let Some((_, _, number)) = info {
-                let text = number.to_string();
-                match clipboard::copy_to_clipboard(&text) {
-                    Ok(()) => action_status.set(Some(format!("Copied #{number}"))),
-                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
-                }
-            }
-        }
-        KeyCode::Char('Y') => {
-            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-            if let Some((owner, repo, number)) = info {
-                let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
-                match clipboard::copy_to_clipboard(&url) {
-                    Ok(()) => action_status.set(Some(format!("Copied URL for #{number}"))),
-                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
-                }
-            }
-        }
-        KeyCode::Char('o') => {
-            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-            if let Some((owner, repo, number)) = info {
-                let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
-                match clipboard::open_in_browser(&url) {
-                    Ok(()) => action_status.set(Some(format!("Opened #{number}"))),
-                    Err(e) => action_status.set(Some(format!("Open failed: {e}"))),
-                }
-            }
-        }
-        // Retry / refresh
-        KeyCode::Char('r') => {
-            if let Some(c) = api_cache_for_refresh {
-                c.invalidate_all();
-            }
-            let idx = active_filter.get();
-            let mut state = issues_state.read().clone();
-            if idx < state.filters.len() {
-                state.filters[idx] = FilterData::default();
-            }
-            issues_state.set(state);
-            let mut times = filter_fetch_times.read().clone();
-            if idx < times.len() {
-                times[idx] = None;
-            }
-            filter_fetch_times.set(times);
-            pending_detail.set(None);
-            cursor.set(0);
-            scroll_offset.set(0);
-        }
-        // --- Search (T087) ---
-        KeyCode::Char('/') => {
-            input_mode.set(InputMode::Search);
-            action_status.set(None);
-        }
-        // --- Navigation ---
-        KeyCode::Down | KeyCode::Char('j') => {
-            if total_rows > 0 {
-                let new_cursor = (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                cursor.set(new_cursor);
-                if new_cursor >= scroll_offset.get() + visible_rows {
-                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                }
-                preview_scroll.set(0);
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            let new_cursor = cursor.get().saturating_sub(1);
-            cursor.set(new_cursor);
-            if new_cursor < scroll_offset.get() {
-                scroll_offset.set(new_cursor);
-            }
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('g') => {
-            cursor.set(0);
-            scroll_offset.set(0);
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('G') => {
-            if total_rows > 0 {
-                cursor.set(total_rows.saturating_sub(1));
-                scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                preview_scroll.set(0);
-            }
-        }
-        KeyCode::PageDown => {
-            if total_rows > 0 {
-                let new_cursor = (cursor.get() + visible_rows).min(total_rows.saturating_sub(1));
-                cursor.set(new_cursor);
-                scroll_offset.set(new_cursor.saturating_sub(visible_rows.saturating_sub(1)));
-                preview_scroll.set(0);
-            }
-        }
-        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            if preview_open.get() {
-                let half = visible_rows / 2;
-                preview_scroll.set(preview_scroll.get() + half);
-            } else if total_rows > 0 {
-                let half = visible_rows / 2;
-                let new_cursor = (cursor.get() + half).min(total_rows.saturating_sub(1));
-                cursor.set(new_cursor);
-                if new_cursor >= scroll_offset.get() + visible_rows {
-                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                }
-            }
-        }
-        KeyCode::PageUp => {
-            let new_cursor = cursor.get().saturating_sub(visible_rows);
-            cursor.set(new_cursor);
-            scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-            if preview_open.get() {
-                let half = visible_rows / 2;
-                preview_scroll.set(preview_scroll.get().saturating_sub(half));
-            } else {
-                let half = visible_rows / 2;
-                let new_cursor = cursor.get().saturating_sub(half);
-                cursor.set(new_cursor);
-                if new_cursor < scroll_offset.get() {
-                    scroll_offset.set(new_cursor);
-                }
-            }
-        }
-        // Sidebar tab cycling
-        KeyCode::Char(']') => {
-            let current = sidebar_tab.get();
-            let idx = ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
-            sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('[') => {
-            let current = sidebar_tab.get();
-            let idx = ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
-            sidebar_tab.set(
-                ISSUE_TABS[if idx == 0 {
-                    ISSUE_TABS.len() - 1
-                } else {
-                    idx - 1
-                }],
-            );
-            preview_scroll.set(0);
-        }
-        // Section switching
-        KeyCode::Char('h') | KeyCode::Left => {
-            if filter_count > 0 {
-                let current = active_filter.get();
-                active_filter.set(if current == 0 {
-                    filter_count.saturating_sub(1)
-                } else {
-                    current - 1
-                });
-                cursor.set(0);
-                scroll_offset.set(0);
-                preview_scroll.set(0);
-                pending_detail.set(None);
-            }
-        }
-        KeyCode::Char('l') | KeyCode::Right => {
-            if filter_count > 0 {
-                active_filter.set((active_filter.get() + 1) % filter_count);
-                cursor.set(0);
-                scroll_offset.set(0);
-                preview_scroll.set(0);
-                pending_detail.set(None);
-            }
-        }
-        KeyCode::Char('?') => {
-            help_visible.set(true);
         }
         _ => {}
     }

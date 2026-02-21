@@ -1,11 +1,10 @@
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::github::graphql::{IssueDetail, PrDetail};
-use crate::github::types::{
-    CheckConclusion, CheckStatus, CommitCheckState, FileChangeType, Issue, PullRequest,
-    ReviewState, TimelineEvent,
-};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
+use crate::types::{
+    CheckConclusion, CheckStatus, CommitCheckState, FileChangeType, Issue, IssueDetail, PrDetail,
+    PullRequest, ReviewState, TimelineEvent,
+};
 
 // ---------------------------------------------------------------------------
 // T073: Overview tab

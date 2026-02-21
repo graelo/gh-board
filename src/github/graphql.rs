@@ -13,6 +13,9 @@ use crate::github::types::{
     TimelineEvent,
 };
 
+// Re-export types moved to crate::types so existing importers continue to work.
+pub use crate::types::{IssueDetail, PrDetail, RateLimitInfo};
+
 // ---------------------------------------------------------------------------
 // GraphQL query strings
 // ---------------------------------------------------------------------------
@@ -250,14 +253,6 @@ struct RawRateLimit {
     limit: u32,
     remaining: u32,
     cost: u32,
-}
-
-/// Public rate limit info extracted from GraphQL responses.
-#[derive(Debug, Clone)]
-pub struct RateLimitInfo {
-    pub limit: u32,
-    pub remaining: u32,
-    pub cost: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1090,28 +1085,6 @@ pub async fn search_issues_all(
 // PR detail API (Q2 — sidebar tabs)
 // ---------------------------------------------------------------------------
 
-/// Detailed PR data fetched for the sidebar tabs.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct PrDetail {
-    pub body: String,
-    pub reviews: Vec<Review>,
-    pub review_threads: Vec<ReviewThread>,
-    pub timeline_events: Vec<TimelineEvent>,
-    pub commits: Vec<Commit>,
-    pub files: Vec<File>,
-    /// Mergeability from the detail query (`mergeable` field).
-    pub mergeable: Option<MergeableState>,
-    /// How many commits behind base this PR is (from REST compare API).
-    pub behind_by: Option<u32>,
-}
-
-/// Detailed Issue data fetched for the sidebar tabs.
-#[derive(Clone, Serialize, Deserialize)]
-pub struct IssueDetail {
-    pub body: String,
-    pub timeline_events: Vec<TimelineEvent>,
-}
-
 // ---------------------------------------------------------------------------
 // Issue detail response types
 // ---------------------------------------------------------------------------
@@ -1688,4 +1661,51 @@ pub async fn fetch_repo_collaborators(
     }
 
     Ok((logins, rate_limit))
+}
+
+// ---------------------------------------------------------------------------
+// Standalone rate-limit query
+// ---------------------------------------------------------------------------
+
+const RATE_LIMIT_QUERY: &str = r"
+query RateLimit {
+  rateLimit { limit remaining cost }
+}
+";
+
+#[derive(Serialize)]
+struct NoVariables {}
+
+#[derive(Debug, Deserialize)]
+struct RateLimitOnlyData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RawRateLimit>,
+}
+
+/// Fetch current GraphQL rate-limit info with a minimal query (cost = 1).
+pub async fn fetch_rate_limit(octocrab: &Arc<Octocrab>) -> Result<Option<RateLimitInfo>> {
+    let payload = GraphQLPayload {
+        query: RATE_LIMIT_QUERY,
+        variables: NoVariables {},
+    };
+
+    let response: GraphQLResponse<RateLimitOnlyData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL rate limit request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    Ok(data.rate_limit.map(|rl| RateLimitInfo {
+        limit: rl.limit,
+        remaining: rl.remaining,
+        cost: rl.cost,
+    }))
 }

@@ -573,6 +573,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         });
         filter_fetch_times.set(vec![None; filter_count]);
         filter_in_flight.set(vec![false; filter_count]);
+        refresh_registered.set(false);
     }
 
     // Per-view event channel: engine sends results here, polling future processes them.
@@ -643,12 +644,27 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .copied()
         .unwrap_or(false);
 
-    // Register all filters for background refresh once at mount.
+    // Register all filters for background refresh once at mount (or after scope change).
     if !refresh_registered.get()
         && let Some(ref eng) = engine
     {
+        let scoped_configs: Vec<_> = filters_cfg
+            .iter()
+            .map(|cfg| {
+                let mut modified = cfg.clone();
+                if let Some(ref repo) = *scope_repo
+                    && !cfg
+                        .filters
+                        .split_whitespace()
+                        .any(|t| t.starts_with("repo:"))
+                {
+                    modified.filters = format!("{} repo:{repo}", cfg.filters);
+                }
+                modified
+            })
+            .collect();
         eng.send(Request::RegisterPrsRefresh {
-            filter_configs: filters_cfg.to_vec(),
+            filter_configs: scoped_configs,
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

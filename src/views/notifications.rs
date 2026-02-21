@@ -282,6 +282,7 @@ pub fn NotificationsView<'a>(
         });
         filter_fetch_times.set(vec![None; filter_count]);
         filter_in_flight.set(vec![false; filter_count]);
+        refresh_registered.set(false);
     }
 
     // Compute active filter index early (needed by fetch logic below).
@@ -299,12 +300,25 @@ pub fn NotificationsView<'a>(
         .copied()
         .unwrap_or(false);
 
-    // Register all filters for background refresh once at mount.
+    // Register all filters for background refresh once at mount (or after scope change).
     if !refresh_registered.get()
         && let Some(ref eng) = engine
     {
+        let scoped_configs: Vec<_> = filters_cfg
+            .iter()
+            .map(|cfg| {
+                let mut modified = cfg.clone();
+                if let Some(ref repo) = *scope_repo {
+                    let has_repo = modified.filters.contains("repo:");
+                    if !has_repo {
+                        modified.filters = format!("{} repo:{repo}", cfg.filters);
+                    }
+                }
+                modified
+            })
+            .collect();
         eng.send(Request::RegisterNotificationsRefresh {
-            filter_configs: filters_cfg.to_vec(),
+            filter_configs: scoped_configs,
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

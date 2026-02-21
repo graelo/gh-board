@@ -45,8 +45,9 @@ impl GitHubEngine {
         let mut scheduler = RefreshScheduler::new();
 
         let interval_mins = u64::from(self.config.github.refetch_interval_minutes);
-        let tick_dur = Duration::from_secs((interval_mins * 60).max(60));
-        let mut refresh_tick = tokio::time::interval(tick_dur);
+        let refresh_interval = Duration::from_secs((interval_mins * 60).max(60));
+        let poll_dur = Duration::from_secs(30);
+        let mut refresh_tick = tokio::time::interval(poll_dur);
         // Consume the first immediate tick so refresh fires after one full interval.
         refresh_tick.tick().await;
 
@@ -60,7 +61,7 @@ impl GitHubEngine {
                             break;
                         }
                         Some(req) => {
-                            handle_request(req, &mut client, &mut scheduler, tick_dur).await;
+                            handle_request(req, &mut client, &mut scheduler, refresh_interval).await;
                         }
                     }
                 }

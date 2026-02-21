@@ -347,6 +347,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut filter_fetch_times =
         hooks.use_state(move || vec![Option::<std::time::Instant>::None; filter_count]);
     let mut filter_in_flight = hooks.use_state(move || vec![false; filter_count]);
+    // Set by 'R' keypress; consumed by render body to fetch all filters eagerly.
+    let mut refresh_all = hooks.use_state(|| false);
 
     let initial_filters = vec![FilterData::default(); filter_count];
     let mut issues_state = hooks.use_state(move || IssuesState {
@@ -432,7 +434,35 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         refresh_registered.set(true);
     }
 
-    if active_needs_fetch
+    if refresh_all.get()
+        && is_active
+        && let Some(ref engine_ref) = engine
+    {
+        // 'R' was pressed: reset the flag and eagerly fetch every filter.
+        refresh_all.set(false);
+        let mut in_flight = filter_in_flight.read().clone();
+        for (filter_idx, cfg) in filters_cfg.iter().enumerate() {
+            if filter_idx < in_flight.len() {
+                in_flight[filter_idx] = true;
+            }
+            let mut modified_filter = cfg.clone();
+            if let Some(ref repo) = *scope_repo
+                && !cfg
+                    .filters
+                    .split_whitespace()
+                    .any(|t| t.starts_with("repo:"))
+            {
+                modified_filter.filters = format!("{} repo:{repo}", cfg.filters);
+            }
+            engine_ref.send(Request::FetchIssues {
+                filter_idx,
+                filter: modified_filter,
+                force: true,
+                reply_tx: event_tx.clone(),
+            });
+        }
+        filter_in_flight.set(in_flight);
+    } else if active_needs_fetch
         && !active_in_flight
         && is_active
         && let Some(cfg) = filters_cfg.get(current_filter_idx)
@@ -756,6 +786,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             sidebar_tab,
                             pending_detail,
                             force_refresh,
+                            refresh_all,
                         );
                     }
                 }
@@ -1600,6 +1631,7 @@ fn handle_normal_input(
     mut sidebar_tab: State<SidebarTab>,
     mut pending_detail: State<DetailRequest>,
     mut force_refresh: State<bool>,
+    mut refresh_all: State<bool>,
 ) {
     match code {
         KeyCode::Char('q') => {
@@ -1806,6 +1838,22 @@ fn handle_normal_input(
             pending_detail.set(None);
             cursor.set(0);
             scroll_offset.set(0);
+        }
+        // Refresh all filters
+        KeyCode::Char('R') => {
+            let mut state = issues_state.read().clone();
+            for filter in &mut state.filters {
+                *filter = FilterData::default();
+            }
+            issues_state.set(state);
+            let mut times = filter_fetch_times.read().clone();
+            times.fill(None);
+            filter_fetch_times.set(times);
+            pending_detail.set(None);
+            cursor.set(0);
+            scroll_offset.set(0);
+            // Signal the render body to eagerly fetch all filters.
+            refresh_all.set(true);
         }
         // --- Search (T087) ---
         KeyCode::Char('/') => {

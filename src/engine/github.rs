@@ -346,19 +346,37 @@ async fn handle_request(
             filter_configs,
             notify_tx,
         } => {
-            scheduler.register_prs(filter_configs, refresh_interval, &notify_tx);
+            scheduler.register(
+                filter_configs.into_iter().map(FilterConfig::Pr).collect(),
+                refresh_interval,
+                &notify_tx,
+            );
         }
         Request::RegisterIssuesRefresh {
             filter_configs,
             notify_tx,
         } => {
-            scheduler.register_issues(filter_configs, refresh_interval, &notify_tx);
+            scheduler.register(
+                filter_configs
+                    .into_iter()
+                    .map(FilterConfig::Issue)
+                    .collect(),
+                refresh_interval,
+                &notify_tx,
+            );
         }
         Request::RegisterNotificationsRefresh {
             filter_configs,
             notify_tx,
         } => {
-            scheduler.register_notifications(filter_configs, refresh_interval, &notify_tx);
+            scheduler.register(
+                filter_configs
+                    .into_iter()
+                    .map(FilterConfig::Notification)
+                    .collect(),
+                refresh_interval,
+                &notify_tx,
+            );
         }
 
         // -----------------------------------------------------------------------

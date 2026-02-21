@@ -21,6 +21,16 @@ pub enum FilterConfig {
     Notification(NotificationFilter),
 }
 
+impl FilterConfig {
+    pub(crate) fn view_kind(&self) -> ViewKind {
+        match self {
+            Self::Pr(_) => ViewKind::Prs,
+            Self::Issue(_) => ViewKind::Issues,
+            Self::Notification(_) => ViewKind::Notifications,
+        }
+    }
+}
+
 struct RefreshEntry {
     filter_idx: usize,
     filter: FilterConfig,
@@ -49,59 +59,22 @@ impl RefreshScheduler {
         }
     }
 
-    /// Register PR filters for background refresh (replaces any existing PR entries).
-    pub fn register_prs(
+    /// Register filters for background refresh, replacing any existing entries
+    /// for the same view kind.
+    pub fn register(
         &mut self,
-        filter_configs: Vec<PrFilter>,
+        configs: Vec<FilterConfig>,
         interval: Duration,
         notify_tx: &Sender<Event>,
     ) {
-        self.entries
-            .retain(|e| !matches!(e.filter, FilterConfig::Pr(_)));
-        for (filter_idx, filter) in filter_configs.into_iter().enumerate() {
+        let Some(kind) = configs.first().map(FilterConfig::view_kind) else {
+            return;
+        };
+        self.entries.retain(|e| e.filter.view_kind() != kind);
+        for (filter_idx, filter) in configs.into_iter().enumerate() {
             self.entries.push(RefreshEntry {
                 filter_idx,
-                filter: FilterConfig::Pr(filter),
-                interval,
-                notify_tx: notify_tx.clone(),
-                last_fetch: None,
-            });
-        }
-    }
-
-    /// Register Issue filters for background refresh.
-    pub fn register_issues(
-        &mut self,
-        filter_configs: Vec<IssueFilter>,
-        interval: Duration,
-        notify_tx: &Sender<Event>,
-    ) {
-        self.entries
-            .retain(|e| !matches!(e.filter, FilterConfig::Issue(_)));
-        for (filter_idx, filter) in filter_configs.into_iter().enumerate() {
-            self.entries.push(RefreshEntry {
-                filter_idx,
-                filter: FilterConfig::Issue(filter),
-                interval,
-                notify_tx: notify_tx.clone(),
-                last_fetch: None,
-            });
-        }
-    }
-
-    /// Register Notification filters for background refresh.
-    pub fn register_notifications(
-        &mut self,
-        filter_configs: Vec<NotificationFilter>,
-        interval: Duration,
-        notify_tx: &Sender<Event>,
-    ) {
-        self.entries
-            .retain(|e| !matches!(e.filter, FilterConfig::Notification(_)));
-        for (filter_idx, filter) in filter_configs.into_iter().enumerate() {
-            self.entries.push(RefreshEntry {
-                filter_idx,
-                filter: FilterConfig::Notification(filter),
+                filter,
                 interval,
                 notify_tx: notify_tx.clone(),
                 last_fetch: None,
@@ -113,13 +86,7 @@ impl RefreshScheduler {
     pub fn mark_fetched(&mut self, filter_idx: usize, view_kind: ViewKind) {
         let now = SystemTime::now();
         for entry in &mut self.entries {
-            let kind_matches = matches!(
-                (&entry.filter, view_kind),
-                (FilterConfig::Pr(_), ViewKind::Prs)
-                    | (FilterConfig::Issue(_), ViewKind::Issues)
-                    | (FilterConfig::Notification(_), ViewKind::Notifications)
-            );
-            if kind_matches && entry.filter_idx == filter_idx {
+            if entry.filter.view_kind() == view_kind && entry.filter_idx == filter_idx {
                 entry.last_fetch = Some(now);
             }
         }

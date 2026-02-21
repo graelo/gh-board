@@ -1,5 +1,5 @@
 use std::sync::mpsc::Sender;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use crate::config::types::{IssueFilter, NotificationFilter, PrFilter};
 
@@ -26,7 +26,9 @@ struct RefreshEntry {
     filter: FilterConfig,
     interval: Duration,
     notify_tx: Sender<Event>,
-    last_fetch: Option<Instant>,
+    // SystemTime (wall clock) intentionally — Instant uses CLOCK_MONOTONIC,
+    // which freezes during laptop sleep, causing missed refreshes after wake.
+    last_fetch: Option<SystemTime>,
 }
 
 /// Tracks per-filter background refresh state for the engine.
@@ -109,7 +111,7 @@ impl RefreshScheduler {
 
     /// Mark the given filter index + view kind as having just been fetched.
     pub fn mark_fetched(&mut self, filter_idx: usize, view_kind: ViewKind) {
-        let now = Instant::now();
+        let now = SystemTime::now();
         for entry in &mut self.entries {
             let kind_matches = matches!(
                 (&entry.filter, view_kind),
@@ -128,12 +130,12 @@ impl RefreshScheduler {
     /// Entries that have never been fetched are skipped — the initial load is
     /// done on-demand by the view; background refresh fires only afterwards.
     pub fn due_entries(&self) -> Vec<DueEntry> {
-        let now = Instant::now();
+        let now = SystemTime::now();
         self.entries
             .iter()
             .filter(|e| {
                 e.last_fetch
-                    .is_some_and(|t| now.duration_since(t) >= e.interval)
+                    .is_some_and(|t| now.duration_since(t).unwrap_or(Duration::ZERO) >= e.interval)
             })
             .map(|e| DueEntry {
                 filter_idx: e.filter_idx,

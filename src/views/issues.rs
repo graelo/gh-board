@@ -306,14 +306,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         0.45
     };
 
-    let active_filter = hooks.use_state(|| 0usize);
-    let cursor = hooks.use_state(|| 0usize);
-    let scroll_offset = hooks.use_state(|| 0usize);
-    let preview_open = hooks.use_state(|| false);
-    let preview_scroll = hooks.use_state(|| 0usize);
+    let mut active_filter = hooks.use_state(|| 0usize);
+    let mut cursor = hooks.use_state(|| 0usize);
+    let mut scroll_offset = hooks.use_state(|| 0usize);
+    let mut preview_open = hooks.use_state(|| false);
+    let mut preview_scroll = hooks.use_state(|| 0usize);
 
     // State: sidebar tab.
-    let sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
+    let mut sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
 
     // State: cached issue detail data for sidebar tabs (HashMap cache + debounce).
     let mut detail_cache = hooks.use_state(HashMap::<u64, IssueDetail>::new);
@@ -321,13 +321,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut debounce_gen = hooks.use_state(|| 0u64);
 
     // Action state.
-    let input_mode = hooks.use_state(|| InputMode::Normal);
-    let input_buffer = hooks.use_state(String::new);
+    let mut input_mode = hooks.use_state(|| InputMode::Normal);
+    let mut input_buffer = hooks.use_state(String::new);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
     let mut label_candidates = hooks.use_state(Vec::<String>::new);
-    let label_selection = hooks.use_state(|| 0usize);
+    let mut label_selection = hooks.use_state(|| 0usize);
     let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
-    let assignee_selection = hooks.use_state(|| 0usize);
+    let mut assignee_selection = hooks.use_state(|| 0usize);
 
     // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
     let mut force_refresh = hooks.use_state(|| false);
@@ -336,7 +336,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut refresh_registered = hooks.use_state(|| false);
 
     // State: search query (T087).
-    let search_query = hooks.use_state(String::new);
+    let mut search_query = hooks.use_state(String::new);
 
     let mut help_visible = hooks.use_state(|| false);
 
@@ -730,64 +730,446 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             &event_tx_kb,
                         );
                     }
-                    InputMode::Confirm(ref pending) => {
-                        handle_confirm_input(
-                            code,
-                            pending,
-                            input_mode,
-                            action_status,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx_kb,
-                        );
-                    }
-                    InputMode::Search => {
-                        handle_search_input(
-                            code,
-                            modifiers,
-                            input_mode,
-                            search_query,
-                            cursor,
-                            scroll_offset,
-                        );
-                    }
+                    InputMode::Confirm(ref pending) => match code {
+                        KeyCode::Char('y' | 'Y') => {
+                            let info = get_current_issue_info(
+                                &issues_state,
+                                current_filter_idx,
+                                cursor.get(),
+                            );
+                            if let Some((owner, repo, number)) = info
+                                && let Some(eng) = engine.as_ref()
+                            {
+                                match pending {
+                                    PendingAction::Close => eng.send(Request::CloseIssue {
+                                        owner,
+                                        repo,
+                                        number,
+                                        reply_tx: event_tx_kb.clone(),
+                                    }),
+                                    PendingAction::Reopen => eng.send(Request::ReopenIssue {
+                                        owner,
+                                        repo,
+                                        number,
+                                        reply_tx: event_tx_kb.clone(),
+                                    }),
+                                }
+                            }
+                            input_mode.set(InputMode::Normal);
+                        }
+                        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            action_status.set(Some("Cancelled".to_owned()));
+                        }
+                        _ => {}
+                    },
+                    InputMode::Search => match code {
+                        KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            search_query.set(String::new());
+                        }
+                        KeyCode::Enter => {
+                            input_mode.set(InputMode::Normal);
+                        }
+                        KeyCode::Backspace => {
+                            let mut q = search_query.read().clone();
+                            q.pop();
+                            search_query.set(q);
+                            cursor.set(0);
+                            scroll_offset.set(0);
+                        }
+                        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+                            let mut q = search_query.read().clone();
+                            q.push(ch);
+                            search_query.set(q);
+                            cursor.set(0);
+                            scroll_offset.set(0);
+                        }
+                        _ => {}
+                    },
                     InputMode::Normal => {
-                        handle_normal_input(
-                            code,
-                            modifiers,
-                            should_exit,
-                            switch_view,
-                            switch_view_back,
-                            scope_toggle,
-                            preview_open,
-                            preview_scroll,
-                            cursor,
-                            scroll_offset,
-                            active_filter,
-                            input_mode,
-                            input_buffer,
-                            action_status,
-                            label_candidates,
-                            label_selection,
-                            assignee_candidates,
-                            assignee_selection,
-                            total_rows,
-                            visible_rows,
-                            filter_count,
-                            issues_state,
-                            current_filter_idx,
-                            engine.as_ref(),
-                            &event_tx_kb,
-                            filter_fetch_times,
-                            help_visible,
-                            rate_limit_state,
-                            sidebar_tab,
-                            pending_detail,
-                            force_refresh,
-                            refresh_all,
-                        );
+                        let engine = engine.as_ref();
+                        let event_tx = &event_tx_kb;
+                        match code {
+                            KeyCode::Char('q') => {
+                                if let Some(mut exit) = should_exit {
+                                    exit.set(true);
+                                }
+                            }
+                            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                if let Some(mut exit) = should_exit {
+                                    exit.set(true);
+                                }
+                            }
+                            KeyCode::Char('n') => {
+                                if let Some(mut sv) = switch_view {
+                                    sv.set(true);
+                                }
+                            }
+                            KeyCode::Char('N') => {
+                                if let Some(mut sv) = switch_view_back {
+                                    sv.set(true);
+                                }
+                            }
+                            KeyCode::Char('S') => {
+                                if let Some(mut st) = scope_toggle {
+                                    st.set(true);
+                                }
+                            }
+                            KeyCode::Char('p') => {
+                                preview_open.set(!preview_open.get());
+                                preview_scroll.set(0);
+                            }
+                            // --- Issue Actions ---
+                            KeyCode::Char('c') => {
+                                input_mode.set(InputMode::Comment);
+                                input_buffer.set(String::new());
+                                action_status.set(None);
+                            }
+                            KeyCode::Char('L') => {
+                                input_mode.set(InputMode::Label);
+                                input_buffer.set(String::new());
+                                label_selection.set(0);
+                                label_candidates.set(Vec::new());
+                                action_status.set(None);
+                                if let Some(engine) = engine
+                                    && let Some((owner, repo, _)) = get_current_issue_info(
+                                        &issues_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                    )
+                                {
+                                    engine.send(Request::FetchRepoLabels {
+                                        owner,
+                                        repo,
+                                        reply_tx: event_tx.clone(),
+                                    });
+                                }
+                            }
+                            // Quick self-assign (Ctrl+a) - immediate action without text input
+                            KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, number)) = info
+                                    && let Some(engine) = engine
+                                {
+                                    engine.send(Request::AssignIssue {
+                                        owner,
+                                        repo,
+                                        number,
+                                        logins: vec!["@me".to_owned()],
+                                        reply_tx: event_tx.clone(),
+                                    });
+                                }
+                            }
+                            KeyCode::Char('a') => {
+                                input_mode.set(InputMode::Assign);
+                                assignee_selection.set(0);
+                                action_status.set(None);
+
+                                let (current_assignees, candidates) = {
+                                    let state = issues_state.read();
+                                    let issue = state
+                                        .filters
+                                        .get(current_filter_idx)
+                                        .and_then(|s| s.issues.get(cursor.get()));
+
+                                    if let Some(issue) = issue {
+                                        let assignees = issue
+                                            .assignees
+                                            .iter()
+                                            .map(|a| a.login.as_str())
+                                            .collect::<Vec<_>>()
+                                            .join(", ");
+                                        let assignees_str = if assignees.is_empty() {
+                                            String::new()
+                                        } else {
+                                            format!("{assignees}, ")
+                                        };
+                                        let candidates = build_issue_assignee_candidates(issue);
+                                        (assignees_str, candidates)
+                                    } else {
+                                        (String::new(), Vec::new())
+                                    }
+                                };
+
+                                input_buffer.set(current_assignees);
+                                assignee_candidates.set(candidates);
+                                if let Some(engine) = engine
+                                    && let Some((owner, repo, _)) = get_current_issue_info(
+                                        &issues_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                    )
+                                {
+                                    engine.send(Request::FetchRepoCollaborators {
+                                        owner,
+                                        repo,
+                                        reply_tx: event_tx.clone(),
+                                    });
+                                }
+                            }
+                            KeyCode::Char('A') => {
+                                let state = issues_state.read();
+                                let issue = state
+                                    .filters
+                                    .get(current_filter_idx)
+                                    .and_then(|s| s.issues.get(cursor.get()));
+                                if let Some(issue) = issue
+                                    && let Some(assignee) = issue.assignees.first()
+                                {
+                                    let login = assignee.login.clone();
+                                    if let Some(repo_ref) = &issue.repo {
+                                        let owner = repo_ref.owner.clone();
+                                        let repo = repo_ref.name.clone();
+                                        let number = issue.number;
+                                        if let Some(engine) = engine {
+                                            engine.send(Request::UnassignIssue {
+                                                owner,
+                                                repo,
+                                                number,
+                                                login,
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('x') => {
+                                input_mode.set(InputMode::Confirm(PendingAction::Close));
+                                action_status.set(None);
+                            }
+                            KeyCode::Char('X') => {
+                                input_mode.set(InputMode::Confirm(PendingAction::Reopen));
+                                action_status.set(None);
+                            }
+                            // --- Clipboard & Browser ---
+                            KeyCode::Char('y') => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((_, _, number)) = info {
+                                    let text = number.to_string();
+                                    match clipboard::copy_to_clipboard(&text) {
+                                        Ok(()) => {
+                                            action_status.set(Some(format!("Copied #{number}")));
+                                        }
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Copy failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('Y') => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, number)) = info {
+                                    let url = format!(
+                                        "https://github.com/{owner}/{repo}/issues/{number}"
+                                    );
+                                    match clipboard::copy_to_clipboard(&url) {
+                                        Ok(()) => action_status
+                                            .set(Some(format!("Copied URL for #{number}"))),
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Copy failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                            KeyCode::Char('o') => {
+                                let info = get_current_issue_info(
+                                    &issues_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                );
+                                if let Some((owner, repo, number)) = info {
+                                    let url = format!(
+                                        "https://github.com/{owner}/{repo}/issues/{number}"
+                                    );
+                                    match clipboard::open_in_browser(&url) {
+                                        Ok(()) => {
+                                            action_status.set(Some(format!("Opened #{number}")));
+                                        }
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Open failed: {e}")));
+                                        }
+                                    }
+                                }
+                            }
+                            // --- Refresh ---
+                            KeyCode::Char('r') => {
+                                force_refresh.set(true);
+                                let idx = active_filter.get();
+                                let mut state = issues_state.read().clone();
+                                if idx < state.filters.len() {
+                                    state.filters[idx] = FilterData::default();
+                                }
+                                issues_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                if idx < times.len() {
+                                    times[idx] = None;
+                                }
+                                filter_fetch_times.set(times);
+                                pending_detail.set(None);
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                            }
+                            // Refresh all filters
+                            KeyCode::Char('R') => {
+                                let mut state = issues_state.read().clone();
+                                for filter in &mut state.filters {
+                                    *filter = FilterData::default();
+                                }
+                                issues_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                times.fill(None);
+                                filter_fetch_times.set(times);
+                                pending_detail.set(None);
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                                refresh_all.set(true);
+                            }
+                            // --- Search ---
+                            KeyCode::Char('/') => {
+                                input_mode.set(InputMode::Search);
+                                action_status.set(None);
+                            }
+                            // --- Navigation ---
+                            KeyCode::Down | KeyCode::Char('j') => {
+                                if total_rows > 0 {
+                                    let new_cursor =
+                                        (cursor.get() + 1).min(total_rows.saturating_sub(1));
+                                    cursor.set(new_cursor);
+                                    if new_cursor >= scroll_offset.get() + visible_rows {
+                                        scroll_offset
+                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                    }
+                                    preview_scroll.set(0);
+                                }
+                            }
+                            KeyCode::Up | KeyCode::Char('k') => {
+                                let new_cursor = cursor.get().saturating_sub(1);
+                                cursor.set(new_cursor);
+                                if new_cursor < scroll_offset.get() {
+                                    scroll_offset.set(new_cursor);
+                                }
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('g') => {
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('G') => {
+                                if total_rows > 0 {
+                                    cursor.set(total_rows.saturating_sub(1));
+                                    scroll_offset.set(total_rows.saturating_sub(visible_rows));
+                                    preview_scroll.set(0);
+                                }
+                            }
+                            KeyCode::PageDown => {
+                                if total_rows > 0 {
+                                    let new_cursor = (cursor.get() + visible_rows)
+                                        .min(total_rows.saturating_sub(1));
+                                    cursor.set(new_cursor);
+                                    scroll_offset.set(
+                                        new_cursor.saturating_sub(visible_rows.saturating_sub(1)),
+                                    );
+                                    preview_scroll.set(0);
+                                }
+                            }
+                            KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                if preview_open.get() {
+                                    let half = visible_rows / 2;
+                                    preview_scroll.set(preview_scroll.get() + half);
+                                } else if total_rows > 0 {
+                                    let half = visible_rows / 2;
+                                    let new_cursor =
+                                        (cursor.get() + half).min(total_rows.saturating_sub(1));
+                                    cursor.set(new_cursor);
+                                    if new_cursor >= scroll_offset.get() + visible_rows {
+                                        scroll_offset
+                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                    }
+                                }
+                            }
+                            KeyCode::PageUp => {
+                                let new_cursor = cursor.get().saturating_sub(visible_rows);
+                                cursor.set(new_cursor);
+                                scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
+                                if preview_open.get() {
+                                    let half = visible_rows / 2;
+                                    preview_scroll.set(preview_scroll.get().saturating_sub(half));
+                                } else {
+                                    let half = visible_rows / 2;
+                                    let new_cursor = cursor.get().saturating_sub(half);
+                                    cursor.set(new_cursor);
+                                    if new_cursor < scroll_offset.get() {
+                                        scroll_offset.set(new_cursor);
+                                    }
+                                }
+                            }
+                            // --- Sidebar tab cycling ---
+                            KeyCode::Char(']') => {
+                                let current = sidebar_tab.get();
+                                let idx =
+                                    ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
+                                sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
+                                preview_scroll.set(0);
+                            }
+                            KeyCode::Char('[') => {
+                                let current = sidebar_tab.get();
+                                let idx =
+                                    ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
+                                sidebar_tab.set(
+                                    ISSUE_TABS[if idx == 0 {
+                                        ISSUE_TABS.len() - 1
+                                    } else {
+                                        idx - 1
+                                    }],
+                                );
+                                preview_scroll.set(0);
+                            }
+                            // --- Filter switching ---
+                            KeyCode::Char('h') | KeyCode::Left => {
+                                if filter_count > 0 {
+                                    let current = active_filter.get();
+                                    active_filter.set(if current == 0 {
+                                        filter_count.saturating_sub(1)
+                                    } else {
+                                        current - 1
+                                    });
+                                    cursor.set(0);
+                                    scroll_offset.set(0);
+                                    preview_scroll.set(0);
+                                    pending_detail.set(None);
+                                }
+                            }
+                            KeyCode::Char('l') | KeyCode::Right => {
+                                if filter_count > 0 {
+                                    active_filter.set((active_filter.get() + 1) % filter_count);
+                                    cursor.set(0);
+                                    scroll_offset.set(0);
+                                    preview_scroll.set(0);
+                                    pending_detail.set(None);
+                                }
+                            }
+                            KeyCode::Char('?') => {
+                                help_visible.set(true);
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -1141,44 +1523,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         }
     }
     .into_any()
-}
-
-// ---------------------------------------------------------------------------
-// Keyboard input handlers (extracted to avoid too_many_lines)
-// ---------------------------------------------------------------------------
-
-fn handle_search_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut search_query: State<String>,
-    mut cursor: State<usize>,
-    mut scroll_offset: State<usize>,
-) {
-    match code {
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            search_query.set(String::new());
-        }
-        KeyCode::Enter => {
-            input_mode.set(InputMode::Normal);
-        }
-        KeyCode::Backspace => {
-            let mut q = search_query.read().clone();
-            q.pop();
-            search_query.set(q);
-            cursor.set(0);
-            scroll_offset.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut q = search_query.read().clone();
-            q.push(ch);
-            search_query.set(q);
-            cursor.set(0);
-            scroll_offset.set(0);
-        }
-        _ => {}
-    }
 }
 
 /// Parse comma-separated usernames from input string.
@@ -1549,433 +1893,6 @@ fn handle_label_input(
             buf.push(ch);
             input_buffer.set(buf);
             label_selection.set(0);
-        }
-        _ => {}
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn handle_confirm_input(
-    code: KeyCode,
-    pending: &PendingAction,
-    mut input_mode: State<InputMode>,
-    mut action_status: State<Option<String>>,
-    issues_state: &State<IssuesState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
-) {
-    match code {
-        KeyCode::Char('y' | 'Y') => {
-            let info = get_current_issue_info(issues_state, filter_idx, cursor);
-            if let Some((owner, repo, number)) = info
-                && let Some(engine) = engine
-            {
-                match pending {
-                    PendingAction::Close => engine.send(Request::CloseIssue {
-                        owner,
-                        repo,
-                        number,
-                        reply_tx: event_tx.clone(),
-                    }),
-                    PendingAction::Reopen => engine.send(Request::ReopenIssue {
-                        owner,
-                        repo,
-                        number,
-                        reply_tx: event_tx.clone(),
-                    }),
-                }
-            }
-            let _ = action_status; // engine events will update status
-            input_mode.set(InputMode::Normal);
-        }
-        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            action_status.set(Some("Cancelled".to_owned()));
-        }
-        _ => {}
-    }
-}
-
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn handle_normal_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    should_exit: Option<State<bool>>,
-    switch_view: Option<State<bool>>,
-    switch_view_back: Option<State<bool>>,
-    scope_toggle: Option<State<bool>>,
-    mut preview_open: State<bool>,
-    mut preview_scroll: State<usize>,
-    mut cursor: State<usize>,
-    mut scroll_offset: State<usize>,
-    mut active_filter: State<usize>,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    mut action_status: State<Option<String>>,
-    mut label_candidates: State<Vec<String>>,
-    mut label_selection: State<usize>,
-    mut assignee_candidates: State<Vec<String>>,
-    mut assignee_selection: State<usize>,
-    total_rows: usize,
-    visible_rows: usize,
-    filter_count: usize,
-    mut issues_state: State<IssuesState>,
-    current_filter_idx: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
-    mut filter_fetch_times: State<Vec<Option<std::time::Instant>>>,
-    mut help_visible: State<bool>,
-    _rate_limit_state: State<Option<RateLimitInfo>>,
-    mut sidebar_tab: State<SidebarTab>,
-    mut pending_detail: State<DetailRequest>,
-    mut force_refresh: State<bool>,
-    mut refresh_all: State<bool>,
-) {
-    match code {
-        KeyCode::Char('q') => {
-            if let Some(mut exit) = should_exit {
-                exit.set(true);
-            }
-        }
-        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-            if let Some(mut exit) = should_exit {
-                exit.set(true);
-            }
-        }
-        KeyCode::Char('n') => {
-            if let Some(mut sv) = switch_view {
-                sv.set(true);
-            }
-        }
-        KeyCode::Char('N') => {
-            if let Some(mut sv) = switch_view_back {
-                sv.set(true);
-            }
-        }
-        KeyCode::Char('S') => {
-            if let Some(mut st) = scope_toggle {
-                st.set(true);
-            }
-        }
-        KeyCode::Char('p') => {
-            preview_open.set(!preview_open.get());
-            preview_scroll.set(0);
-        }
-        // --- Issue Actions (T086) ---
-        KeyCode::Char('c') => {
-            input_mode.set(InputMode::Comment);
-            input_buffer.set(String::new());
-            action_status.set(None);
-        }
-        KeyCode::Char('L') => {
-            input_mode.set(InputMode::Label);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            label_candidates.set(Vec::new());
-            action_status.set(None);
-            if let Some(engine) = engine
-                && let Some((owner, repo, _)) =
-                    get_current_issue_info(&issues_state, current_filter_idx, cursor.get())
-            {
-                engine.send(Request::FetchRepoLabels {
-                    owner,
-                    repo,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-        }
-        // Quick self-assign (Ctrl+a) - immediate action without text input
-        KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
-            // Self-assign requires knowing the current user login; not directly available via engine
-            // without a separate Request. For now, assign using empty logins list (no-op guard).
-            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-            if let Some((owner, repo, number)) = info {
-                // Use "@me" special login — engine can resolve it.
-                if let Some(engine) = engine {
-                    engine.send(Request::AssignIssue {
-                        owner,
-                        repo,
-                        number,
-                        logins: vec!["@me".to_owned()],
-                        reply_tx: event_tx.clone(),
-                    });
-                }
-            }
-        }
-        KeyCode::Char('a') => {
-            input_mode.set(InputMode::Assign);
-            assignee_selection.set(0);
-            action_status.set(None);
-
-            // Get current issue and build candidates from its data
-            let (current_assignees, candidates) = {
-                let state = issues_state.read();
-                let issue = state
-                    .filters
-                    .get(current_filter_idx)
-                    .and_then(|s| s.issues.get(cursor.get()));
-
-                if let Some(issue) = issue {
-                    let assignees = issue
-                        .assignees
-                        .iter()
-                        .map(|a| a.login.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", ");
-
-                    // Add trailing ", " to show all suggestions immediately
-                    let assignees_str = if assignees.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{assignees}, ")
-                    };
-
-                    // Build candidates from Issue data (instant, no API call)
-                    let candidates = build_issue_assignee_candidates(issue);
-
-                    (assignees_str, candidates)
-                } else {
-                    (String::new(), Vec::new())
-                }
-            };
-
-            input_buffer.set(current_assignees);
-            assignee_candidates.set(candidates); // Set immediately, no async fetch
-            // Also fetch real collaborators from engine to augment local candidates.
-            if let Some(engine) = engine
-                && let Some((owner, repo, _)) =
-                    get_current_issue_info(&issues_state, current_filter_idx, cursor.get())
-            {
-                engine.send(Request::FetchRepoCollaborators {
-                    owner,
-                    repo,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-        }
-        KeyCode::Char('A') => {
-            // Unassign: fire immediately for the first assignee.
-            let state = issues_state.read();
-            let issue = state
-                .filters
-                .get(current_filter_idx)
-                .and_then(|s| s.issues.get(cursor.get()));
-            if let Some(issue) = issue
-                && let Some(assignee) = issue.assignees.first()
-            {
-                let login = assignee.login.clone();
-                if let Some(repo_ref) = &issue.repo {
-                    let owner = repo_ref.owner.clone();
-                    let repo = repo_ref.name.clone();
-                    let number = issue.number;
-                    if let Some(engine) = engine {
-                        engine.send(Request::UnassignIssue {
-                            owner,
-                            repo,
-                            number,
-                            login,
-                            reply_tx: event_tx.clone(),
-                        });
-                    }
-                }
-            }
-        }
-        KeyCode::Char('x') => {
-            input_mode.set(InputMode::Confirm(PendingAction::Close));
-            action_status.set(None);
-        }
-        KeyCode::Char('X') => {
-            input_mode.set(InputMode::Confirm(PendingAction::Reopen));
-            action_status.set(None);
-        }
-        // --- Clipboard & Browser (T091, T092) ---
-        KeyCode::Char('y') => {
-            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-            if let Some((_, _, number)) = info {
-                let text = number.to_string();
-                match clipboard::copy_to_clipboard(&text) {
-                    Ok(()) => action_status.set(Some(format!("Copied #{number}"))),
-                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
-                }
-            }
-        }
-        KeyCode::Char('Y') => {
-            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-            if let Some((owner, repo, number)) = info {
-                let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
-                match clipboard::copy_to_clipboard(&url) {
-                    Ok(()) => action_status.set(Some(format!("Copied URL for #{number}"))),
-                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
-                }
-            }
-        }
-        KeyCode::Char('o') => {
-            let info = get_current_issue_info(&issues_state, current_filter_idx, cursor.get());
-            if let Some((owner, repo, number)) = info {
-                let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
-                match clipboard::open_in_browser(&url) {
-                    Ok(()) => action_status.set(Some(format!("Opened #{number}"))),
-                    Err(e) => action_status.set(Some(format!("Open failed: {e}"))),
-                }
-            }
-        }
-        // Retry / refresh
-        KeyCode::Char('r') => {
-            force_refresh.set(true);
-            let idx = active_filter.get();
-            let mut state = issues_state.read().clone();
-            if idx < state.filters.len() {
-                state.filters[idx] = FilterData::default();
-            }
-            issues_state.set(state);
-            let mut times = filter_fetch_times.read().clone();
-            if idx < times.len() {
-                times[idx] = None;
-            }
-            filter_fetch_times.set(times);
-            pending_detail.set(None);
-            cursor.set(0);
-            scroll_offset.set(0);
-        }
-        // Refresh all filters
-        KeyCode::Char('R') => {
-            let mut state = issues_state.read().clone();
-            for filter in &mut state.filters {
-                *filter = FilterData::default();
-            }
-            issues_state.set(state);
-            let mut times = filter_fetch_times.read().clone();
-            times.fill(None);
-            filter_fetch_times.set(times);
-            pending_detail.set(None);
-            cursor.set(0);
-            scroll_offset.set(0);
-            // Signal the render body to eagerly fetch all filters.
-            refresh_all.set(true);
-        }
-        // --- Search (T087) ---
-        KeyCode::Char('/') => {
-            input_mode.set(InputMode::Search);
-            action_status.set(None);
-        }
-        // --- Navigation ---
-        KeyCode::Down | KeyCode::Char('j') => {
-            if total_rows > 0 {
-                let new_cursor = (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                cursor.set(new_cursor);
-                if new_cursor >= scroll_offset.get() + visible_rows {
-                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                }
-                preview_scroll.set(0);
-            }
-        }
-        KeyCode::Up | KeyCode::Char('k') => {
-            let new_cursor = cursor.get().saturating_sub(1);
-            cursor.set(new_cursor);
-            if new_cursor < scroll_offset.get() {
-                scroll_offset.set(new_cursor);
-            }
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('g') => {
-            cursor.set(0);
-            scroll_offset.set(0);
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('G') => {
-            if total_rows > 0 {
-                cursor.set(total_rows.saturating_sub(1));
-                scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                preview_scroll.set(0);
-            }
-        }
-        KeyCode::PageDown => {
-            if total_rows > 0 {
-                let new_cursor = (cursor.get() + visible_rows).min(total_rows.saturating_sub(1));
-                cursor.set(new_cursor);
-                scroll_offset.set(new_cursor.saturating_sub(visible_rows.saturating_sub(1)));
-                preview_scroll.set(0);
-            }
-        }
-        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            if preview_open.get() {
-                let half = visible_rows / 2;
-                preview_scroll.set(preview_scroll.get() + half);
-            } else if total_rows > 0 {
-                let half = visible_rows / 2;
-                let new_cursor = (cursor.get() + half).min(total_rows.saturating_sub(1));
-                cursor.set(new_cursor);
-                if new_cursor >= scroll_offset.get() + visible_rows {
-                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                }
-            }
-        }
-        KeyCode::PageUp => {
-            let new_cursor = cursor.get().saturating_sub(visible_rows);
-            cursor.set(new_cursor);
-            scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-            if preview_open.get() {
-                let half = visible_rows / 2;
-                preview_scroll.set(preview_scroll.get().saturating_sub(half));
-            } else {
-                let half = visible_rows / 2;
-                let new_cursor = cursor.get().saturating_sub(half);
-                cursor.set(new_cursor);
-                if new_cursor < scroll_offset.get() {
-                    scroll_offset.set(new_cursor);
-                }
-            }
-        }
-        // Sidebar tab cycling
-        KeyCode::Char(']') => {
-            let current = sidebar_tab.get();
-            let idx = ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
-            sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
-            preview_scroll.set(0);
-        }
-        KeyCode::Char('[') => {
-            let current = sidebar_tab.get();
-            let idx = ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
-            sidebar_tab.set(
-                ISSUE_TABS[if idx == 0 {
-                    ISSUE_TABS.len() - 1
-                } else {
-                    idx - 1
-                }],
-            );
-            preview_scroll.set(0);
-        }
-        // Section switching
-        KeyCode::Char('h') | KeyCode::Left => {
-            if filter_count > 0 {
-                let current = active_filter.get();
-                active_filter.set(if current == 0 {
-                    filter_count.saturating_sub(1)
-                } else {
-                    current - 1
-                });
-                cursor.set(0);
-                scroll_offset.set(0);
-                preview_scroll.set(0);
-                pending_detail.set(None);
-            }
-        }
-        KeyCode::Char('l') | KeyCode::Right => {
-            if filter_count > 0 {
-                active_filter.set((active_filter.get() + 1) % filter_count);
-                cursor.set(0);
-                scroll_offset.set(0);
-                preview_scroll.set(0);
-                pending_detail.set(None);
-            }
-        }
-        KeyCode::Char('?') => {
-            help_visible.set(true);
         }
         _ => {}
     }

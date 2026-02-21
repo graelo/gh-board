@@ -1,6 +1,6 @@
 [package]
 name = "gh-board"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.88.0"
 description = "A blazingly fast terminal dashboard for GitHub pull requests, issues, and notifications"
@@ -8,9 +8,6 @@ repository = "https://github.com/graelo/gh-board"
 license = "MIT"
 keywords = ["cli", "dashboard", "github", "tui"]
 categories = ["command-line-utilities"]
-
-[profile.release]
-strip = true
 
 [dependencies]
 anyhow = "1"
@@ -72,3 +69,6 @@ tree-sitter-rust = "0.24"
 tree-sitter-toml-ng = "0.7"
 tree-sitter-typescript = "0.23"
 unicode-width = "0.2"
+
+[profile.release]
+strip = true

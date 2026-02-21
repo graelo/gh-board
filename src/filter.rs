@@ -2,6 +2,22 @@ use crate::components::table::Row;
 use crate::github::types::Notification;
 
 // ---------------------------------------------------------------------------
+// Scope injection helper
+// ---------------------------------------------------------------------------
+
+/// Append `repo:<scope>` to `filters` if a scope is active and `repo:` is not
+/// already present as a token.  Trims the result so an empty base string
+/// doesn't produce a leading space.
+pub(crate) fn apply_scope(filters: &str, scope: Option<&str>) -> String {
+    match scope {
+        Some(repo) if !filters.split_whitespace().any(|t| t.starts_with("repo:")) => {
+            format!("{filters} repo:{repo}").trim().to_owned()
+        }
+        _ => filters.to_owned(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Generic row filter (T088)
 // ---------------------------------------------------------------------------
 
@@ -198,6 +214,44 @@ mod tests {
             url: String::new(),
             updated_at: Utc::now(),
         }
+    }
+
+    // --- apply_scope tests ---
+
+    #[test]
+    fn apply_scope_no_scope() {
+        assert_eq!(apply_scope("is:open", None), "is:open");
+    }
+
+    #[test]
+    fn apply_scope_appends_repo() {
+        assert_eq!(
+            apply_scope("is:open", Some("owner/repo")),
+            "is:open repo:owner/repo"
+        );
+    }
+
+    #[test]
+    fn apply_scope_empty_base_trims() {
+        assert_eq!(apply_scope("", Some("owner/repo")), "repo:owner/repo");
+    }
+
+    #[test]
+    fn apply_scope_already_has_repo_token() {
+        // repo: already present as a token — must not duplicate.
+        assert_eq!(
+            apply_scope("repo:other/repo is:open", Some("owner/repo")),
+            "repo:other/repo is:open"
+        );
+    }
+
+    #[test]
+    fn apply_scope_norepo_prefix_not_confused() {
+        // "norepo:" should not be mistaken for "repo:".
+        assert_eq!(
+            apply_scope("norepo:foo is:open", Some("owner/repo")),
+            "norepo:foo is:open repo:owner/repo"
+        );
     }
 
     // --- filter_rows tests ---

@@ -15,7 +15,7 @@ use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::NotificationFilter;
 use crate::engine::{EngineHandle, Event, Request};
-use crate::filter;
+use crate::filter::{self, apply_scope};
 use crate::theme::ResolvedTheme;
 use crate::types::{Notification, RateLimitInfo, SubjectType};
 
@@ -308,12 +308,7 @@ pub fn NotificationsView<'a>(
             .iter()
             .map(|cfg| {
                 let mut modified = cfg.clone();
-                if let Some(ref repo) = *scope_repo {
-                    let has_repo = modified.filters.contains("repo:");
-                    if !has_repo {
-                        modified.filters = format!("{} repo:{repo}", cfg.filters);
-                    }
-                }
+                modified.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
                 modified
             })
             .collect();
@@ -336,14 +331,7 @@ pub fn NotificationsView<'a>(
                 in_flight[filter_idx] = true;
             }
             let mut modified_filter = cfg.clone();
-            if let Some(ref repo) = *scope_repo {
-                let has_repo = modified_filter.filters.contains("repo:");
-                if !has_repo {
-                    format!("{} repo:{repo}", modified_filter.filters)
-                        .trim()
-                        .clone_into(&mut modified_filter.filters);
-                }
-            }
+            modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
             eng.send(Request::FetchNotifications {
                 filter_idx,
                 filter: modified_filter,
@@ -365,15 +353,7 @@ pub fn NotificationsView<'a>(
 
         let filter_idx = current_filter_idx;
         let mut modified_filter = cfg.clone();
-        // Inject repo scope into the filter string if active and not already present.
-        if let Some(ref repo) = *scope_repo {
-            let has_repo = modified_filter.filters.contains("repo:");
-            if !has_repo {
-                format!("{} repo:{repo}", modified_filter.filters)
-                    .trim()
-                    .clone_into(&mut modified_filter.filters);
-            }
-        }
+        modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
 
         eng.send(Request::FetchNotifications {
             filter_idx,

@@ -17,7 +17,7 @@ use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{MergedBindings, ViewContext};
 use crate::config::types::PrFilter;
 use crate::engine::{EngineHandle, Event, PrRef, Request};
-use crate::filter;
+use crate::filter::{self, apply_scope};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine};
 use crate::theme::ResolvedTheme;
@@ -652,14 +652,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             .iter()
             .map(|cfg| {
                 let mut modified = cfg.clone();
-                if let Some(ref repo) = *scope_repo
-                    && !cfg
-                        .filters
-                        .split_whitespace()
-                        .any(|t| t.starts_with("repo:"))
-                {
-                    modified.filters = format!("{} repo:{repo}", cfg.filters);
-                }
+                modified.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
                 modified
             })
             .collect();
@@ -682,14 +675,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 in_flight[filter_idx] = true;
             }
             let mut modified_filter = cfg.clone();
-            if let Some(ref repo) = *scope_repo
-                && !cfg
-                    .filters
-                    .split_whitespace()
-                    .any(|t| t.starts_with("repo:"))
-            {
-                modified_filter.filters = format!("{} repo:{repo}", cfg.filters);
-            }
+            modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
             engine.send(Request::FetchPrs {
                 filter_idx,
                 filter: modified_filter,
@@ -713,15 +699,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
         let filter_idx = current_filter_idx;
         let mut modified_filter = cfg.clone();
-        // Inject repo scope if active and not already present.
-        if let Some(ref repo) = *scope_repo
-            && !cfg
-                .filters
-                .split_whitespace()
-                .any(|t| t.starts_with("repo:"))
-        {
-            modified_filter.filters = format!("{} repo:{repo}", cfg.filters);
-        }
+        modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
 
         // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
         let force = force_refresh.get();

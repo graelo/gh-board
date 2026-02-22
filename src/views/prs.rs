@@ -874,6 +874,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 times[current_filter_for_poll] = None;
                             }
                             filter_fetch_times.set(times);
+                            force_refresh.set(true);
                         }
                         Event::MutationError {
                             description,

@@ -714,7 +714,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             modifiers,
                             input_mode,
                             input_buffer,
-                            action_status,
                             label_candidates,
                             label_selection,
                             label_selected,
@@ -843,7 +842,12 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         input_buffer.set(String::new());
                                         label_selection.set(0);
                                         label_candidates.set(Vec::new());
-                                        label_selected.set(Vec::new());
+                                        let current_labels = get_current_issue_labels(
+                                            &issues_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        label_selected.set(current_labels);
                                         action_status.set(None);
                                         if let Some(engine) = engine
                                             && let Some((owner, repo, _)) = &info
@@ -1782,13 +1786,12 @@ fn handle_text_input(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_label_input(
     code: KeyCode,
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
     mut label_selected: State<Vec<String>>,
@@ -1839,9 +1842,13 @@ fn handle_label_input(
             label_selection.set(0);
         }
         KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
             let checked = label_selected.read().clone();
-            let labels = if checked.is_empty() {
-                let buf = input_buffer.read().clone();
+            let labels: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = clear all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
                 let candidates = label_candidates.read();
                 let filtered = text_input::filter_suggestions(&candidates, &buf);
                 let label = if filtered.is_empty() {
@@ -1851,26 +1858,26 @@ fn handle_label_input(
                     filtered[sel].clone()
                 };
                 if label.is_empty() {
-                    vec![]
+                    checked
                 } else {
-                    vec![label]
+                    let mut all = checked;
+                    if !all.contains(&label) {
+                        all.push(label);
+                    }
+                    all
                 }
-            } else {
-                checked
             };
-            if !labels.is_empty() {
-                let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info
-                    && let Some(engine) = engine
-                {
-                    engine.send(Request::AddIssueLabels {
-                        owner,
-                        repo,
-                        number,
-                        labels,
-                        reply_tx: event_tx.clone(),
-                    });
-                }
+            let info = get_current_issue_info(issues_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(engine) = engine
+            {
+                engine.send(Request::SetIssueLabels {
+                    owner,
+                    repo,
+                    number,
+                    labels,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
@@ -1913,6 +1920,21 @@ fn get_current_issue_info(
     let issue = filter.issues.get(cursor)?;
     let repo_ref = issue.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), issue.number))
+}
+
+fn get_current_issue_labels(
+    issues_state: &State<IssuesState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = issues_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(issue) = filter.issues.get(cursor) else {
+        return vec![];
+    };
+    issue.labels.iter().map(|l| l.name.clone()).collect()
 }
 
 fn build_issue_sidebar_meta(

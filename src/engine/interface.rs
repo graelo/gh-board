@@ -194,7 +194,8 @@ pub enum Request {
         login: String,
         reply_tx: Sender<Event>,
     },
-    AddPrLabels {
+    /// Replace the full label set on a PR. An empty `labels` vec clears all labels.
+    SetPrLabels {
         owner: String,
         repo: String,
         number: u64,
@@ -224,7 +225,8 @@ pub enum Request {
         body: String,
         reply_tx: Sender<Event>,
     },
-    AddIssueLabels {
+    /// Replace the full label set on an issue. An empty `labels` vec clears all labels.
+    SetIssueLabels {
         owner: String,
         repo: String,
         number: u64,

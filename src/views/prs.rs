@@ -13,7 +13,7 @@ use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
-use crate::components::text_input::{RenderedTextInput, TextInput};
+use crate::components::text_input::{self, RenderedTextInput, TextInput};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -966,7 +966,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             modifiers,
                             input_mode,
                             input_buffer,
-                            action_status,
                             label_candidates,
                             label_selection,
                             label_selected,
@@ -1358,7 +1357,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         input_buffer.set(String::new());
                                         label_selection.set(0);
                                         label_candidates.set(Vec::new());
-                                        label_selected.set(Vec::new());
+                                        let current_labels = get_current_pr_labels(
+                                            &prs_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        label_selected.set(current_labels);
                                         action_status.set(None);
                                         if let Some(ref eng) = engine
                                             && let Some((owner, repo, _)) = get_current_pr_info(
@@ -2204,13 +2208,12 @@ fn handle_assign_input(
 }
 
 /// Handle text input for adding a label to a PR.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_label_input(
     code: KeyCode,
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
     mut label_selected: State<Vec<String>>,
@@ -2220,7 +2223,6 @@ fn handle_label_input(
     engine: Option<&EngineHandle>,
     event_tx: &std::sync::mpsc::Sender<Event>,
 ) {
-    use crate::components::text_input;
     match code {
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
@@ -2262,9 +2264,13 @@ fn handle_label_input(
             label_selection.set(0);
         }
         KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
             let checked = label_selected.read().clone();
-            let labels = if checked.is_empty() {
-                let buf = input_buffer.read().clone();
+            let labels: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = clear all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
                 let candidates = label_candidates.read();
                 let filtered = text_input::filter_suggestions(&candidates, &buf);
                 let label = if filtered.is_empty() {
@@ -2274,26 +2280,26 @@ fn handle_label_input(
                     filtered[sel].clone()
                 };
                 if label.is_empty() {
-                    vec![]
+                    checked
                 } else {
-                    vec![label]
+                    let mut all = checked;
+                    if !all.contains(&label) {
+                        all.push(label);
+                    }
+                    all
                 }
-            } else {
-                checked
             };
-            if !labels.is_empty() {
-                let info = get_current_pr_info(prs_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info
-                    && let Some(eng) = engine
-                {
-                    eng.send(Request::AddPrLabels {
-                        owner,
-                        repo,
-                        number,
-                        labels,
-                        reply_tx: event_tx.clone(),
-                    });
-                }
+            let info = get_current_pr_info(prs_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(eng) = engine
+            {
+                eng.send(Request::SetPrLabels {
+                    owner,
+                    repo,
+                    number,
+                    labels,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
@@ -2333,6 +2339,21 @@ fn get_current_pr_info(
     let pr = filter.prs.get(cursor)?;
     let repo_ref = pr.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), pr.number))
+}
+
+fn get_current_pr_labels(
+    prs_state: &State<PrsState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = prs_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(pr) = filter.prs.get(cursor) else {
+        return vec![];
+    };
+    pr.labels.iter().map(|l| l.name.clone()).collect()
 }
 
 /// Build the `SidebarMeta` header from a pull request.

@@ -56,8 +56,8 @@ pub(crate) async fn add_comment(
     Ok(())
 }
 
-/// Add labels to an issue.
-pub(crate) async fn add_labels(
+/// Replace all labels on an issue/PR (PUT semantics — removes labels not in the list).
+pub(crate) async fn set_labels(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
@@ -67,9 +67,9 @@ pub(crate) async fn add_labels(
     let route = format!("/repos/{owner}/{repo}/issues/{number}/labels");
     let payload = serde_json::json!({ "labels": labels });
     let _: serde_json::Value = octocrab
-        .post(route, Some(&payload))
+        .put(route, Some(&payload))
         .await
-        .context("adding labels to issue")?;
+        .context("setting labels on issue")?;
     Ok(())
 }
 

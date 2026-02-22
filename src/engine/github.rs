@@ -732,28 +732,28 @@ async fn handle_request(
             }
         }
 
-        Request::AddPrLabels {
+        Request::SetPrLabels {
             owner,
             repo,
             number,
             labels,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddPrLabels")
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrLabels")
             else {
                 return;
             };
-            match issue_actions::add_labels(&octocrab, &owner, &repo, number, &labels).await {
+            match issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await {
                 Ok(()) => {
-                    tracing::debug!("engine: sending MutationOk AddPrLabels #{number}");
+                    tracing::debug!("engine: sending MutationOk SetPrLabels #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Added labels to PR #{number}"),
+                        description: format!("Set labels on PR #{number}"),
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: AddPrLabels #{number} error: {e}");
+                    tracing::debug!("engine: SetPrLabels #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Add labels to PR #{number}"),
+                        description: format!("Set labels on PR #{number}"),
                         message: e.to_string(),
                     });
                 }
@@ -838,26 +838,28 @@ async fn handle_request(
             }
         }
 
-        Request::AddIssueLabels {
+        Request::SetIssueLabels {
             owner,
             repo,
             number,
             labels,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddIssueLabels")
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueLabels")
             else {
                 return;
             };
-            match issue_actions::add_labels(&octocrab, &owner, &repo, number, &labels).await {
+            match issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await {
                 Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk SetIssueLabels #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Added labels to issue #{number}"),
+                        description: format!("Set labels on issue #{number}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: SetIssueLabels #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Add labels to issue #{number}"),
+                        description: format!("Set labels on issue #{number}"),
                         message: e.to_string(),
                     });
                 }

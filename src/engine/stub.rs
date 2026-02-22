@@ -139,11 +139,11 @@ impl StubEngine {
                 | Request::ReadyForReview { reply_tx, .. }
                 | Request::AssignPr { reply_tx, .. }
                 | Request::UnassignPr { reply_tx, .. }
-                | Request::AddPrLabels { reply_tx, .. }
+                | Request::SetPrLabels { reply_tx, .. }
                 | Request::CloseIssue { reply_tx, .. }
                 | Request::ReopenIssue { reply_tx, .. }
                 | Request::AddIssueComment { reply_tx, .. }
-                | Request::AddIssueLabels { reply_tx, .. }
+                | Request::SetIssueLabels { reply_tx, .. }
                 | Request::AssignIssue { reply_tx, .. }
                 | Request::UnassignIssue { reply_tx, .. }
                 | Request::RerunWorkflowRun { reply_tx, .. }

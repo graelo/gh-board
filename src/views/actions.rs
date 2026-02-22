@@ -427,36 +427,6 @@ pub fn ActionsView<'a>(
         });
     }
 
-    // Trigger job fetch when detail sidebar is open.
-    if detail_open.get() && is_active {
-        let state_snap = actions_state.read();
-        let cur_run = state_snap
-            .filters
-            .get(current_filter_idx)
-            .and_then(|f| f.runs.get(cursor.get()))
-            .cloned();
-        drop(state_snap);
-        if let Some(run) = cur_run {
-            let run_id = run.id;
-            if !jobs_in_flight.read().contains(&run_id)
-                && !jobs_cache.read().contains_key(&run_id)
-                && let Some(ref eng) = engine
-                && let Some((owner, repo)) =
-                    owner_repo_for_run(&run, filters_cfg.get(current_filter_idx))
-            {
-                eng.send(Request::FetchRunJobs {
-                    owner,
-                    repo,
-                    run_id,
-                    reply_tx: event_tx.clone(),
-                });
-                let mut ifl = jobs_in_flight.read().clone();
-                ifl.insert(run_id);
-                jobs_in_flight.set(ifl);
-            }
-        }
-    }
-
     // Poll engine events.
     {
         let rx_for_poll = event_rx_arc.clone();
@@ -639,6 +609,35 @@ pub fn ActionsView<'a>(
     let filtered_run_indices_for_kb = filtered_run_indices.clone();
     let current_filter_cfg_for_kb = filters_cfg.get(current_filter_idx).cloned();
 
+    // Trigger job fetch when detail sidebar is open.
+    // Uses filtered_run_indices to correctly map cursor → unfiltered run index,
+    // so this works correctly regardless of the active workflow nav selection.
+    if detail_open.get()
+        && is_active
+        && let Some(cur_run) = filtered_run_indices
+            .get(cursor.get())
+            .and_then(|&orig_idx| current_data?.runs.get(orig_idx))
+            .cloned()
+    {
+        let run_id = cur_run.id;
+        if !jobs_in_flight.read().contains(&run_id)
+            && !jobs_cache.read().contains_key(&run_id)
+            && let Some(ref eng) = engine
+            && let Some((owner, repo)) =
+                owner_repo_for_run(&cur_run, filters_cfg.get(current_filter_idx))
+        {
+            eng.send(Request::FetchRunJobs {
+                owner,
+                repo,
+                run_id,
+                reply_tx: event_tx.clone(),
+            });
+            let mut ifl = jobs_in_flight.read().clone();
+            ifl.insert(run_id);
+            jobs_in_flight.set(ifl);
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Keyboard handling
     // -----------------------------------------------------------------------
@@ -783,8 +782,9 @@ pub fn ActionsView<'a>(
                                     match clipboard::copy_to_clipboard(&text) {
                                         Ok(()) => action_status
                                             .set(Some(format!("Copied #{}", run.run_number))),
-                                        Err(e) => action_status
-                                            .set(Some(format!("Copy failed: {e}"))),
+                                        Err(e) => {
+                                            action_status.set(Some(format!("Copy failed: {e}")))
+                                        }
                                     }
                                 }
                             }

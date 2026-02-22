@@ -771,6 +771,23 @@ pub fn ActionsView<'a>(
                                     let _ = clipboard::open_in_browser(&run.html_url);
                                 }
                             }
+                            // Copy run number
+                            KeyCode::Char('y') => {
+                                if let Some(run) = get_run_at_cursor(
+                                    &actions_state,
+                                    current_filter_idx,
+                                    cursor.get(),
+                                    &filtered_run_indices_for_kb,
+                                ) {
+                                    let text = run.run_number.to_string();
+                                    match clipboard::copy_to_clipboard(&text) {
+                                        Ok(()) => action_status
+                                            .set(Some(format!("Copied #{}", run.run_number))),
+                                        Err(e) => action_status
+                                            .set(Some(format!("Copy failed: {e}"))),
+                                    }
+                                }
+                            }
                             // Copy URL
                             KeyCode::Char('Y') => {
                                 if let Some(run) = get_run_at_cursor(
@@ -782,6 +799,36 @@ pub fn ActionsView<'a>(
                                 {
                                     let _ = clipboard::copy_to_clipboard(&run.html_url);
                                 }
+                            }
+                            // Refresh current filter
+                            KeyCode::Char('r') if !modifiers.contains(KeyModifiers::CONTROL) => {
+                                let idx = current_filter_idx;
+                                let mut state = actions_state.read().clone();
+                                if idx < state.filters.len() {
+                                    state.filters[idx] = FilterData::default();
+                                }
+                                actions_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                if idx < times.len() {
+                                    times[idx] = None;
+                                }
+                                filter_fetch_times.set(times);
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                            }
+                            // Refresh all filters
+                            KeyCode::Char('R') if !modifiers.contains(KeyModifiers::CONTROL) => {
+                                let mut state = actions_state.read().clone();
+                                for filter in &mut state.filters {
+                                    *filter = FilterData::default();
+                                }
+                                actions_state.set(state);
+                                let mut times = filter_fetch_times.read().clone();
+                                times.fill(None);
+                                filter_fetch_times.set(times);
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                                refresh_all.set(true);
                             }
                             // Toggle workflow navigator
                             KeyCode::Char('w') => {

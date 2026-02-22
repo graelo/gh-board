@@ -290,7 +290,6 @@ pub fn default_universal() -> Vec<Keybinding> {
         kb("Y", "copy_url", "Copy URL"),
         kb("?", "toggle_help", "Toggle help"),
         kb("q", "quit", "Quit"),
-        kb("ctrl+c", "quit", "Quit"),
     ]
 }
 
@@ -340,7 +339,7 @@ pub(crate) fn default_actions() -> Vec<Keybinding> {
         kb("N", "switch_view_back", "Switch view back"),
         kb("ctrl+r", "rerun_failed", "Re-run failed jobs"),
         kb("ctrl+R", "rerun_all", "Re-run all jobs"),
-        kb("ctrl+c", "cancel_run", "Cancel run"),
+        kb("ctrl+x", "cancel_run", "Cancel run"),
     ]
 }
 
@@ -733,7 +732,6 @@ mod tests {
         assert!(has("j"));
         assert!(has("k"));
         assert!(has("q"));
-        assert!(has("ctrl+c"));
         assert!(has("?"));
         assert!(has("/"));
     }

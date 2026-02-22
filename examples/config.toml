@@ -539,9 +539,6 @@ key = "q"
 builtin = "quit"
 name = "Quit"
 
-[[keybindings.universal]]
-key = "ctrl+c"
-builtin = "quit"
 
 # ------------------------------------------------------------------------------
 # PR view keybindings

@@ -13,7 +13,10 @@ use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
-use crate::config::keybindings::{MergedBindings, ViewContext};
+use crate::config::keybindings::{
+    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
+    ViewContext, expand_template, execute_shell_command,
+};
 use crate::config::types::ActionsFilter;
 use crate::engine::{EngineHandle, Event, Request};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
@@ -184,17 +187,6 @@ enum InputMode {
 }
 
 // ---------------------------------------------------------------------------
-// Pending mutation action (Phase 3)
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum PendingAction {
-    RerunFailed,
-    RerunAll,
-    Cancel,
-}
-
-// ---------------------------------------------------------------------------
 // Nav panel width
 // ---------------------------------------------------------------------------
 
@@ -348,7 +340,7 @@ pub fn ActionsView<'a>(
     let mut jobs_cache = hooks.use_state(HashMap::<u64, Vec<WorkflowJob>>::new);
     let mut jobs_in_flight = hooks.use_state(HashSet::<u64>::new);
 
-    let mut pending_action = hooks.use_state(|| Option::<PendingAction>::None);
+    let mut pending_action = hooks.use_state(|| Option::<BuiltinAction>::None);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
 
     let mut refresh_registered = hooks.use_state(|| false);
@@ -642,6 +634,7 @@ pub fn ActionsView<'a>(
     // Keyboard handling
     // -----------------------------------------------------------------------
 
+    let keybindings = props.keybindings.cloned();
     hooks.use_terminal_events({
         let engine_for_keys = engine.clone();
         let event_tx_for_keys = event_tx.clone();
@@ -719,337 +712,325 @@ pub fn ActionsView<'a>(
                             }
                         }
 
-                        match code {
-                            // Quit
-                            KeyCode::Char('q') => {
-                                if let Some(mut exit) = should_exit {
-                                    exit.set(true);
-                                }
-                            }
-                            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Some(mut exit) = should_exit {
-                                    exit.set(true);
-                                }
-                            }
-                            // Switch view
-                            KeyCode::Char('n') => {
-                                if let Some(mut sv) = switch_view {
-                                    sv.set(true);
-                                }
-                            }
-                            KeyCode::Char('N') => {
-                                if let Some(mut sv) = switch_view_back {
-                                    sv.set(true);
-                                }
-                            }
-                            // Help
-                            KeyCode::Char('?') => {
-                                help_visible.set(true);
-                            }
-                            // Esc: clear pending → close nav → close detail
-                            KeyCode::Esc => {
-                                if pending_action.get().is_some() {
-                                    pending_action.set(None);
-                                    action_status.set(Some("Cancelled".to_owned()));
-                                } else if nav_open.get() {
-                                    nav_focused.set(false);
-                                    nav_open.set(false);
-                                } else if detail_open.get() {
-                                    detail_open.set(false);
-                                }
-                            }
-                            // Open in browser
-                            KeyCode::Char('o') => {
-                                if let Some(run) = get_run_at_cursor(
-                                    &actions_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                    &filtered_run_indices_for_kb,
-                                ) && !run.html_url.is_empty()
-                                {
-                                    let _ = clipboard::open_in_browser(&run.html_url);
-                                }
-                            }
-                            // Copy run number
-                            KeyCode::Char('y') => {
-                                if let Some(run) = get_run_at_cursor(
-                                    &actions_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                    &filtered_run_indices_for_kb,
-                                ) {
-                                    let text = run.run_number.to_string();
-                                    match clipboard::copy_to_clipboard(&text) {
-                                        Ok(()) => action_status
-                                            .set(Some(format!("Copied #{}", run.run_number))),
-                                        Err(e) => {
-                                            action_status.set(Some(format!("Copy failed: {e}")));
+                        if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
+                            let current_run = get_run_at_cursor(
+                                &actions_state,
+                                current_filter_idx,
+                                cursor.get(),
+                                &filtered_run_indices_for_kb,
+                            );
+                            let vars = TemplateVars {
+                                url: current_run
+                                    .as_ref()
+                                    .map_or_else(String::new, |r| r.html_url.clone()),
+                                number: current_run
+                                    .as_ref()
+                                    .map_or_else(String::new, |r| r.run_number.to_string()),
+                                repo_name: current_filter_cfg_for_kb
+                                    .as_ref()
+                                    .map_or_else(String::new, |f| f.repo.clone()),
+                                head_branch: current_run
+                                    .as_ref()
+                                    .and_then(|r| r.head_branch.clone())
+                                    .unwrap_or_default(),
+                                base_branch: String::new(),
+                            };
+                            match keybindings
+                                .as_ref()
+                                .and_then(|kb| kb.resolve(&key_str, ViewContext::Actions))
+                            {
+                                Some(ResolvedBinding::Builtin(action)) => match action {
+                                    BuiltinAction::Quit => {
+                                        if let Some(mut exit) = should_exit {
+                                            exit.set(true);
                                         }
                                     }
-                                }
-                            }
-                            // Copy URL
-                            KeyCode::Char('Y') => {
-                                if let Some(run) = get_run_at_cursor(
-                                    &actions_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                    &filtered_run_indices_for_kb,
-                                ) && !run.html_url.is_empty()
-                                {
-                                    let _ = clipboard::copy_to_clipboard(&run.html_url);
-                                }
-                            }
-                            // Refresh current filter
-                            KeyCode::Char('r') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                                let idx = current_filter_idx;
-                                let mut state = actions_state.read().clone();
-                                if idx < state.filters.len() {
-                                    state.filters[idx] = FilterData::default();
-                                }
-                                actions_state.set(state);
-                                let mut times = filter_fetch_times.read().clone();
-                                if idx < times.len() {
-                                    times[idx] = None;
-                                }
-                                filter_fetch_times.set(times);
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                            }
-                            // Refresh all filters
-                            KeyCode::Char('R') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                                let mut state = actions_state.read().clone();
-                                for filter in &mut state.filters {
-                                    *filter = FilterData::default();
-                                }
-                                actions_state.set(state);
-                                let mut times = filter_fetch_times.read().clone();
-                                times.fill(None);
-                                filter_fetch_times.set(times);
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                refresh_all.set(true);
-                            }
-                            // Toggle workflow navigator
-                            KeyCode::Char('w') => {
-                                let new_open = !nav_open.get();
-                                nav_open.set(new_open);
-                                nav_focused.set(new_open);
-                            }
-                            // Toggle run detail sidebar
-                            KeyCode::Char('p') => {
-                                let new_open = !detail_open.get();
-                                detail_open.set(new_open);
-                                if new_open {
-                                    detail_scroll.set(0);
-                                }
-                            }
-                            // Sidebar scroll
-                            KeyCode::Char('[') => {
-                                if detail_open.get() {
-                                    detail_scroll.set(detail_scroll.get().saturating_sub(1));
-                                }
-                            }
-                            KeyCode::Char(']') => {
-                                if detail_open.get() {
-                                    detail_scroll.set(detail_scroll.get() + 1);
-                                }
-                            }
-                            // Re-run failed jobs (or confirm)
-                            KeyCode::Char('r') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Some(pa) = pending_action.get() {
-                                    if pa == PendingAction::RerunFailed {
-                                        send_rerun(
+                                    BuiltinAction::SwitchView => {
+                                        if let Some(mut sv) = switch_view {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SwitchViewBack => {
+                                        if let Some(mut sv) = switch_view_back {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleHelp => {
+                                        help_visible.set(true);
+                                    }
+                                    BuiltinAction::OpenBrowser => {
+                                        if let Some(run) = current_run
+                                            && !run.html_url.is_empty()
+                                        {
+                                            let _ = clipboard::open_in_browser(&run.html_url);
+                                        }
+                                    }
+                                    BuiltinAction::CopyNumber => {
+                                        if let Some(run) = current_run {
+                                            let text = run.run_number.to_string();
+                                            match clipboard::copy_to_clipboard(&text) {
+                                                Ok(()) => action_status.set(Some(format!(
+                                                    "Copied #{}",
+                                                    run.run_number
+                                                ))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Copy failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::CopyUrl => {
+                                        if let Some(run) = current_run
+                                            && !run.html_url.is_empty()
+                                        {
+                                            let _ = clipboard::copy_to_clipboard(&run.html_url);
+                                        }
+                                    }
+                                    BuiltinAction::Refresh => {
+                                        let idx = current_filter_idx;
+                                        let mut state = actions_state.read().clone();
+                                        if idx < state.filters.len() {
+                                            state.filters[idx] = FilterData::default();
+                                        }
+                                        actions_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        if idx < times.len() {
+                                            times[idx] = None;
+                                        }
+                                        filter_fetch_times.set(times);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::RefreshAll => {
+                                        let mut state = actions_state.read().clone();
+                                        for filter in &mut state.filters {
+                                            *filter = FilterData::default();
+                                        }
+                                        actions_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        times.fill(None);
+                                        filter_fetch_times.set(times);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        refresh_all.set(true);
+                                    }
+                                    BuiltinAction::ToggleWorkflowNav => {
+                                        let new_open = !nav_open.get();
+                                        nav_open.set(new_open);
+                                        nav_focused.set(new_open);
+                                    }
+                                    BuiltinAction::TogglePreview => {
+                                        let new_open = !detail_open.get();
+                                        detail_open.set(new_open);
+                                        if new_open {
+                                            detail_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::RerunFailed => {
+                                        if pending_action.get()
+                                            == Some(BuiltinAction::RerunFailed)
+                                        {
+                                            send_rerun(
+                                                &actions_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                                &filtered_run_indices_for_kb,
+                                                current_filter_cfg_for_kb.as_ref(),
+                                                true,
+                                                engine_for_keys.as_ref(),
+                                                &event_tx_for_keys,
+                                            );
+                                            pending_action.set(None);
+                                        } else if pending_action.get().is_some() {
+                                            pending_action.set(Some(BuiltinAction::RerunFailed));
+                                        } else if let Some(run) = get_run_at_cursor(
                                             &actions_state,
                                             current_filter_idx,
                                             cursor.get(),
                                             &filtered_run_indices_for_kb,
-                                            current_filter_cfg_for_kb.as_ref(),
-                                            true,
-                                            engine_for_keys.as_ref(),
-                                            &event_tx_for_keys,
-                                        );
-                                        pending_action.set(None);
-                                    } else {
-                                        // Different action pending: switch
-                                        pending_action.set(Some(PendingAction::RerunFailed));
+                                        ) {
+                                            if run.status == RunStatus::Completed {
+                                                pending_action
+                                                    .set(Some(BuiltinAction::RerunFailed));
+                                                action_status.set(None);
+                                            } else {
+                                                action_status.set(Some(
+                                                    "Cannot re-run: run is still in progress"
+                                                        .to_owned(),
+                                                ));
+                                            }
+                                        }
                                     }
-                                } else if let Some(run) = get_run_at_cursor(
-                                    &actions_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                    &filtered_run_indices_for_kb,
-                                ) {
-                                    if run.status == RunStatus::Completed {
-                                        pending_action.set(Some(PendingAction::RerunFailed));
-                                        action_status.set(None);
-                                    } else {
-                                        action_status.set(Some(
-                                            "Cannot re-run: run is still in progress".to_owned(),
-                                        ));
-                                    }
-                                }
-                            }
-                            // Re-run all jobs (or confirm)
-                            KeyCode::Char('R') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Some(pa) = pending_action.get() {
-                                    if pa == PendingAction::RerunAll {
-                                        send_rerun(
+                                    BuiltinAction::RerunAll => {
+                                        if pending_action.get() == Some(BuiltinAction::RerunAll) {
+                                            send_rerun(
+                                                &actions_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                                &filtered_run_indices_for_kb,
+                                                current_filter_cfg_for_kb.as_ref(),
+                                                false,
+                                                engine_for_keys.as_ref(),
+                                                &event_tx_for_keys,
+                                            );
+                                            pending_action.set(None);
+                                        } else if pending_action.get().is_some() {
+                                            pending_action.set(Some(BuiltinAction::RerunAll));
+                                        } else if let Some(run) = get_run_at_cursor(
                                             &actions_state,
                                             current_filter_idx,
                                             cursor.get(),
                                             &filtered_run_indices_for_kb,
-                                            current_filter_cfg_for_kb.as_ref(),
-                                            false,
-                                            engine_for_keys.as_ref(),
-                                            &event_tx_for_keys,
-                                        );
-                                        pending_action.set(None);
-                                    } else {
-                                        pending_action.set(Some(PendingAction::RerunAll));
+                                        ) {
+                                            if run.status == RunStatus::Completed {
+                                                pending_action.set(Some(BuiltinAction::RerunAll));
+                                                action_status.set(None);
+                                            } else {
+                                                action_status.set(Some(
+                                                    "Cannot re-run: run is still in progress"
+                                                        .to_owned(),
+                                                ));
+                                            }
+                                        }
                                     }
-                                } else if let Some(run) = get_run_at_cursor(
-                                    &actions_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                    &filtered_run_indices_for_kb,
-                                ) {
-                                    if run.status == RunStatus::Completed {
-                                        pending_action.set(Some(PendingAction::RerunAll));
-                                        action_status.set(None);
-                                    } else {
-                                        action_status.set(Some(
-                                            "Cannot re-run: run is still in progress".to_owned(),
-                                        ));
-                                    }
-                                }
-                            }
-                            // Cancel run (or confirm)
-                            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Some(pa) = pending_action.get() {
-                                    if pa == PendingAction::Cancel {
-                                        send_cancel(
+                                    BuiltinAction::CancelRun => {
+                                        if pending_action.get() == Some(BuiltinAction::CancelRun)
+                                        {
+                                            send_cancel(
+                                                &actions_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                                &filtered_run_indices_for_kb,
+                                                current_filter_cfg_for_kb.as_ref(),
+                                                engine_for_keys.as_ref(),
+                                                &event_tx_for_keys,
+                                            );
+                                            pending_action.set(None);
+                                        } else if pending_action.get().is_some() {
+                                            pending_action.set(Some(BuiltinAction::CancelRun));
+                                        } else if let Some(run) = get_run_at_cursor(
                                             &actions_state,
                                             current_filter_idx,
                                             cursor.get(),
                                             &filtered_run_indices_for_kb,
-                                            current_filter_cfg_for_kb.as_ref(),
-                                            engine_for_keys.as_ref(),
-                                            &event_tx_for_keys,
+                                        ) {
+                                            if matches!(
+                                                run.status,
+                                                RunStatus::Queued | RunStatus::InProgress
+                                            ) {
+                                                pending_action.set(Some(BuiltinAction::CancelRun));
+                                                action_status.set(None);
+                                            } else {
+                                                action_status.set(Some(
+                                                    "Cannot cancel: run is not in progress"
+                                                        .to_owned(),
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Search => {
+                                        input_mode.set(InputMode::Search);
+                                        search_query.set(String::new());
+                                    }
+                                    BuiltinAction::MoveDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + 1)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::MoveUp => {
+                                        let new_cursor = cursor.get().saturating_sub(1);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
+                                    }
+                                    BuiltinAction::First => {
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::Last => {
+                                        if total_rows > 0 {
+                                            cursor.set(total_rows.saturating_sub(1));
+                                            scroll_offset
+                                                .set(total_rows.saturating_sub(visible_rows));
+                                        }
+                                    }
+                                    BuiltinAction::PageDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + visible_rows)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            scroll_offset.set(
+                                                new_cursor
+                                                    .saturating_sub(visible_rows.saturating_sub(1)),
+                                            );
+                                        }
+                                    }
+                                    BuiltinAction::PageUp => {
+                                        let new_cursor =
+                                            cursor.get().saturating_sub(visible_rows);
+                                        cursor.set(new_cursor);
+                                        scroll_offset.set(
+                                            scroll_offset.get().saturating_sub(visible_rows),
                                         );
-                                        pending_action.set(None);
-                                    } else {
-                                        pending_action.set(Some(PendingAction::Cancel));
                                     }
-                                } else if let Some(run) = get_run_at_cursor(
-                                    &actions_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                    &filtered_run_indices_for_kb,
-                                ) {
-                                    if matches!(
-                                        run.status,
-                                        RunStatus::Queued | RunStatus::InProgress
-                                    ) {
-                                        pending_action.set(Some(PendingAction::Cancel));
-                                        action_status.set(None);
-                                    } else {
-                                        action_status.set(Some(
-                                            "Cannot cancel: run is not in progress".to_owned(),
-                                        ));
+                                    BuiltinAction::PrevFilter => {
+                                        if filter_count > 0 {
+                                            let current = active_filter.get();
+                                            active_filter.set(if current == 0 {
+                                                filter_count.saturating_sub(1)
+                                            } else {
+                                                current - 1
+                                            });
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                        }
                                     }
-                                }
-                            }
-                            // Search
-                            KeyCode::Char('/') => {
-                                input_mode.set(InputMode::Search);
-                                search_query.set(String::new());
-                            }
-                            // Cursor movement
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if total_rows > 0 {
-                                    let new_cursor =
-                                        (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                                    cursor.set(new_cursor);
-                                    if new_cursor >= scroll_offset.get() + visible_rows {
-                                        scroll_offset
-                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                    BuiltinAction::NextFilter => {
+                                        if filter_count > 0 {
+                                            active_filter.set(
+                                                (active_filter.get() + 1) % filter_count,
+                                            );
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                        }
                                     }
+                                    _ => {}
+                                },
+                                Some(ResolvedBinding::ShellCommand(cmd)) => {
+                                    let expanded = expand_template(&cmd, &vars);
+                                    let _ = execute_shell_command(&expanded);
                                 }
-                            }
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                let new_cursor = cursor.get().saturating_sub(1);
-                                cursor.set(new_cursor);
-                                if new_cursor < scroll_offset.get() {
-                                    scroll_offset.set(new_cursor);
-                                }
-                            }
-                            KeyCode::Char('g') => {
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                            }
-                            KeyCode::Char('G') => {
-                                if total_rows > 0 {
-                                    cursor.set(total_rows.saturating_sub(1));
-                                    scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                                }
-                            }
-                            KeyCode::PageDown => {
-                                if total_rows > 0 {
-                                    let new_cursor = (cursor.get() + visible_rows)
-                                        .min(total_rows.saturating_sub(1));
-                                    cursor.set(new_cursor);
-                                    scroll_offset.set(
-                                        new_cursor.saturating_sub(visible_rows.saturating_sub(1)),
-                                    );
-                                }
-                            }
-                            KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if total_rows > 0 {
-                                    let half = visible_rows / 2;
-                                    let new_cursor =
-                                        (cursor.get() + half).min(total_rows.saturating_sub(1));
-                                    cursor.set(new_cursor);
-                                    if new_cursor >= scroll_offset.get() + visible_rows {
-                                        scroll_offset
-                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                None => {
+                                    // Esc: clear pending → close nav → close detail
+                                    if key_str == "esc" {
+                                        if pending_action.get().is_some() {
+                                            pending_action.set(None);
+                                            action_status.set(Some("Cancelled".to_owned()));
+                                        } else if nav_open.get() {
+                                            nav_focused.set(false);
+                                            nav_open.set(false);
+                                        } else if detail_open.get() {
+                                            detail_open.set(false);
+                                        }
+                                    } else if key_str == "[" {
+                                        if detail_open.get() {
+                                            detail_scroll
+                                                .set(detail_scroll.get().saturating_sub(1));
+                                        }
+                                    } else if key_str == "]"
+                                        && detail_open.get()
+                                    {
+                                        detail_scroll.set(detail_scroll.get() + 1);
                                     }
                                 }
                             }
-                            KeyCode::PageUp => {
-                                let new_cursor = cursor.get().saturating_sub(visible_rows);
-                                cursor.set(new_cursor);
-                                scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
-                            }
-                            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                let half = visible_rows / 2;
-                                let new_cursor = cursor.get().saturating_sub(half);
-                                cursor.set(new_cursor);
-                                if new_cursor < scroll_offset.get() {
-                                    scroll_offset.set(new_cursor);
-                                }
-                            }
-                            // Filter tab navigation
-                            KeyCode::Char('h') | KeyCode::Left => {
-                                if filter_count > 0 {
-                                    let current = active_filter.get();
-                                    active_filter.set(if current == 0 {
-                                        filter_count.saturating_sub(1)
-                                    } else {
-                                        current - 1
-                                    });
-                                    cursor.set(0);
-                                    scroll_offset.set(0);
-                                }
-                            }
-                            KeyCode::Char('l') | KeyCode::Right => {
-                                if filter_count > 0 {
-                                    active_filter.set((active_filter.get() + 1) % filter_count);
-                                    cursor.set(0);
-                                    scroll_offset.set(0);
-                                }
-                            }
-                            _ => {}
                         }
                     }
                 }
@@ -1145,15 +1126,16 @@ pub fn ActionsView<'a>(
     // Context text: pending action > action status > normal.
     let context_text = if let Some(pa) = pending_action.get() {
         match pa {
-            PendingAction::RerunFailed => {
+            BuiltinAction::RerunFailed => {
                 "Press ctrl+r again to re-run failed jobs \u{2014} Esc to abort".to_owned()
             }
-            PendingAction::RerunAll => {
+            BuiltinAction::RerunAll => {
                 "Press ctrl+R again to re-run all jobs \u{2014} Esc to abort".to_owned()
             }
-            PendingAction::Cancel => {
+            BuiltinAction::CancelRun => {
                 "Press ctrl+c again to cancel this run \u{2014} Esc to abort".to_owned()
             }
+            _ => String::new(),
         }
     } else if let Some(ref status) = *action_status.read() {
         status.clone()

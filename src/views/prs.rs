@@ -14,7 +14,10 @@ use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
-use crate::config::keybindings::{MergedBindings, ViewContext};
+use crate::config::keybindings::{
+    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
+    ViewContext, expand_template, execute_shell_command,
+};
 use crate::config::types::PrFilter;
 use crate::engine::{EngineHandle, Event, PrRef, Request};
 use crate::filter::{self, apply_scope};
@@ -384,23 +387,13 @@ enum InputMode {
     /// Typing a comment; buffer accumulates chars.
     Comment,
     /// Confirmation prompt for a destructive action (y/n).
-    Confirm(PendingAction),
+    Confirm(BuiltinAction),
     /// Search/filter mode (T087).
     Search,
     /// Text input mode for assigning to any user.
     Assign,
     /// Prompt for which branch-update method to use (merge or rebase).
     UpdateBranchMethod,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PendingAction {
-    Close,
-    Reopen,
-    Merge,
-    Approve,
-    UpdateBranch,
-    ReadyForReview,
 }
 
 // ---------------------------------------------------------------------------
@@ -915,6 +908,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Engine handle for the keyboard handler closure.
     let engine = engine_for_keyboard;
 
+    let keybindings = props.keybindings.cloned();
     // Keyboard handling.
     hooks.use_terminal_events({
         move |event| match event {
@@ -1012,7 +1006,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 && let Some(ref eng) = engine
                             {
                                 match pending {
-                                    PendingAction::Close => {
+                                    BuiltinAction::Close => {
                                         eng.send(Request::ClosePr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1020,7 +1014,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::Reopen => {
+                                    BuiltinAction::Reopen => {
                                         eng.send(Request::ReopenPr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1028,7 +1022,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::Merge => {
+                                    BuiltinAction::Merge => {
                                         eng.send(Request::MergePr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1036,7 +1030,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::Approve => {
+                                    BuiltinAction::Approve => {
                                         eng.send(Request::ApprovePr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1045,7 +1039,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::UpdateBranch => {
+                                    BuiltinAction::UpdateFromBase => {
                                         eng.send(Request::UpdateBranch {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1053,7 +1047,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::ReadyForReview => {
+                                    BuiltinAction::MarkReady => {
                                         eng.send(Request::ReadyForReview {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1061,6 +1055,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
+                                    _ => {}
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -1096,439 +1091,424 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         _ => {}
                     },
-                    InputMode::Normal => match code {
-                        // Quit
-                        KeyCode::Char('q') => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        // Switch view
-                        KeyCode::Char('n') => {
-                            if let Some(mut sv) = switch_view {
-                                sv.set(true);
-                            }
-                        }
-                        // Switch view back
-                        KeyCode::Char('N') => {
-                            if let Some(mut sv) = switch_view_back {
-                                sv.set(true);
-                            }
-                        }
-                        // Toggle repo scope
-                        KeyCode::Char('S') => {
-                            if let Some(mut st) = scope_toggle {
-                                st.set(true);
-                            }
-                        }
-                        // Toggle preview pane
-                        KeyCode::Char('p') => {
-                            preview_open.set(!preview_open.get());
-                            preview_scroll.set(0);
-                        }
-                        // --- PR Actions (T061) ---
-                        // Approve (with confirmation)
-                        KeyCode::Char('v') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Approve));
-                            action_status.set(None);
-                        }
-                        // Comment
-                        KeyCode::Char('c') => {
-                            input_mode.set(InputMode::Comment);
-                            input_buffer.set(String::new());
-                            action_status.set(None);
-                        }
-                        // Close (with confirmation)
-                        KeyCode::Char('x') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Close));
-                            action_status.set(None);
-                        }
-                        // Reopen (with confirmation)
-                        KeyCode::Char('X') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Reopen));
-                            action_status.set(None);
-                        }
-                        // Merge (with confirmation)
-                        KeyCode::Char('m') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Merge));
-                            action_status.set(None);
-                        }
-                        // Update branch — prefer refined detail-cache status, fall back to coarse.
-                        KeyCode::Char('u') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            let (pr_number, coarse) = {
+                    InputMode::Normal => {
+                        if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
+                            let pr_info =
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
+                            let (pr_owner, pr_repo, pr_number) =
+                                pr_info.unwrap_or_else(|| (String::new(), String::new(), 0));
+                            let pr_url = if pr_number > 0 {
+                                format!(
+                                    "https://github.com/{pr_owner}/{pr_repo}/pull/{pr_number}"
+                                )
+                            } else {
+                                String::new()
+                            };
+                            let head_branch = {
                                 let state = prs_state.read();
-                                let pr = state
+                                state
                                     .filters
                                     .get(current_filter_idx)
-                                    .and_then(|f| f.prs.get(cursor.get()));
-                                (pr.map(|p| p.number), pr.map(branch_update_status))
+                                    .and_then(|f| f.prs.get(cursor.get()))
+                                    .map_or_else(String::new, |p| p.head_ref.clone())
                             };
-                            let effective = pr_number.and_then(|num| {
-                                let cache = detail_cache.read();
-                                cache.get(&num).and_then(effective_update_status)
-                            });
-                            match effective {
-                                Some(MergeStateStatus::Clean) => {
-                                    action_status.set(Some("Branch is already up-to-date".into()));
-                                }
-                                Some(MergeStateStatus::Dirty) => {
-                                    action_status.set(Some(
-                                        "Cannot auto-update: branch has conflicts".into(),
-                                    ));
-                                }
-                                Some(MergeStateStatus::Behind) => {
-                                    input_mode.set(InputMode::UpdateBranchMethod);
-                                    action_status.set(None);
-                                }
-                                _ => {
-                                    // Refined status unavailable; use coarse signal.
-                                    match coarse {
-                                        Some(BranchUpdateStatus::HasConflicts) => {
-                                            action_status.set(Some(
-                                                "Cannot auto-update: branch has conflicts".into(),
-                                            ));
-                                        }
-                                        Some(BranchUpdateStatus::NeedsUpdate) => {
-                                            input_mode.set(InputMode::UpdateBranchMethod);
-                                            action_status.set(None);
-                                        }
-                                        _ => {
-                                            input_mode.set(InputMode::Confirm(
-                                                PendingAction::UpdateBranch,
-                                            ));
-                                            action_status.set(None);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // Ready for review (with confirmation)
-                        KeyCode::Char('W') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::ReadyForReview));
-                            action_status.set(None);
-                        }
-                        // Diff (plain d, not Ctrl+d)
-                        KeyCode::Char('d') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info {
-                                match crate::actions::local::open_diff(&owner, &repo, number) {
-                                    Ok(msg) => action_status.set(Some(msg)),
-                                    Err(e) => {
-                                        action_status.set(Some(format!("Diff error: {e}")));
-                                    }
-                                }
-                            }
-                        }
-                        // Checkout
-                        KeyCode::Char(' ') => {
-                            let current_data =
-                                prs_state.read().filters.get(current_filter_idx).cloned();
-                            if let Some(data) = current_data
-                                && let Some(pr) = data.prs.get(cursor.get())
+                            let base_branch = {
+                                let state = prs_state.read();
+                                state
+                                    .filters
+                                    .get(current_filter_idx)
+                                    .and_then(|f| f.prs.get(cursor.get()))
+                                    .map_or_else(String::new, |p| p.base_ref.clone())
+                            };
+                            let vars = TemplateVars {
+                                url: pr_url.clone(),
+                                number: if pr_number > 0 {
+                                    pr_number.to_string()
+                                } else {
+                                    String::new()
+                                },
+                                repo_name: format!("{pr_owner}/{pr_repo}"),
+                                head_branch,
+                                base_branch,
+                            };
+                            match keybindings
+                                .as_ref()
+                                .and_then(|kb| kb.resolve(&key_str, ViewContext::Prs))
                             {
-                                let repo_name = pr
-                                    .repo
-                                    .as_ref()
-                                    .map(crate::github::types::RepoRef::full_name)
-                                    .unwrap_or_default();
-                                match crate::actions::local::checkout_branch(
-                                    &pr.head_ref,
-                                    &repo_name,
-                                    &repo_paths,
-                                ) {
-                                    Ok(msg) => action_status.set(Some(msg)),
-                                    Err(e) => {
-                                        action_status.set(Some(format!("Checkout error: {e}")));
+                                Some(ResolvedBinding::Builtin(action)) => match action {
+                                    BuiltinAction::Quit => {
+                                        if let Some(mut exit) = should_exit {
+                                            exit.set(true);
+                                        }
                                     }
-                                }
-                            }
-                        }
-                        // Quick self-assign (Ctrl+a) - engine resolves "@me" to current user.
-                        KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info
-                                && let Some(ref eng) = engine
-                            {
-                                eng.send(Request::AssignPr {
-                                    owner,
-                                    repo,
-                                    number,
-                                    logins: vec!["@me".to_owned()],
-                                    reply_tx: event_tx.clone(),
-                                });
-                            }
-                        }
-                        // Assign (text input for any user)
-                        KeyCode::Char('a') => {
-                            input_mode.set(InputMode::Assign);
-                            assignee_selection.set(0);
-                            action_status.set(None);
-
-                            // Get current PR and build candidates from its data
-                            let (current_assignees, candidates) = {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((_owner, _repo, number)) = pr_info {
-                                    let state = prs_state.read();
-                                    let pr = state
-                                        .filters
-                                        .get(current_filter_idx)
-                                        .and_then(|s| s.prs.iter().find(|p| p.number == number));
-
-                                    if let Some(pr) = pr {
-                                        let assignees = pr
-                                            .assignees
-                                            .iter()
-                                            .map(|a| a.login.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join(", ");
-
-                                        // Add trailing ", " to show all suggestions immediately
-                                        let assignees_str = if assignees.is_empty() {
-                                            String::new()
-                                        } else {
-                                            format!("{assignees}, ")
+                                    BuiltinAction::SwitchView => {
+                                        if let Some(mut sv) = switch_view {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SwitchViewBack => {
+                                        if let Some(mut sv) = switch_view_back {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleScope => {
+                                        if let Some(mut st) = scope_toggle {
+                                            st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::TogglePreview => {
+                                        preview_open.set(!preview_open.get());
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::Approve => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Approve));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::CommentAction => {
+                                        input_mode.set(InputMode::Comment);
+                                        input_buffer.set(String::new());
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Close => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Close));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Reopen => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Reopen));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Merge => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Merge));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::UpdateFromBase => {
+                                        let (pn, coarse) = {
+                                            let state = prs_state.read();
+                                            let pr = state
+                                                .filters
+                                                .get(current_filter_idx)
+                                                .and_then(|f| f.prs.get(cursor.get()));
+                                            (pr.map(|p| p.number), pr.map(branch_update_status))
                                         };
-
-                                        // Build candidates from PR data (instant, no API call)
-                                        let candidates = build_pr_assignee_candidates(pr);
-
-                                        (assignees_str, candidates)
-                                    } else {
-                                        (String::new(), Vec::new())
+                                        let effective = pn.and_then(|num| {
+                                            let cache = detail_cache.read();
+                                            cache.get(&num).and_then(effective_update_status)
+                                        });
+                                        match effective {
+                                            Some(MergeStateStatus::Clean) => {
+                                                action_status.set(Some(
+                                                    "Branch is already up-to-date".into(),
+                                                ));
+                                            }
+                                            Some(MergeStateStatus::Dirty) => {
+                                                action_status.set(Some(
+                                                    "Cannot auto-update: branch has conflicts"
+                                                        .into(),
+                                                ));
+                                            }
+                                            Some(MergeStateStatus::Behind) => {
+                                                input_mode.set(InputMode::UpdateBranchMethod);
+                                                action_status.set(None);
+                                            }
+                                            _ => match coarse {
+                                                Some(BranchUpdateStatus::HasConflicts) => {
+                                                    action_status.set(Some(
+                                                        "Cannot auto-update: branch has conflicts"
+                                                            .into(),
+                                                    ));
+                                                }
+                                                Some(BranchUpdateStatus::NeedsUpdate) => {
+                                                    input_mode.set(InputMode::UpdateBranchMethod);
+                                                    action_status.set(None);
+                                                }
+                                                _ => {
+                                                    input_mode.set(InputMode::Confirm(
+                                                        BuiltinAction::UpdateFromBase,
+                                                    ));
+                                                    action_status.set(None);
+                                                }
+                                            },
+                                        }
                                     }
-                                } else {
-                                    (String::new(), Vec::new())
-                                }
-                            };
-
-                            input_buffer.set(current_assignees);
-                            assignee_candidates.set(candidates); // Set immediately, no async fetch
-                        }
-                        // Unassign (self) - engine resolves "@me" to current user.
-                        KeyCode::Char('A') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info
-                                && let Some(ref eng) = engine
-                            {
-                                eng.send(Request::UnassignPr {
-                                    owner,
-                                    repo,
-                                    number,
-                                    login: "@me".to_owned(),
-                                    reply_tx: event_tx.clone(),
-                                });
-                            }
-                        }
-                        // --- Clipboard & Browser (T091, T092) ---
-                        // Copy issue number
-                        KeyCode::Char('y') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((_, _, number)) = pr_info {
-                                let text = number.to_string();
-                                match clipboard::copy_to_clipboard(&text) {
-                                    Ok(()) => action_status.set(Some(format!("Copied #{number}"))),
-                                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
-                                }
-                            }
-                        }
-                        // Copy PR URL
-                        KeyCode::Char('Y') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info {
-                                let url =
-                                    format!("https://github.com/{owner}/{repo}/pull/{number}");
-                                match clipboard::copy_to_clipboard(&url) {
-                                    Ok(()) => {
-                                        action_status
-                                            .set(Some(format!("Copied URL for #{number}")));
+                                    BuiltinAction::MarkReady => {
+                                        input_mode
+                                            .set(InputMode::Confirm(BuiltinAction::MarkReady));
+                                        action_status.set(None);
                                     }
-                                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
+                                    BuiltinAction::ViewDiff => {
+                                        if pr_number > 0 {
+                                            match crate::actions::local::open_diff(
+                                                &pr_owner,
+                                                &pr_repo,
+                                                pr_number,
+                                            ) {
+                                                Ok(msg) => action_status.set(Some(msg)),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Diff error: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Checkout => {
+                                        let current_data = prs_state
+                                            .read()
+                                            .filters
+                                            .get(current_filter_idx)
+                                            .cloned();
+                                        if let Some(data) = current_data
+                                            && let Some(pr) = data.prs.get(cursor.get())
+                                        {
+                                            let repo_name = pr
+                                                .repo
+                                                .as_ref()
+                                                .map(crate::github::types::RepoRef::full_name)
+                                                .unwrap_or_default();
+                                            match crate::actions::local::checkout_branch(
+                                                &pr.head_ref,
+                                                &repo_name,
+                                                &repo_paths,
+                                            ) {
+                                                Ok(msg) => action_status.set(Some(msg)),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Checkout error: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Assign => {
+                                        input_mode.set(InputMode::Assign);
+                                        assignee_selection.set(0);
+                                        action_status.set(None);
+                                        let (current_assignees, candidates) = {
+                                            let pr_info2 = get_current_pr_info(
+                                                &prs_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                            );
+                                            if let Some((_o, _r, number)) = pr_info2 {
+                                                let state = prs_state.read();
+                                                let pr = state
+                                                    .filters
+                                                    .get(current_filter_idx)
+                                                    .and_then(|s| {
+                                                        s.prs.iter().find(|p| p.number == number)
+                                                    });
+                                                if let Some(pr) = pr {
+                                                    let assignees = pr
+                                                        .assignees
+                                                        .iter()
+                                                        .map(|a| a.login.as_str())
+                                                        .collect::<Vec<_>>()
+                                                        .join(", ");
+                                                    let assignees_str = if assignees.is_empty() {
+                                                        String::new()
+                                                    } else {
+                                                        format!("{assignees}, ")
+                                                    };
+                                                    let candidates =
+                                                        build_pr_assignee_candidates(pr);
+                                                    (assignees_str, candidates)
+                                                } else {
+                                                    (String::new(), Vec::new())
+                                                }
+                                            } else {
+                                                (String::new(), Vec::new())
+                                            }
+                                        };
+                                        input_buffer.set(current_assignees);
+                                        assignee_candidates.set(candidates);
+                                    }
+                                    BuiltinAction::Unassign => {
+                                        if pr_number > 0
+                                            && let Some(ref eng) = engine
+                                        {
+                                            eng.send(Request::UnassignPr {
+                                                owner: pr_owner.clone(),
+                                                repo: pr_repo.clone(),
+                                                number: pr_number,
+                                                login: "@me".to_owned(),
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                        }
+                                    }
+                                    BuiltinAction::CopyNumber => {
+                                        if pr_number > 0 {
+                                            let text = pr_number.to_string();
+                                            match clipboard::copy_to_clipboard(&text) {
+                                                Ok(()) => action_status
+                                                    .set(Some(format!("Copied #{pr_number}"))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Copy failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::CopyUrl => {
+                                        if !pr_url.is_empty() {
+                                            match clipboard::copy_to_clipboard(&pr_url) {
+                                                Ok(()) => action_status.set(Some(format!(
+                                                    "Copied URL for #{pr_number}"
+                                                ))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Copy failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::OpenBrowser => {
+                                        if !pr_url.is_empty() {
+                                            match clipboard::open_in_browser(&pr_url) {
+                                                Ok(()) => action_status
+                                                    .set(Some(format!("Opened #{pr_number}"))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Open failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Refresh => {
+                                        force_refresh.set(true);
+                                        let idx = active_filter.get();
+                                        let mut state = prs_state.read().clone();
+                                        if idx < state.filters.len() {
+                                            state.filters[idx] = FilterData::default();
+                                        }
+                                        prs_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        if idx < times.len() {
+                                            times[idx] = None;
+                                        }
+                                        filter_fetch_times.set(times);
+                                        pending_detail.set(None);
+                                        detail_cache.set(HashMap::new());
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::RefreshAll => {
+                                        let mut state = prs_state.read().clone();
+                                        for filter in &mut state.filters {
+                                            *filter = FilterData::default();
+                                        }
+                                        prs_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        times.fill(None);
+                                        filter_fetch_times.set(times);
+                                        pending_detail.set(None);
+                                        detail_cache.set(HashMap::new());
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        refresh_all.set(true);
+                                    }
+                                    BuiltinAction::Search => {
+                                        input_mode.set(InputMode::Search);
+                                        search_query.set(String::new());
+                                    }
+                                    BuiltinAction::MoveDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + 1)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::MoveUp => {
+                                        let new_cursor = cursor.get().saturating_sub(1);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::First => {
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::Last => {
+                                        if total_rows > 0 {
+                                            cursor.set(total_rows.saturating_sub(1));
+                                            scroll_offset
+                                                .set(total_rows.saturating_sub(visible_rows));
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::PageDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + visible_rows)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            scroll_offset.set(
+                                                new_cursor
+                                                    .saturating_sub(visible_rows.saturating_sub(1)),
+                                            );
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::PageUp => {
+                                        let new_cursor =
+                                            cursor.get().saturating_sub(visible_rows);
+                                        cursor.set(new_cursor);
+                                        scroll_offset.set(
+                                            scroll_offset.get().saturating_sub(visible_rows),
+                                        );
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::ToggleHelp => {
+                                        help_visible.set(true);
+                                    }
+                                    BuiltinAction::PrevFilter => {
+                                        if filter_count > 0 {
+                                            let current = active_filter.get();
+                                            active_filter.set(if current == 0 {
+                                                filter_count.saturating_sub(1)
+                                            } else {
+                                                current - 1
+                                            });
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::NextFilter => {
+                                        if filter_count > 0 {
+                                            active_filter.set(
+                                                (active_filter.get() + 1) % filter_count,
+                                            );
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    _ => {}
+                                },
+                                Some(ResolvedBinding::ShellCommand(cmd)) => {
+                                    let expanded = expand_template(&cmd, &vars);
+                                    let _ = execute_shell_command(&expanded);
+                                }
+                                None => {
+                                    // ctrl+a: self-assign (assign_self not a BuiltinAction)
+                                    if key_str == "ctrl+a" {
+                                        if pr_number > 0
+                                            && let Some(ref eng) = engine
+                                        {
+                                            eng.send(Request::AssignPr {
+                                                owner: pr_owner.clone(),
+                                                repo: pr_repo.clone(),
+                                                number: pr_number,
+                                                logins: vec!["@me".to_owned()],
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                        }
+                                    } else if key_str == "]" {
+                                        sidebar_tab.set(sidebar_tab.get().next());
+                                        preview_scroll.set(0);
+                                    } else if key_str == "[" {
+                                        sidebar_tab.set(sidebar_tab.get().prev());
+                                        preview_scroll.set(0);
+                                    }
                                 }
                             }
                         }
-                        // Open in browser
-                        KeyCode::Char('o') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info {
-                                let url =
-                                    format!("https://github.com/{owner}/{repo}/pull/{number}");
-                                match clipboard::open_in_browser(&url) {
-                                    Ok(()) => action_status.set(Some(format!("Opened #{number}"))),
-                                    Err(e) => action_status.set(Some(format!("Open failed: {e}"))),
-                                }
-                            }
-                        }
-                        // Retry / refresh (active filter only)
-                        KeyCode::Char('r') => {
-                            force_refresh.set(true);
-                            let idx = active_filter.get();
-                            let mut state = prs_state.read().clone();
-                            if idx < state.filters.len() {
-                                state.filters[idx] = FilterData::default();
-                            }
-                            prs_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            if idx < times.len() {
-                                times[idx] = None;
-                            }
-                            filter_fetch_times.set(times);
-                            pending_detail.set(None);
-                            detail_cache.set(HashMap::new());
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                        }
-                        // Refresh all filters
-                        KeyCode::Char('R') => {
-                            let mut state = prs_state.read().clone();
-                            for filter in &mut state.filters {
-                                *filter = FilterData::default();
-                            }
-                            prs_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            times.fill(None);
-                            filter_fetch_times.set(times);
-                            pending_detail.set(None);
-                            detail_cache.set(HashMap::new());
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                            // Signal the render body to eagerly fetch all filters.
-                            refresh_all.set(true);
-                        }
-                        // --- Search ---
-                        KeyCode::Char('/') => {
-                            input_mode.set(InputMode::Search);
-                            search_query.set(String::new());
-                        }
-                        // --- Navigation ---
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if total_rows > 0 {
-                                let new_cursor =
-                                    (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                if new_cursor >= scroll_offset.get() + visible_rows {
-                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                                }
-                                // Reset preview scroll on cursor change.
-                                preview_scroll.set(0);
-                            }
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let new_cursor = cursor.get().saturating_sub(1);
-                            cursor.set(new_cursor);
-                            if new_cursor < scroll_offset.get() {
-                                scroll_offset.set(new_cursor);
-                            }
-                            preview_scroll.set(0);
-                        }
-                        // Jump to top/bottom
-                        KeyCode::Char('g') => {
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                            preview_scroll.set(0);
-                        }
-                        KeyCode::Char('G') => {
-                            if total_rows > 0 {
-                                cursor.set(total_rows.saturating_sub(1));
-                                scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                                preview_scroll.set(0);
-                            }
-                        }
-                        // Page up/down
-                        KeyCode::PageDown => {
-                            if total_rows > 0 {
-                                let new_cursor =
-                                    (cursor.get() + visible_rows).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                scroll_offset
-                                    .set(new_cursor.saturating_sub(visible_rows.saturating_sub(1)));
-                                preview_scroll.set(0);
-                            }
-                        }
-                        // Ctrl+d/u: scroll preview if open, else scroll table
-                        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if preview_open.get() {
-                                let half = visible_rows / 2;
-                                preview_scroll.set(preview_scroll.get() + half);
-                            } else if total_rows > 0 {
-                                let half = visible_rows / 2;
-                                let new_cursor =
-                                    (cursor.get() + half).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                if new_cursor >= scroll_offset.get() + visible_rows {
-                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                                }
-                            }
-                        }
-                        KeyCode::PageUp => {
-                            let new_cursor = cursor.get().saturating_sub(visible_rows);
-                            cursor.set(new_cursor);
-                            scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
-                            preview_scroll.set(0);
-                        }
-                        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if preview_open.get() {
-                                let half = visible_rows / 2;
-                                preview_scroll.set(preview_scroll.get().saturating_sub(half));
-                            } else {
-                                let half = visible_rows / 2;
-                                let new_cursor = cursor.get().saturating_sub(half);
-                                cursor.set(new_cursor);
-                                if new_cursor < scroll_offset.get() {
-                                    scroll_offset.set(new_cursor);
-                                }
-                            }
-                        }
-                        // Sidebar tab cycling (T072)
-                        KeyCode::Char(']') => {
-                            sidebar_tab.set(sidebar_tab.get().next());
-                            preview_scroll.set(0);
-                        }
-                        KeyCode::Char('[') => {
-                            sidebar_tab.set(sidebar_tab.get().prev());
-                            preview_scroll.set(0);
-                        }
-                        // Help overlay
-                        KeyCode::Char('?') => {
-                            help_visible.set(true);
-                        }
-                        // Section switching
-                        KeyCode::Char('h') | KeyCode::Left => {
-                            if filter_count > 0 {
-                                let current = active_filter.get();
-                                active_filter.set(if current == 0 {
-                                    filter_count.saturating_sub(1)
-                                } else {
-                                    current - 1
-                                });
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                preview_scroll.set(0);
-                            }
-                        }
-                        KeyCode::Char('l') | KeyCode::Right => {
-                            if filter_count > 0 {
-                                active_filter.set((active_filter.get() + 1) % filter_count);
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                preview_scroll.set(0);
-                            }
-                        }
-                        _ => {}
                     },
                     InputMode::UpdateBranchMethod => match code {
                         // Merge-update (only merge strategy supported).
@@ -1809,12 +1789,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         )),
         InputMode::Confirm(action) => {
             let prompt = match action {
-                PendingAction::Close => "Close this PR? (y/n)",
-                PendingAction::Reopen => "Reopen this PR? (y/n)",
-                PendingAction::Merge => "Merge this PR? (y/n)",
-                PendingAction::Approve => "Approve this PR? (y/n)",
-                PendingAction::UpdateBranch => "Update branch from base? (y/n)",
-                PendingAction::ReadyForReview => "Mark this draft PR ready for review? (y/n)",
+                BuiltinAction::Close => "Close this PR? (y/n)",
+                BuiltinAction::Reopen => "Reopen this PR? (y/n)",
+                BuiltinAction::Merge => "Merge this PR? (y/n)",
+                BuiltinAction::Approve => "Approve this PR? (y/n)",
+                BuiltinAction::UpdateFromBase => "Update branch from base? (y/n)",
+                BuiltinAction::MarkReady => "Mark this draft PR ready for review? (y/n)",
+                _ => "(y/n)",
             };
             Some(RenderedTextInput::build(
                 prompt,

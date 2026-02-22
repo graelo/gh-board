@@ -210,6 +210,7 @@ pub fn key_event_to_string(
     }
 
     let base = match code {
+        KeyCode::Char(' ') => Some("space".to_owned()),
         KeyCode::Char(c) => {
             // For ctrl+<char>, use lowercase in the key string.
             if modifiers.contains(KeyModifiers::CONTROL) {
@@ -358,7 +359,10 @@ pub(crate) fn default_notifications() -> Vec<Keybinding> {
 /// Default Branch view keybindings.
 pub(crate) fn default_branches() -> Vec<Keybinding> {
     vec![
+        kb("enter", "checkout", "Checkout branch"),
+        kb("space", "checkout", "Checkout branch"),
         kb("delete", "delete_branch", "Delete branch"),
+        kb("D", "delete_branch", "Delete branch"),
         kb("+", "new_branch", "Create new branch"),
         kb("p", "create_pr_from_branch", "Create PR from branch"),
         kb("v", "view_prs_for_branch", "View PRs for branch"),
@@ -519,7 +523,6 @@ pub fn expand_template(template: &str, vars: &TemplateVars) -> String {
 
 /// Execute a shell command (after template expansion) and return its combined
 /// stdout/stderr output.
-#[allow(dead_code)]
 pub(crate) fn execute_shell_command(command: &str) -> Result<String> {
     let output = std::process::Command::new("sh")
         .arg("-c")

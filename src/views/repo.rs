@@ -13,7 +13,10 @@ use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
-use crate::config::keybindings::{MergedBindings, ViewContext};
+use crate::config::keybindings::{
+    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
+    ViewContext, expand_template, execute_shell_command,
+};
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 
@@ -370,6 +373,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     // Keyboard handling.
     let repo_path_owned = props.repo_path.map(std::borrow::ToOwned::to_owned);
+    let keybindings = props.keybindings.cloned();
     hooks.use_terminal_events({
         move |event| match event {
             TerminalEvent::Key(KeyEvent {
@@ -462,99 +466,143 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                         }
                         _ => {}
                     },
-                    InputMode::Normal => match code {
-                        KeyCode::Char('q') => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        KeyCode::Char('n') => {
-                            if let Some(mut sv) = switch_view {
-                                sv.set(true);
-                            }
-                        }
-                        // Switch view back
-                        KeyCode::Char('N') => {
-                            if let Some(mut sv) = switch_view_back {
-                                sv.set(true);
-                            }
-                        }
-                        // Toggle repo scope
-                        KeyCode::Char('S') => {
-                            if let Some(mut st) = scope_toggle {
-                                st.set(true);
-                            }
-                        }
-                        // Checkout branch
-                        KeyCode::Char(' ') | KeyCode::Enter => {
-                            if let Some(ref repo_path) = repo_path_owned {
-                                let branch_name = branches_state
-                                    .read()
-                                    .get(cursor.get())
-                                    .map(|b| b.name.clone());
-                                if let Some(name) = branch_name {
-                                    match checkout_branch(repo_path, &name) {
-                                        Ok(msg) => {
-                                            action_status.set(Some(msg));
-                                            branches_state.set(list_branches(repo_path));
-                                        }
-                                        Err(e) => {
-                                            action_status
-                                                .set(Some(format!("Checkout failed: {e}")));
+                    InputMode::Normal => {
+                        if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
+                            let current_branch = branches_state
+                                .read()
+                                .get(cursor.get())
+                                .map(|b| b.name.clone())
+                                .unwrap_or_default();
+                            let vars = TemplateVars {
+                                head_branch: current_branch.clone(),
+                                ..Default::default()
+                            };
+                            match keybindings
+                                .as_ref()
+                                .and_then(|kb| kb.resolve(&key_str, ViewContext::Branches))
+                            {
+                                Some(ResolvedBinding::Builtin(action)) => match action {
+                                    BuiltinAction::Quit => {
+                                        if let Some(mut exit) = should_exit {
+                                            exit.set(true);
                                         }
                                     }
+                                    BuiltinAction::SwitchView => {
+                                        if let Some(mut sv) = switch_view {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SwitchViewBack => {
+                                        if let Some(mut sv) = switch_view_back {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleScope => {
+                                        if let Some(mut st) = scope_toggle {
+                                            st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::Checkout => {
+                                        if let Some(ref repo_path) = repo_path_owned {
+                                            let branch_name = branches_state
+                                                .read()
+                                                .get(cursor.get())
+                                                .map(|b| b.name.clone());
+                                            if let Some(name) = branch_name {
+                                                match checkout_branch(repo_path, &name) {
+                                                    Ok(msg) => {
+                                                        action_status.set(Some(msg));
+                                                        branches_state
+                                                            .set(list_branches(repo_path));
+                                                    }
+                                                    Err(e) => {
+                                                        action_status.set(Some(format!(
+                                                            "Checkout failed: {e}"
+                                                        )));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::DeleteBranch => {
+                                        input_mode.set(InputMode::ConfirmDelete);
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::NewBranch => {
+                                        input_mode.set(InputMode::CreateBranch);
+                                        input_buffer.set(String::new());
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::MoveDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + 1)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::MoveUp => {
+                                        let new_cursor = cursor.get().saturating_sub(1);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
+                                    }
+                                    BuiltinAction::First => {
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::Last => {
+                                        if total_rows > 0 {
+                                            cursor.set(total_rows.saturating_sub(1));
+                                            scroll_offset
+                                                .set(total_rows.saturating_sub(visible_rows));
+                                        }
+                                    }
+                                    BuiltinAction::PageDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + visible_rows)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            scroll_offset.set(
+                                                new_cursor
+                                                    .saturating_sub(visible_rows.saturating_sub(1)),
+                                            );
+                                        }
+                                    }
+                                    BuiltinAction::PageUp => {
+                                        let new_cursor =
+                                            cursor.get().saturating_sub(visible_rows);
+                                        cursor.set(new_cursor);
+                                        scroll_offset
+                                            .set(scroll_offset.get().saturating_sub(visible_rows));
+                                    }
+                                    BuiltinAction::Refresh | BuiltinAction::RefreshAll => {
+                                        loaded.set(false);
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::ToggleHelp => {
+                                        help_visible.set(true);
+                                    }
+                                    BuiltinAction::CopyNumber | BuiltinAction::CopyUrl => {
+                                        let _ = crate::actions::clipboard::copy_to_clipboard(
+                                            &current_branch,
+                                        );
+                                    }
+                                    _ => {}
+                                },
+                                Some(ResolvedBinding::ShellCommand(cmd)) => {
+                                    let expanded = expand_template(&cmd, &vars);
+                                    let _ = execute_shell_command(&expanded);
                                 }
+                                None => {}
                             }
                         }
-                        // Delete branch
-                        KeyCode::Delete | KeyCode::Char('D') => {
-                            input_mode.set(InputMode::ConfirmDelete);
-                            action_status.set(None);
-                        }
-                        // Create new branch
-                        KeyCode::Char('+') => {
-                            input_mode.set(InputMode::CreateBranch);
-                            input_buffer.set(String::new());
-                            action_status.set(None);
-                        }
-                        // Navigation
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if total_rows > 0 {
-                                let new_cursor =
-                                    (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                if new_cursor >= scroll_offset.get() + visible_rows {
-                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                                }
-                            }
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let new_cursor = cursor.get().saturating_sub(1);
-                            cursor.set(new_cursor);
-                            if new_cursor < scroll_offset.get() {
-                                scroll_offset.set(new_cursor);
-                            }
-                        }
-                        KeyCode::Char('g') => {
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                        }
-                        KeyCode::Char('G') => {
-                            if total_rows > 0 {
-                                cursor.set(total_rows.saturating_sub(1));
-                                scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                            }
-                        }
-                        KeyCode::Char('?') => {
-                            help_visible.set(true);
-                        }
-                        _ => {}
-                    },
+                    }
                 }
             }
             _ => {}

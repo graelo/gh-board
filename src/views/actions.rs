@@ -534,6 +534,11 @@ pub fn ActionsView<'a>(
                                 ifl[filter_idx] = false;
                             }
                             filter_in_flight.set(ifl);
+                            // Fresh run data arrived — evict job cache so the
+                            // sidebar re-fetches updated job status rather than
+                            // displaying stale results from the previous poll.
+                            jobs_cache.set(HashMap::new());
+                            jobs_in_flight.set(HashSet::new());
                             if let Some(rl) = rate_limit {
                                 rate_limit_state.set(Some(rl));
                             }
@@ -929,6 +934,12 @@ pub fn ActionsView<'a>(
                                             times[idx] = None;
                                         }
                                         filter_fetch_times.set(times);
+                                        // Clear job cache and in-flight set so the
+                                        // sidebar detail re-fetches along with the
+                                        // table (otherwise the cache hit prevents
+                                        // a new FetchRunJobs from being sent).
+                                        jobs_cache.set(HashMap::new());
+                                        jobs_in_flight.set(HashSet::new());
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -941,6 +952,8 @@ pub fn ActionsView<'a>(
                                         let mut times = filter_fetch_times.read().clone();
                                         times.fill(None);
                                         filter_fetch_times.set(times);
+                                        jobs_cache.set(HashMap::new());
+                                        jobs_in_flight.set(HashSet::new());
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);

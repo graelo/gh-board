@@ -70,6 +70,7 @@ pub enum Request {
         owner: String,
         repo: String,
         run_id: u64,
+        host: Option<String>,
         reply_tx: Sender<Event>,
     },
     FetchNotifications {

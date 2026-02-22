@@ -634,10 +634,14 @@ pub fn ActionsView<'a>(
             && let Some((owner, repo)) =
                 owner_repo_for_run(&cur_run, filters_cfg.get(current_filter_idx))
         {
+            let host = filters_cfg
+                .get(current_filter_idx)
+                .and_then(|f| f.host.clone());
             eng.send(Request::FetchRunJobs {
                 owner,
                 repo,
                 run_id,
+                host,
                 reply_tx: event_tx.clone(),
             });
             let mut ifl = jobs_in_flight.read().clone();

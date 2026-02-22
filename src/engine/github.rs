@@ -213,9 +213,11 @@ async fn handle_request(
             owner,
             repo,
             run_id,
+            host,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchRunJobs")
+            let host = host.as_deref().unwrap_or("github.com");
+            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunJobs")
             else {
                 return;
             };

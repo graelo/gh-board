@@ -326,6 +326,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut label_selected = hooks.use_state(Vec::<String>::new);
     let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
     let mut assignee_selection = hooks.use_state(|| 0usize);
+    let mut assignee_selected = hooks.use_state(Vec::<String>::new);
 
     // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
     let mut force_refresh = hooks.use_state(|| false);
@@ -698,7 +699,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             modifiers,
                             input_mode,
                             input_buffer,
-                            action_status,
                             &issues_state,
                             current_filter_idx,
                             cursor.get(),
@@ -706,6 +706,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             &event_tx_kb,
                             assignee_candidates,
                             assignee_selection,
+                            assignee_selected,
                         );
                     }
                     InputMode::Label => {
@@ -859,40 +860,27 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             });
                                         }
                                     }
-                                    BuiltinAction::Assign => {
+                                    BuiltinAction::Assign | BuiltinAction::Unassign => {
                                         input_mode.set(InputMode::Assign);
+                                        input_buffer.set(String::new());
                                         assignee_selection.set(0);
-                                        action_status.set(None);
-
-                                        let (current_assignees, candidates) = {
+                                        let current = get_current_issue_assignees(
+                                            &issues_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        assignee_selected.set(current);
+                                        let initial = {
                                             let state = issues_state.read();
-                                            let issue = state
+                                            state
                                                 .filters
                                                 .get(current_filter_idx)
-                                                .and_then(|s| s.issues.get(cursor.get()));
-
-                                            if let Some(issue) = issue {
-                                                let assignees = issue
-                                                    .assignees
-                                                    .iter()
-                                                    .map(|a| a.login.as_str())
-                                                    .collect::<Vec<_>>()
-                                                    .join(", ");
-                                                let assignees_str = if assignees.is_empty() {
-                                                    String::new()
-                                                } else {
-                                                    format!("{assignees}, ")
-                                                };
-                                                let candidates =
-                                                    build_issue_assignee_candidates(issue);
-                                                (assignees_str, candidates)
-                                            } else {
-                                                (String::new(), Vec::new())
-                                            }
+                                                .and_then(|f| f.issues.get(cursor.get()))
+                                                .map(build_issue_assignee_candidates)
+                                                .unwrap_or_default()
                                         };
-
-                                        input_buffer.set(current_assignees);
-                                        assignee_candidates.set(candidates);
+                                        assignee_candidates.set(initial);
+                                        action_status.set(None);
                                         if let Some(engine) = engine
                                             && let Some((owner, repo, _)) = &info
                                         {
@@ -901,32 +889,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                                 repo: repo.clone(),
                                                 reply_tx: event_tx.clone(),
                                             });
-                                        }
-                                    }
-                                    BuiltinAction::Unassign => {
-                                        let state = issues_state.read();
-                                        let issue = state
-                                            .filters
-                                            .get(current_filter_idx)
-                                            .and_then(|s| s.issues.get(cursor.get()));
-                                        if let Some(issue) = issue
-                                            && let Some(assignee) = issue.assignees.first()
-                                        {
-                                            let login = assignee.login.clone();
-                                            if let Some(repo_ref) = &issue.repo {
-                                                let owner = repo_ref.owner.clone();
-                                                let repo = repo_ref.name.clone();
-                                                let number = issue.number;
-                                                if let Some(engine) = engine {
-                                                    engine.send(Request::UnassignIssue {
-                                                        owner,
-                                                        repo,
-                                                        number,
-                                                        login,
-                                                        reply_tx: event_tx.clone(),
-                                                    });
-                                                }
-                                            }
                                         }
                                     }
                                     BuiltinAction::Close => {
@@ -1098,20 +1060,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                     let _ = execute_shell_command(&expanded);
                                 }
                                 None => {
-                                    // Fallback: self-assign (ctrl+a) not yet in BuiltinAction
-                                    if key_str == "ctrl+a" {
-                                        if let Some((owner, repo, number)) = info
-                                            && let Some(engine) = engine
-                                        {
-                                            engine.send(Request::AssignIssue {
-                                                owner,
-                                                repo,
-                                                number,
-                                                logins: vec!["@me".to_owned()],
-                                                reply_tx: event_tx.clone(),
-                                            });
-                                        }
-                                    } else if key_str == "]" {
+                                    if key_str == "]" {
                                         let current = sidebar_tab.get();
                                         let idx = ISSUE_TABS
                                             .iter()
@@ -1335,17 +1284,22 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         )),
         InputMode::Assign => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             let sel = assignee_selection.get();
             let selected_idx = if filtered.is_empty() {
                 None
             } else {
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
-            Some(RenderedTextInput::build_with_suggestions(
-                "Assign users (comma-separated):",
+            let selected = assignee_selected.read();
+            let prompt = if selected.is_empty() {
+                "Assign:".to_owned()
+            } else {
+                format!("Assign [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1356,6 +1310,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 Some(theme.text_primary),
                 Some(theme.bg_selected),
                 Some(theme.text_faint),
+                &selected,
             ))
         }
         InputMode::Label => {
@@ -1501,61 +1456,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     .into_any()
 }
 
-/// Parse comma-separated usernames from input string.
-/// - Splits on commas
-/// - Trims whitespace
-/// - Strips @ prefix if present
-/// - Handles @me syntax (replaces with current user login)
-/// - Deduplicates usernames
-/// - Filters empty strings
-///
-/// Returns: `(parsed_usernames, needs_current_user_fetch)`
-/// The bool indicates if @me was found and we need to fetch `current().user()`
-fn parse_assignee_input(input: &str) -> (Vec<String>, bool) {
-    let mut needs_me = false;
-    let usernames: Vec<String> = input
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            let cleaned = s.strip_prefix('@').unwrap_or(s);
-            if cleaned.eq_ignore_ascii_case("me") {
-                needs_me = true;
-                "@me".to_string() // Placeholder, will be replaced
-            } else {
-                cleaned.to_string()
-            }
-        })
-        .collect();
-
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    let deduped: Vec<String> = usernames
-        .into_iter()
-        .filter(|u| seen.insert(u.clone()))
-        .collect();
-
-    (deduped, needs_me)
-}
-
-/// Extract the "current word" being typed for autocomplete.
-///
-/// Example: `"alice, bob, ch"` → `("alice, bob, ", "ch", 2)`
-///          Returns: `(prefix, current_word, word_index)`
-///
-/// Used for filtering autocomplete suggestions based only on the last username.
-fn extract_current_word(input: &str) -> (&str, &str, usize) {
-    if let Some(last_comma_pos) = input.rfind(',') {
-        let prefix = &input[..=last_comma_pos]; // "alice, bob, "
-        let current = input[last_comma_pos + 1..].trim_start(); // "ch"
-        let word_count = input[..=last_comma_pos].matches(',').count();
-        (prefix, current, word_count)
-    } else {
-        // No comma yet - entire input is one word
-        ("", input.trim(), 0)
-    }
-}
-
 /// Build autocomplete candidates from Issue data (participants, assignees, author).
 /// Returns a deduplicated, sorted list of usernames.
 fn build_issue_assignee_candidates(issue: &Issue) -> Vec<String> {
@@ -1585,7 +1485,6 @@ fn handle_assign_input(
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
@@ -1593,25 +1492,21 @@ fn handle_assign_input(
     event_tx: &std::sync::mpsc::Sender<Event>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
+    mut assignee_selected: State<Vec<String>>,
 ) {
     match code {
-        // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _word_idx) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
             }
         }
         KeyCode::Up | KeyCode::BackTab => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 let sel = assignee_selection.get();
                 assignee_selection.set(if sel == 0 {
@@ -1621,47 +1516,76 @@ fn handle_assign_input(
                 });
             }
         }
-        KeyCode::Enter => {
+        KeyCode::Char(' ') => {
             let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            // If user selected from suggestions, replace current word with selection
-            // Otherwise, keep the buffer as-is
-            let final_input = if filtered.is_empty() {
-                buf.clone() // No suggestions, use typed input
-            } else {
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
                 let sel = assignee_selection
                     .get()
                     .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let (logins, _needs_me) = parse_assignee_input(&final_input);
-                    if let Some(engine) = engine {
-                        engine.send(Request::AssignIssue {
-                            owner,
-                            repo,
-                            number,
-                            logins,
-                            reply_tx: event_tx.clone(),
-                        });
-                    }
+                let item = filtered[sel].clone();
+                let mut selected = assignee_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
                 }
+                assignee_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            assignee_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
+            let checked = assignee_selected.read().clone();
+            let logins: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = unassign all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
+                let candidates = assignee_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let login = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = assignee_selection
+                        .get()
+                        .min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if login.is_empty() {
+                    checked
+                } else {
+                    let mut all = checked;
+                    if !all.contains(&login) {
+                        all.push(login);
+                    }
+                    all
+                }
+            };
+            let info = get_current_issue_info(issues_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(eng) = engine
+            {
+                eng.send(Request::SetIssueAssignees {
+                    owner,
+                    repo,
+                    number,
+                    logins,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();
@@ -1673,44 +1597,6 @@ fn handle_assign_input(
             let mut buf = input_buffer.read().clone();
             buf.push(ch);
             input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            // Backward compatibility: keep Ctrl+D working
-            let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
-            let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            // If user selected from suggestions, replace current word with selection
-            // Otherwise, keep the buffer as-is
-            let final_input = if filtered.is_empty() {
-                buf.clone() // No suggestions, use typed input
-            } else {
-                let sel = assignee_selection
-                    .get()
-                    .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let (logins, _needs_me) = parse_assignee_input(&final_input);
-                    if let Some(engine) = engine {
-                        engine.send(Request::AssignIssue {
-                            owner,
-                            repo,
-                            number,
-                            logins,
-                            reply_tx: event_tx.clone(),
-                        });
-                    }
-                }
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
             assignee_selection.set(0);
         }
         _ => {}
@@ -1736,28 +1622,17 @@ fn handle_text_input(
             let text = input_buffer.read().clone();
             if !text.is_empty() {
                 let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let is_comment = *current_mode == InputMode::Comment;
-                    if let Some(engine) = engine {
-                        if is_comment {
-                            engine.send(Request::AddIssueComment {
-                                owner,
-                                repo,
-                                number,
-                                body: text.clone(),
-                                reply_tx: event_tx.clone(),
-                            });
-                        } else {
-                            let (logins, _needs_me) = parse_assignee_input(&text);
-                            engine.send(Request::AssignIssue {
-                                owner,
-                                repo,
-                                number,
-                                logins,
-                                reply_tx: event_tx.clone(),
-                            });
-                        }
-                    }
+                if let Some((owner, repo, number)) = info
+                    && let Some(engine) = engine
+                    && *current_mode == InputMode::Comment
+                {
+                    engine.send(Request::AddIssueComment {
+                        owner,
+                        repo,
+                        number,
+                        body: text.clone(),
+                        reply_tx: event_tx.clone(),
+                    });
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -1935,6 +1810,21 @@ fn get_current_issue_labels(
         return vec![];
     };
     issue.labels.iter().map(|l| l.name.clone()).collect()
+}
+
+fn get_current_issue_assignees(
+    issues_state: &State<IssuesState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = issues_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(issue) = filter.issues.get(cursor) else {
+        return vec![];
+    };
+    issue.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
 fn build_issue_sidebar_meta(

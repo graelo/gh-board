@@ -533,6 +533,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: assignee autocomplete.
     let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
     let mut assignee_selection = hooks.use_state(|| 0usize);
+    let mut assignee_selected = hooks.use_state(Vec::<String>::new);
 
     // State: label autocomplete.
     let mut label_candidates = hooks.use_state(Vec::<String>::new);
@@ -888,6 +889,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         Event::RepoLabelsFetched { labels, .. } => {
                             label_candidates.set(labels);
                         }
+                        Event::RepoCollaboratorsFetched { logins, .. } => {
+                            let mut combined = assignee_candidates.read().clone();
+                            combined.extend(logins);
+                            combined.sort();
+                            combined.dedup();
+                            assignee_candidates.set(combined);
+                        }
                         _ => {}
                     }
                 }
@@ -950,7 +958,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             modifiers,
                             input_mode,
                             input_buffer,
-                            action_status,
                             &prs_state,
                             current_filter_idx,
                             cursor.get(),
@@ -958,6 +965,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             &event_tx,
                             assignee_candidates,
                             assignee_selection,
+                            assignee_selected,
                         );
                     }
                     InputMode::Label => {
@@ -1296,58 +1304,37 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             }
                                         }
                                     }
-                                    BuiltinAction::Assign => {
+                                    BuiltinAction::Assign | BuiltinAction::Unassign => {
                                         input_mode.set(InputMode::Assign);
+                                        input_buffer.set(String::new());
                                         assignee_selection.set(0);
+                                        let current = get_current_pr_assignees(
+                                            &prs_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        assignee_selected.set(current);
+                                        let initial = {
+                                            let state = prs_state.read();
+                                            state
+                                                .filters
+                                                .get(current_filter_idx)
+                                                .and_then(|f| f.prs.get(cursor.get()))
+                                                .map(build_pr_assignee_candidates)
+                                                .unwrap_or_default()
+                                        };
+                                        assignee_candidates.set(initial);
                                         action_status.set(None);
-                                        let (current_assignees, candidates) = {
-                                            let pr_info2 = get_current_pr_info(
+                                        if let Some(ref eng) = engine
+                                            && let Some((owner, repo, _)) = get_current_pr_info(
                                                 &prs_state,
                                                 current_filter_idx,
                                                 cursor.get(),
-                                            );
-                                            if let Some((_o, _r, number)) = pr_info2 {
-                                                let state = prs_state.read();
-                                                let pr = state
-                                                    .filters
-                                                    .get(current_filter_idx)
-                                                    .and_then(|s| {
-                                                        s.prs.iter().find(|p| p.number == number)
-                                                    });
-                                                if let Some(pr) = pr {
-                                                    let assignees = pr
-                                                        .assignees
-                                                        .iter()
-                                                        .map(|a| a.login.as_str())
-                                                        .collect::<Vec<_>>()
-                                                        .join(", ");
-                                                    let assignees_str = if assignees.is_empty() {
-                                                        String::new()
-                                                    } else {
-                                                        format!("{assignees}, ")
-                                                    };
-                                                    let candidates =
-                                                        build_pr_assignee_candidates(pr);
-                                                    (assignees_str, candidates)
-                                                } else {
-                                                    (String::new(), Vec::new())
-                                                }
-                                            } else {
-                                                (String::new(), Vec::new())
-                                            }
-                                        };
-                                        input_buffer.set(current_assignees);
-                                        assignee_candidates.set(candidates);
-                                    }
-                                    BuiltinAction::Unassign => {
-                                        if pr_number > 0
-                                            && let Some(ref eng) = engine
+                                            )
                                         {
-                                            eng.send(Request::UnassignPr {
-                                                owner: pr_owner.clone(),
-                                                repo: pr_repo.clone(),
-                                                number: pr_number,
-                                                login: "@me".to_owned(),
+                                            eng.send(Request::FetchRepoCollaborators {
+                                                owner,
+                                                repo,
                                                 reply_tx: event_tx.clone(),
                                             });
                                         }
@@ -1532,20 +1519,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     let _ = execute_shell_command(&expanded);
                                 }
                                 None => {
-                                    // ctrl+a: self-assign (assign_self not a BuiltinAction)
-                                    if key_str == "ctrl+a" {
-                                        if pr_number > 0
-                                            && let Some(ref eng) = engine
-                                        {
-                                            eng.send(Request::AssignPr {
-                                                owner: pr_owner.clone(),
-                                                repo: pr_repo.clone(),
-                                                number: pr_number,
-                                                logins: vec!["@me".to_owned()],
-                                                reply_tx: event_tx.clone(),
-                                            });
-                                        }
-                                    } else if key_str == "]" {
+                                    if key_str == "]" {
                                         sidebar_tab.set(sidebar_tab.get().next());
                                         preview_scroll.set(0);
                                     } else if key_str == "[" {
@@ -1801,18 +1775,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let rendered_text_input = match &current_mode {
         InputMode::Assign => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
             let sel = assignee_selection.get();
             let selected_idx = if filtered.is_empty() {
                 None
             } else {
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
-            Some(RenderedTextInput::build_with_suggestions(
-                "Assign users (comma-separated):",
+            let selected = assignee_selected.read();
+            let prompt = if selected.is_empty() {
+                "Assign:".to_owned()
+            } else {
+                format!("Assign [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1823,6 +1801,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 Some(theme.text_primary),
                 Some(theme.bg_selected),
                 Some(theme.text_faint),
+                &selected,
             ))
         }
         InputMode::Label => {
@@ -1988,61 +1967,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     .into_any()
 }
 
-/// Parse comma-separated usernames from input string.
-/// - Splits on commas
-/// - Trims whitespace
-/// - Strips @ prefix if present
-/// - Handles @me syntax (replaces with current user login)
-/// - Deduplicates usernames
-/// - Filters empty strings
-///
-/// Returns: `(parsed_usernames, needs_current_user_fetch)`
-/// The bool indicates if @me was found and we need to fetch `current().user()`
-fn parse_assignee_input(input: &str) -> (Vec<String>, bool) {
-    let mut needs_me = false;
-    let usernames: Vec<String> = input
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            let cleaned = s.strip_prefix('@').unwrap_or(s);
-            if cleaned.eq_ignore_ascii_case("me") {
-                needs_me = true;
-                "@me".to_string() // Placeholder, will be replaced
-            } else {
-                cleaned.to_string()
-            }
-        })
-        .collect();
-
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    let deduped: Vec<String> = usernames
-        .into_iter()
-        .filter(|u| seen.insert(u.clone()))
-        .collect();
-
-    (deduped, needs_me)
-}
-
-/// Extract the "current word" being typed for autocomplete.
-///
-/// Example: `"alice, bob, ch"` → `("alice, bob, ", "ch", 2)`
-///          Returns: `(prefix, current_word, word_index)`
-///
-/// Used for filtering autocomplete suggestions based only on the last username.
-fn extract_current_word(input: &str) -> (&str, &str, usize) {
-    if let Some(last_comma_pos) = input.rfind(',') {
-        let prefix = &input[..=last_comma_pos]; // "alice, bob, "
-        let current = input[last_comma_pos + 1..].trim_start(); // "ch"
-        let word_count = input[..=last_comma_pos].matches(',').count();
-        (prefix, current, word_count)
-    } else {
-        // No comma yet - entire input is one word
-        ("", input.trim(), 0)
-    }
-}
-
 /// Build autocomplete candidates from PR data (participants, reviewers, assignees).
 /// Returns a deduplicated, sorted list of usernames.
 fn build_pr_assignee_candidates(pr: &PullRequest) -> Vec<String> {
@@ -2076,7 +2000,6 @@ fn handle_assign_input(
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
     prs_state: &State<PrsState>,
     filter_idx: usize,
     cursor: usize,
@@ -2084,25 +2007,21 @@ fn handle_assign_input(
     event_tx: &std::sync::mpsc::Sender<Event>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
+    mut assignee_selected: State<Vec<String>>,
 ) {
     match code {
-        // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _word_idx) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
             }
         }
         KeyCode::Up | KeyCode::BackTab => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 let sel = assignee_selection.get();
                 assignee_selection.set(if sel == 0 {
@@ -2112,48 +2031,76 @@ fn handle_assign_input(
                 });
             }
         }
-        KeyCode::Enter => {
+        KeyCode::Char(' ') => {
             let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            // If user selected from suggestions, replace current word with selection
-            // Otherwise, keep the buffer as-is
-            let final_input = if filtered.is_empty() {
-                buf.clone() // No suggestions, use typed input
-            } else {
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
                 let sel = assignee_selection
                     .get()
                     .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_pr_info(prs_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info
-                    && let Some(eng) = engine
-                {
-                    let (usernames, _needs_me) = parse_assignee_input(&final_input);
-                    // Engine resolves "@me" to authenticated user login.
-                    eng.send(Request::AssignPr {
-                        owner,
-                        repo,
-                        number,
-                        logins: usernames,
-                        reply_tx: event_tx.clone(),
-                    });
+                let item = filtered[sel].clone();
+                let mut selected = assignee_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
                 }
+                assignee_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            assignee_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
+            let checked = assignee_selected.read().clone();
+            let logins: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = unassign all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
+                let candidates = assignee_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let login = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = assignee_selection
+                        .get()
+                        .min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if login.is_empty() {
+                    checked
+                } else {
+                    let mut all = checked;
+                    if !all.contains(&login) {
+                        all.push(login);
+                    }
+                    all
+                }
+            };
+            let info = get_current_pr_info(prs_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(eng) = engine
+            {
+                eng.send(Request::SetPrAssignees {
+                    owner,
+                    repo,
+                    number,
+                    logins,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();
@@ -2165,42 +2112,6 @@ fn handle_assign_input(
             let mut buf = input_buffer.read().clone();
             buf.push(ch);
             input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            // Backward compatibility: Ctrl+D also submits
-            let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
-            let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            let final_input = if filtered.is_empty() {
-                buf.clone()
-            } else {
-                let sel = assignee_selection
-                    .get()
-                    .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel])
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_pr_info(prs_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info
-                    && let Some(eng) = engine
-                {
-                    let (usernames, _needs_me) = parse_assignee_input(&final_input);
-                    eng.send(Request::AssignPr {
-                        owner,
-                        repo,
-                        number,
-                        logins: usernames,
-                        reply_tx: event_tx.clone(),
-                    });
-                }
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
             assignee_selection.set(0);
         }
         _ => {}
@@ -2354,6 +2265,21 @@ fn get_current_pr_labels(
         return vec![];
     };
     pr.labels.iter().map(|l| l.name.clone()).collect()
+}
+
+fn get_current_pr_assignees(
+    prs_state: &State<PrsState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = prs_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(pr) = filter.prs.get(cursor) else {
+        return vec![];
+    };
+    pr.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
 /// Build the `SidebarMeta` header from a pull request.

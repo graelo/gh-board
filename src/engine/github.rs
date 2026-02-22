@@ -643,89 +643,28 @@ async fn handle_request(
             }
         }
 
-        Request::AssignPr {
+        Request::SetPrAssignees {
             owner,
             repo,
             number,
             logins,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AssignPr") else {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrAssignees")
+            else {
                 return;
             };
-            // Resolve "@me" to the authenticated user's login.
-            let resolved_logins: Vec<String> = if logins.iter().any(|l| l == "@me") {
-                match octocrab.current().user().await {
-                    Ok(user) => logins
-                        .iter()
-                        .map(|l| {
-                            if l == "@me" {
-                                user.login.clone()
-                            } else {
-                                l.clone()
-                            }
-                        })
-                        .collect(),
-                    Err(e) => {
-                        let _ = reply_tx.send(Event::MutationError {
-                            description: format!("Assign PR #{number}"),
-                            message: format!("Failed to resolve current user: {e}"),
-                        });
-                        return;
-                    }
-                }
-            } else {
-                logins
-            };
-            match pr_actions::assign(&octocrab, &owner, &repo, number, &resolved_logins).await {
+            match issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await {
                 Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk SetPrAssignees #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Assigned PR #{number}"),
+                        description: format!("Set assignees on PR #{number}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: SetPrAssignees #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Assign PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        Request::UnassignPr {
-            owner,
-            repo,
-            number,
-            login,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UnassignPr") else {
-                return;
-            };
-            // Resolve "@me" to the authenticated user's login.
-            let resolved_login = if login == "@me" {
-                match octocrab.current().user().await {
-                    Ok(user) => user.login,
-                    Err(e) => {
-                        let _ = reply_tx.send(Event::MutationError {
-                            description: format!("Unassign PR #{number}"),
-                            message: format!("Failed to resolve current user: {e}"),
-                        });
-                        return;
-                    }
-                }
-            } else {
-                login
-            };
-            match pr_actions::unassign(&octocrab, &owner, &repo, number, &resolved_login).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Unassigned PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Unassign PR #{number}"),
+                        description: format!("Set assignees on PR #{number}"),
                         message: e.to_string(),
                     });
                 }
@@ -866,52 +805,28 @@ async fn handle_request(
             }
         }
 
-        Request::AssignIssue {
+        Request::SetIssueAssignees {
             owner,
             repo,
             number,
             logins,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AssignIssue")
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueAssignees")
             else {
                 return;
             };
-            match issue_actions::assign(&octocrab, &owner, &repo, number, &logins).await {
+            match issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await {
                 Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk SetIssueAssignees #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Assigned issue #{number}"),
+                        description: format!("Set assignees on issue #{number}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: SetIssueAssignees #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Assign issue #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        Request::UnassignIssue {
-            owner,
-            repo,
-            number,
-            login,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UnassignIssue")
-            else {
-                return;
-            };
-            match issue_actions::unassign(&octocrab, &owner, &repo, number, &login).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Unassigned issue #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Unassign issue #{number}"),
+                        description: format!("Set assignees on issue #{number}"),
                         message: e.to_string(),
                     });
                 }

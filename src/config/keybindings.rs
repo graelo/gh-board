@@ -154,8 +154,7 @@ impl BuiltinAction {
             Self::ToggleHelp => "Toggle help overlay",
             Self::Quit => "Quit",
             Self::Approve => "Approve",
-            Self::Assign => "Assign",
-            Self::Unassign => "Unassign",
+            Self::Assign | Self::Unassign => "Assign/Unassign (multiselect)",
             Self::CommentAction => "Comment",
             Self::ViewDiff => "View diff in pager",
             Self::Checkout => "Checkout branch",
@@ -298,9 +297,7 @@ pub fn default_prs() -> Vec<Keybinding> {
     vec![
         kb("v", "approve", "Approve"),
         kb("L", "label", "Label (autocomplete)"),
-        kb("a", "assign", "Assign (multi, autocomplete)"),
-        kb("ctrl+a", "assign_self", "Assign to me"),
-        kb("A", "unassign", "Unassign"),
+        kb("a", "assign", "Assign/Unassign (multiselect)"),
         kb("c", "comment", "Comment"),
         kb("d", "view_diff", "View diff"),
         kb("C", "checkout", "Checkout branch"),
@@ -320,9 +317,7 @@ pub fn default_prs() -> Vec<Keybinding> {
 pub(crate) fn default_issues() -> Vec<Keybinding> {
     vec![
         kb("L", "label", "Label (autocomplete)"),
-        kb("a", "assign", "Assign (multi, autocomplete)"),
-        kb("ctrl+a", "assign_self", "Assign to me"),
-        kb("A", "unassign", "Unassign"),
+        kb("a", "assign", "Assign/Unassign (multiselect)"),
         kb("c", "comment", "Comment"),
         kb("x", "close", "Close issue"),
         kb("X", "reopen", "Reopen issue"),

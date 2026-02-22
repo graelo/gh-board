@@ -127,37 +127,3 @@ pub async fn ready_for_review(
         .context("marking PR as ready for review")?;
     Ok(())
 }
-
-/// Assign users to a PR.
-pub async fn assign(
-    octocrab: &Arc<Octocrab>,
-    owner: &str,
-    repo: &str,
-    number: u64,
-    logins: &[String],
-) -> Result<()> {
-    let route = format!("/repos/{owner}/{repo}/issues/{number}/assignees");
-    let payload = serde_json::json!({ "assignees": logins });
-    let _: serde_json::Value = octocrab
-        .post(route, Some(&payload))
-        .await
-        .context("assigning users")?;
-    Ok(())
-}
-
-/// Unassign a user from a PR.
-pub async fn unassign(
-    octocrab: &Arc<Octocrab>,
-    owner: &str,
-    repo: &str,
-    number: u64,
-    login: &str,
-) -> Result<()> {
-    let route = format!("/repos/{owner}/{repo}/issues/{number}/assignees");
-    let payload = serde_json::json!({ "assignees": [login] });
-    let _: serde_json::Value = octocrab
-        .delete(route, Some(&payload))
-        .await
-        .context("unassigning user")?;
-    Ok(())
-}

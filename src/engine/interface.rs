@@ -180,18 +180,12 @@ pub enum Request {
         number: u64,
         reply_tx: Sender<Event>,
     },
-    AssignPr {
+    /// Replace the full assignee set on a PR. An empty `logins` vec unassigns everyone.
+    SetPrAssignees {
         owner: String,
         repo: String,
         number: u64,
         logins: Vec<String>,
-        reply_tx: Sender<Event>,
-    },
-    UnassignPr {
-        owner: String,
-        repo: String,
-        number: u64,
-        login: String,
         reply_tx: Sender<Event>,
     },
     /// Replace the full label set on a PR. An empty `labels` vec clears all labels.
@@ -233,18 +227,12 @@ pub enum Request {
         labels: Vec<String>,
         reply_tx: Sender<Event>,
     },
-    AssignIssue {
+    /// Replace the full assignee set on an issue. An empty `logins` vec unassigns everyone.
+    SetIssueAssignees {
         owner: String,
         repo: String,
         number: u64,
         logins: Vec<String>,
-        reply_tx: Sender<Event>,
-    },
-    UnassignIssue {
-        owner: String,
-        repo: String,
-        number: u64,
-        login: String,
         reply_tx: Sender<Event>,
     },
 

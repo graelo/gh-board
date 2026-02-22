@@ -73,36 +73,19 @@ pub(crate) async fn set_labels(
     Ok(())
 }
 
-/// Assign users to an issue.
-pub(crate) async fn assign(
+/// Replace all assignees on an issue/PR. An empty `logins` slice unassigns everyone.
+pub(crate) async fn set_assignees(
     octocrab: &Arc<Octocrab>,
     owner: &str,
     repo: &str,
     number: u64,
     logins: &[String],
 ) -> Result<()> {
-    let route = format!("/repos/{owner}/{repo}/issues/{number}/assignees");
+    let route = format!("/repos/{owner}/{repo}/issues/{number}");
     let payload = serde_json::json!({ "assignees": logins });
     let _: serde_json::Value = octocrab
-        .post(route, Some(&payload))
+        .patch(route, Some(&payload))
         .await
-        .context("assigning users to issue")?;
-    Ok(())
-}
-
-/// Unassign a user from an issue.
-pub(crate) async fn unassign(
-    octocrab: &Arc<Octocrab>,
-    owner: &str,
-    repo: &str,
-    number: u64,
-    login: &str,
-) -> Result<()> {
-    let route = format!("/repos/{owner}/{repo}/issues/{number}/assignees");
-    let payload = serde_json::json!({ "assignees": [login] });
-    let _: serde_json::Value = octocrab
-        .delete(route, Some(&payload))
-        .await
-        .context("unassigning user from issue")?;
+        .context("setting assignees on issue")?;
     Ok(())
 }

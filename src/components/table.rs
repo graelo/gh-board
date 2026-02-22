@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use iocraft::prelude::*;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::color::{Color as AppColor, ColorDepth};
 
@@ -210,6 +211,14 @@ impl RenderedTable {
 
         let subtitle_column = cfg.subtitle_column;
 
+        // Compute subtitle left-padding (width of first column) before the loop
+        // so we can use it for subtitle truncation.
+        let subtitle_padding: u32 = if subtitle_column.is_some() {
+            col_widths.first().map_or(0, |&w| u32::from(w))
+        } else {
+            0
+        };
+
         let body_rows: Vec<RenderedRow> = visible_slice
             .iter()
             .enumerate()
@@ -234,7 +243,7 @@ impl RenderedTable {
                             |c| render_spans(&c.spans, depth),
                         );
                         RenderedCell {
-                            spans,
+                            spans: truncate_spans(spans, usize::from(w)),
                             width: u32::from(w),
                             align: col.align,
                         }
@@ -242,9 +251,12 @@ impl RenderedTable {
                     .collect();
 
                 // Extract subtitle cell if configured.
+                let subtitle_available =
+                    usize::from(total_width).saturating_sub(subtitle_padding as usize);
                 let subtitle = subtitle_column.and_then(|col_id| {
                     row.get(col_id).map(|cell| {
-                        let spans = render_spans(&cell.spans, depth);
+                        let spans =
+                            truncate_spans(render_spans(&cell.spans, depth), subtitle_available);
                         RenderedCell {
                             spans,
                             width: u32::from(total_width),
@@ -266,14 +278,6 @@ impl RenderedTable {
             cfg.empty_message.map(String::from)
         } else {
             None
-        };
-
-        // Subtitle left padding: width of the first column so the subtitle
-        // aligns with the second column (the main content column).
-        let subtitle_padding = if subtitle_column.is_some() {
-            col_widths.first().map_or(0, |&w| u32::from(w))
-        } else {
-            0
         };
 
         Self {
@@ -419,6 +423,49 @@ fn render_spans(spans: &[Span], depth: ColorDepth) -> Vec<RenderedSpan> {
             weight: if s.bold { Weight::Bold } else { Weight::Normal },
         })
         .collect()
+}
+
+/// Truncate `s` to at most `max_cols` display columns (no ellipsis appended).
+fn truncate_str_to_cols(s: &str, max_cols: usize) -> &str {
+    let mut width = 0usize;
+    for (i, c) in s.char_indices() {
+        let cw = c.width().unwrap_or(0);
+        if width + cw > max_cols {
+            return &s[..i];
+        }
+        width += cw;
+    }
+    s
+}
+
+/// Truncate a list of rendered spans so that their total display width fits
+/// within `max_cols` columns. Appends `…` (U+2026) when truncation occurs.
+fn truncate_spans(spans: Vec<RenderedSpan>, max_cols: usize) -> Vec<RenderedSpan> {
+    let total: usize = spans.iter().map(|s| s.text.width()).sum();
+    if total <= max_cols {
+        return spans;
+    }
+    // Reserve 1 column for the ellipsis character.
+    let budget = max_cols.saturating_sub(1);
+    let mut used = 0usize;
+    let mut result = Vec::new();
+    for span in spans {
+        let sw = span.text.width();
+        if used + sw <= budget {
+            used += sw;
+            result.push(span);
+        } else {
+            let remaining = budget.saturating_sub(used);
+            let cut = truncate_str_to_cols(&span.text, remaining);
+            result.push(RenderedSpan {
+                text: format!("{cut}\u{2026}"),
+                fg: span.fg,
+                weight: span.weight,
+            });
+            break;
+        }
+    }
+    result
 }
 
 fn compute_column_widths(

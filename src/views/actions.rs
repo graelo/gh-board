@@ -783,7 +783,7 @@ pub fn ActionsView<'a>(
                                         Ok(()) => action_status
                                             .set(Some(format!("Copied #{}", run.run_number))),
                                         Err(e) => {
-                                            action_status.set(Some(format!("Copy failed: {e}")))
+                                            action_status.set(Some(format!("Copy failed: {e}")));
                                         }
                                     }
                                 }

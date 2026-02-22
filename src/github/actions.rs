@@ -8,7 +8,9 @@ use serde_json::Value as JsonValue;
 
 use crate::config::types::ActionsFilter;
 use crate::github::client::extract_rest_rate_limit;
-use crate::types::{Actor, JobStep, RateLimitInfo, RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
+use crate::types::{
+    Actor, JobStep, RateLimitInfo, RunConclusion, RunStatus, WorkflowJob, WorkflowRun,
+};
 
 // ---------------------------------------------------------------------------
 // Raw API response types
@@ -197,8 +199,7 @@ pub async fn fetch_run_jobs(
         .body_to_string(response)
         .await
         .context("reading run jobs body")?;
-    let parsed: RawJobsResponse =
-        serde_json::from_str(&body).context("deserializing run jobs")?;
+    let parsed: RawJobsResponse = serde_json::from_str(&body).context("deserializing run jobs")?;
 
     let jobs = parsed
         .jobs

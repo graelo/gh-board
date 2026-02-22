@@ -200,7 +200,11 @@ const NAV_W: u16 = 28;
 /// Resolve `@current` to the active scope repo, or return the literal value.
 /// Returns `None` only when the repo is `@current` and no scope is available.
 fn resolve_filter_repo<'a>(repo: &'a str, scope_repo: Option<&'a str>) -> Option<&'a str> {
-    if repo == "@current" { scope_repo } else { Some(repo) }
+    if repo == "@current" {
+        scope_repo
+    } else {
+        Some(repo)
+    }
 }
 
 fn parse_owner_repo_from_url(url: &str) -> Option<(String, String)> {
@@ -394,7 +398,10 @@ pub fn ActionsView<'a>(
                 if let Some(repo) = resolve_filter_repo(&f.repo, scope_repo.as_deref())
                     && repo != f.repo.as_str()
                 {
-                    return ActionsFilter { repo: repo.to_owned(), ..f.clone() };
+                    return ActionsFilter {
+                        repo: repo.to_owned(),
+                        ..f.clone()
+                    };
                 }
                 f.clone()
             })
@@ -420,7 +427,10 @@ pub fn ActionsView<'a>(
             let filter = if resolved_repo == cfg.repo.as_str() {
                 cfg.clone()
             } else {
-                ActionsFilter { repo: resolved_repo.to_owned(), ..cfg.clone() }
+                ActionsFilter {
+                    repo: resolved_repo.to_owned(),
+                    ..cfg.clone()
+                }
             };
             if filter_idx < in_flight.len() {
                 in_flight[filter_idx] = true;
@@ -442,7 +452,10 @@ pub fn ActionsView<'a>(
         let filter = if resolved_repo == cfg.repo.as_str() {
             cfg.clone()
         } else {
-            ActionsFilter { repo: resolved_repo.to_owned(), ..cfg.clone() }
+            ActionsFilter {
+                repo: resolved_repo.to_owned(),
+                ..cfg.clone()
+            }
         };
         let mut in_flight = filter_in_flight.read().clone();
         if current_filter_idx < in_flight.len() {

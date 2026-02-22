@@ -67,9 +67,7 @@ impl GitHubClient {
 ///
 /// Reads `x-ratelimit-remaining` and `x-ratelimit-limit`. Returns `None` if
 /// the headers are absent or cannot be parsed (e.g. non-REST responses).
-pub(crate) fn extract_rest_rate_limit(
-    headers: &http::header::HeaderMap,
-) -> Option<RateLimitInfo> {
+pub(crate) fn extract_rest_rate_limit(headers: &http::header::HeaderMap) -> Option<RateLimitInfo> {
     let remaining = headers
         .get("x-ratelimit-remaining")?
         .to_str()

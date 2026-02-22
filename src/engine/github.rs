@@ -217,8 +217,7 @@ async fn handle_request(
             reply_tx,
         } => {
             let host = host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunJobs")
-            else {
+            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunJobs") else {
                 return;
             };
             match gh_actions::fetch_run_jobs(&octocrab, &owner, &repo, run_id).await {

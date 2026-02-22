@@ -251,9 +251,9 @@ impl Defaults {
                 // Footer
                 footer_prs: Color::Ansi256(4),           // blue
                 footer_issues: Color::Ansi256(2),        // green
-                footer_actions: Color::Ansi256(6),       // cyan
+                footer_actions: Color::Ansi256(13),      // bright magenta/violet
                 footer_notifications: Color::Ansi256(5), // magenta
-                footer_repo: Color::Ansi256(13),         // bright magenta/violet
+                footer_repo: Color::Ansi256(6),          // cyan
             },
             Background::Light => Self {
                 text_primary: Color::Ansi256(0),
@@ -289,9 +289,9 @@ impl Defaults {
                 // Footer
                 footer_prs: Color::Ansi256(4),           // blue
                 footer_issues: Color::Ansi256(2),        // green
-                footer_actions: Color::Ansi256(6),       // cyan
+                footer_actions: Color::Ansi256(13),      // bright magenta/violet
                 footer_notifications: Color::Ansi256(5), // magenta
-                footer_repo: Color::Ansi256(13),         // bright magenta/violet
+                footer_repo: Color::Ansi256(6),          // cyan
             },
         }
     }

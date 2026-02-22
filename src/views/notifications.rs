@@ -361,8 +361,6 @@ pub fn NotificationsView<'a>(
     // Poll engine events and update local state.
     {
         let rx_for_poll = event_rx_arc.clone();
-        let engine_for_poll = engine.clone();
-        let event_tx_for_poll = event_tx.clone();
         let current_filter_for_poll = current_filter_idx;
         let theme_for_poll = theme.clone();
         let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
@@ -382,6 +380,7 @@ pub fn NotificationsView<'a>(
                         Event::NotificationsFetched {
                             filter_idx,
                             notifications,
+                            rate_limit,
                         } => {
                             let rows: Vec<Row> = notifications
                                 .iter()
@@ -415,11 +414,8 @@ pub fn NotificationsView<'a>(
                                 ifl[filter_idx] = false;
                             }
                             filter_in_flight.set(ifl);
-                            // Piggyback a rate-limit check — REST API provides none.
-                            if let Some(ref eng) = engine_for_poll {
-                                eng.send(Request::FetchRateLimit {
-                                    reply_tx: event_tx_for_poll.clone(),
-                                });
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
                             }
                         }
                         Event::FetchError {

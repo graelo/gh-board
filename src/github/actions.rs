@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -7,7 +7,8 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 use crate::config::types::ActionsFilter;
-use crate::types::{Actor, JobStep, RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
+use crate::github::client::extract_rest_rate_limit;
+use crate::types::{Actor, JobStep, RateLimitInfo, RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
 
 // ---------------------------------------------------------------------------
 // Raw API response types
@@ -148,7 +149,7 @@ struct RawStep {
 pub async fn fetch_workflow_runs(
     octocrab: &Arc<Octocrab>,
     filter: &ActionsFilter,
-) -> Result<Vec<WorkflowRun>> {
+) -> Result<(Vec<WorkflowRun>, Option<RateLimitInfo>)> {
     let (owner, repo) = filter.repo.split_once('/').with_context(|| {
         format!(
             "invalid repo format {:?} — expected owner/repo",
@@ -158,27 +159,27 @@ pub async fn fetch_workflow_runs(
 
     let per_page = filter.limit.unwrap_or(30).min(100);
 
-    let mut params: HashMap<&str, String> = HashMap::new();
-    params.insert("per_page", per_page.to_string());
-    params.insert("page", "1".to_owned());
+    let mut qs = format!("per_page={per_page}&page=1");
     if let Some(ref status) = filter.status {
-        params.insert("status", status.clone());
+        write!(qs, "&status={status}").expect("write to String is infallible");
     }
     if let Some(ref event) = filter.event {
-        params.insert("event", event.clone());
+        write!(qs, "&event={event}").expect("write to String is infallible");
     }
 
-    let route = format!("/repos/{owner}/{repo}/actions/runs");
-    let response: RawWorkflowRunsResponse = octocrab
-        .get(route, Some(&params))
-        .await
-        .context("fetching workflow runs")?;
+    let url = format!("/repos/{owner}/{repo}/actions/runs?{qs}");
+    let response = octocrab._get(url).await.context("fetching workflow runs")?;
 
-    Ok(response
-        .workflow_runs
-        .into_iter()
-        .map(into_domain)
-        .collect())
+    let rate_limit = extract_rest_rate_limit(response.headers());
+    let body = octocrab
+        .body_to_string(response)
+        .await
+        .context("reading workflow runs body")?;
+    let parsed: RawWorkflowRunsResponse =
+        serde_json::from_str(&body).context("deserializing workflow runs")?;
+
+    let runs = parsed.workflow_runs.into_iter().map(into_domain).collect();
+    Ok((runs, rate_limit))
 }
 
 /// Fetch the jobs for a specific workflow run.
@@ -187,17 +188,19 @@ pub async fn fetch_run_jobs(
     owner: &str,
     repo: &str,
     run_id: u64,
-) -> Result<Vec<WorkflowJob>> {
-    let mut params: HashMap<&str, String> = HashMap::new();
-    params.insert("per_page", "100".to_owned());
+) -> Result<(Vec<WorkflowJob>, Option<RateLimitInfo>)> {
+    let url = format!("/repos/{owner}/{repo}/actions/runs/{run_id}/jobs?per_page=100");
+    let response = octocrab._get(url).await.context("fetching run jobs")?;
 
-    let route = format!("/repos/{owner}/{repo}/actions/runs/{run_id}/jobs");
-    let response: RawJobsResponse = octocrab
-        .get(route, Some(&params))
+    let rate_limit = extract_rest_rate_limit(response.headers());
+    let body = octocrab
+        .body_to_string(response)
         .await
-        .context("fetching run jobs")?;
+        .context("reading run jobs body")?;
+    let parsed: RawJobsResponse =
+        serde_json::from_str(&body).context("deserializing run jobs")?;
 
-    let jobs = response
+    let jobs = parsed
         .jobs
         .into_iter()
         .map(|j| WorkflowJob {
@@ -220,7 +223,7 @@ pub async fn fetch_run_jobs(
                 .collect(),
         })
         .collect();
-    Ok(jobs)
+    Ok((jobs, rate_limit))
 }
 
 /// Re-run a workflow run (all jobs or failed jobs only).

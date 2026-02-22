@@ -21,7 +21,7 @@ use crate::config::types::ActionsFilter;
 use crate::engine::{EngineHandle, Event, Request};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
-use crate::types::{RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
+use crate::types::{RateLimitInfo, RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
 
 // ---------------------------------------------------------------------------
 // Column definitions
@@ -342,6 +342,7 @@ pub fn ActionsView<'a>(
     let mut jobs_in_flight = hooks.use_state(HashSet::<u64>::new);
 
     let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
 
     let mut refresh_registered = hooks.use_state(|| false);
     let mut filter_fetch_times =
@@ -437,7 +438,11 @@ pub fn ActionsView<'a>(
                 };
                 for evt in events {
                     match evt {
-                        Event::ActionsFetched { filter_idx, runs } => {
+                        Event::ActionsFetched {
+                            filter_idx,
+                            runs,
+                            rate_limit,
+                        } => {
                             let rows: Vec<Row> = runs
                                 .iter()
                                 .map(|r| run_to_row(r, &theme_for_poll))
@@ -465,14 +470,24 @@ pub fn ActionsView<'a>(
                                 ifl[filter_idx] = false;
                             }
                             filter_in_flight.set(ifl);
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
+                            }
                         }
-                        Event::RunJobsFetched { run_id, jobs } => {
+                        Event::RunJobsFetched {
+                            run_id,
+                            jobs,
+                            rate_limit,
+                        } => {
                             let mut cache = jobs_cache.read().clone();
                             cache.insert(run_id, jobs);
                             jobs_cache.set(cache);
                             let mut ifl = jobs_in_flight.read().clone();
                             ifl.remove(&run_id);
                             jobs_in_flight.set(ifl);
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
+                            }
                         }
                         Event::MutationOk { description } => {
                             action_status.set(Some(format!("\u{2713} {description}")));
@@ -493,6 +508,9 @@ pub fn ActionsView<'a>(
                             message,
                         } => {
                             action_status.set(Some(format!("\u{2717} {description}: {message}")));
+                        }
+                        Event::RateLimitUpdated { info } => {
+                            rate_limit_state.set(Some(info));
                         }
                         Event::FetchError { message, .. } => {
                             let ifl = filter_in_flight.read().clone();
@@ -1156,6 +1174,7 @@ pub fn ActionsView<'a>(
         .copied()
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
+    let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
     let scope_label = filters_cfg
         .get(current_filter_idx)
         .map_or_else(String::new, |f| f.repo.clone());
@@ -1166,7 +1185,7 @@ pub fn ActionsView<'a>(
         scope_label,
         context_text,
         updated_text,
-        String::new(),
+        rate_limit_text,
         depth,
         [
             Some(theme.footer_prs),

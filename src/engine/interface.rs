@@ -295,14 +295,17 @@ pub enum Event {
     NotificationsFetched {
         filter_idx: usize,
         notifications: Vec<Notification>,
+        rate_limit: Option<RateLimitInfo>,
     },
     ActionsFetched {
         filter_idx: usize,
         runs: Vec<WorkflowRun>,
+        rate_limit: Option<RateLimitInfo>,
     },
     RunJobsFetched {
         run_id: u64,
         jobs: Vec<WorkflowJob>,
+        rate_limit: Option<RateLimitInfo>,
     },
     PrDetailFetched {
         number: u64,

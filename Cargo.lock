@@ -948,6 +948,7 @@ dependencies = [
  "chrono",
  "clap",
  "crossterm",
+ "http",
  "iocraft",
  "moka",
  "octocrab",

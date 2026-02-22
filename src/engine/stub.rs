@@ -61,6 +61,7 @@ impl StubEngine {
                     let _ = reply_tx.send(Event::ActionsFetched {
                         filter_idx,
                         runs: vec![],
+                        rate_limit: None,
                     });
                 }
 
@@ -71,6 +72,7 @@ impl StubEngine {
                     let _ = reply_tx.send(Event::RunJobsFetched {
                         run_id,
                         jobs: vec![],
+                        rate_limit: None,
                     });
                 }
 
@@ -82,6 +84,7 @@ impl StubEngine {
                     let _ = reply_tx.send(Event::NotificationsFetched {
                         filter_idx,
                         notifications: self.notifications.clone(),
+                        rate_limit: None,
                     });
                 }
                 Request::FetchPrDetail { reply_tx, .. }

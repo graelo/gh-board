@@ -182,13 +182,17 @@ async fn handle_request(
                 return;
             };
             match gh_actions::fetch_workflow_runs(&octocrab, &filter).await {
-                Ok(runs) => {
+                Ok((runs, rate_limit)) => {
                     scheduler.mark_fetched(filter_idx, ViewKind::Actions);
                     tracing::debug!(
                         "engine: sending ActionsFetched[{filter_idx}] count={}",
                         runs.len()
                     );
-                    let _ = reply_tx.send(Event::ActionsFetched { filter_idx, runs });
+                    let _ = reply_tx.send(Event::ActionsFetched {
+                        filter_idx,
+                        runs,
+                        rate_limit,
+                    });
                 }
                 Err(e) => {
                     tracing::debug!("engine: FetchActions[{filter_idx}] error: {e}");
@@ -216,12 +220,16 @@ async fn handle_request(
                 return;
             };
             match gh_actions::fetch_run_jobs(&octocrab, &owner, &repo, run_id).await {
-                Ok(jobs) => {
+                Ok((jobs, rate_limit)) => {
                     tracing::debug!(
                         "engine: sending RunJobsFetched run_id={run_id} count={}",
                         jobs.len()
                     );
-                    let _ = reply_tx.send(Event::RunJobsFetched { run_id, jobs });
+                    let _ = reply_tx.send(Event::RunJobsFetched {
+                        run_id,
+                        jobs,
+                        rate_limit,
+                    });
                 }
                 Err(e) => {
                     tracing::debug!("engine: FetchRunJobs run_id={run_id} error: {e}");
@@ -246,7 +254,7 @@ async fn handle_request(
             let limit = filter.limit.unwrap_or(50);
             let params = notif::parse_filters(&filter.filters, limit);
             match notif::fetch_notifications(&octocrab, &params).await {
-                Ok(notifications) => {
+                Ok((notifications, rate_limit)) => {
                     scheduler.mark_fetched(filter_idx, ViewKind::Notifications);
                     tracing::debug!(
                         "engine: sending NotificationsFetched[{filter_idx}] count={}",
@@ -255,6 +263,7 @@ async fn handle_request(
                     let _ = reply_tx.send(Event::NotificationsFetched {
                         filter_idx,
                         notifications,
+                        rate_limit,
                     });
                 }
                 Err(e) => {
@@ -1178,7 +1187,7 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                 let limit = notif_filter.limit.unwrap_or(50);
                 let params = notif::parse_filters(&notif_filter.filters, limit);
                 match notif::fetch_notifications(&octocrab, &params).await {
-                    Ok(notifications) => {
+                    Ok((notifications, rate_limit)) => {
                         scheduler.mark_fetched(filter_idx, ViewKind::Notifications);
                         tracing::debug!(
                             "engine: refresh NotificationsFetched[{filter_idx}] count={}",
@@ -1187,6 +1196,7 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                         let _ = notify_tx.send(Event::NotificationsFetched {
                             filter_idx,
                             notifications,
+                            rate_limit,
                         });
                     }
                     Err(e) => {
@@ -1202,13 +1212,17 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                     continue;
                 };
                 match gh_actions::fetch_workflow_runs(&octocrab, &actions_filter).await {
-                    Ok(runs) => {
+                    Ok((runs, rate_limit)) => {
                         scheduler.mark_fetched(filter_idx, ViewKind::Actions);
                         tracing::debug!(
                             "engine: refresh ActionsFetched[{filter_idx}] count={}",
                             runs.len()
                         );
-                        let _ = notify_tx.send(Event::ActionsFetched { filter_idx, runs });
+                        let _ = notify_tx.send(Event::ActionsFetched {
+                            filter_idx,
+                            runs,
+                            rate_limit,
+                        });
                     }
                     Err(e) => {
                         tracing::debug!("engine: refresh FetchActions[{filter_idx}] error: {e}");

@@ -237,6 +237,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     preview_width_pct,
                     show_filter_count: show_count,
                     show_separator,
+                    scope_repo: scope_repo.clone(),
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,

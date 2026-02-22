@@ -107,6 +107,9 @@ pub struct IssueFilter {
 pub struct ActionsFilter {
     pub title: String,
     /// `"owner/repo"` — the repository to fetch workflow runs for.
+    /// Use `"@current"` to resolve to the repository detected from the
+    /// current working directory (requires running gh-board inside a git repo).
+    /// The fetch is skipped when `@current` is used but no repo is in context.
     pub repo: String,
     pub host: Option<String>,
     pub limit: Option<u32>,

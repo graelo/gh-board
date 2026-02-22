@@ -197,6 +197,12 @@ const NAV_W: u16 = 28;
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Resolve `@current` to the active scope repo, or return the literal value.
+/// Returns `None` only when the repo is `@current` and no scope is available.
+fn resolve_filter_repo<'a>(repo: &'a str, scope_repo: Option<&'a str>) -> Option<&'a str> {
+    if repo == "@current" { scope_repo } else { Some(repo) }
+}
+
 fn parse_owner_repo_from_url(url: &str) -> Option<(String, String)> {
     let after_scheme = url
         .strip_prefix("https://")
@@ -300,6 +306,7 @@ pub struct ActionsViewProps<'a> {
     pub preview_width_pct: f64,
     pub show_filter_count: bool,
     pub show_separator: bool,
+    pub scope_repo: Option<String>,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
     pub switch_view_back: Option<State<bool>>,
@@ -323,6 +330,7 @@ pub fn ActionsView<'a>(
     let filter_count = filters_cfg.len();
     let is_active = props.is_active;
     let preview_pct = props.preview_width_pct;
+    let scope_repo = props.scope_repo.clone();
 
     let mut active_filter = hooks.use_state(|| 0usize);
     let mut cursor = hooks.use_state(|| 0usize);
@@ -378,8 +386,21 @@ pub fn ActionsView<'a>(
     if !refresh_registered.get()
         && let Some(ref eng) = engine
     {
+        // Resolve @current; pass the raw filter for unresolvable ones (engine fails
+        // silently on "@current" — same as a typo, background refresh skips it).
+        let resolved_for_refresh: Vec<ActionsFilter> = filters_cfg
+            .iter()
+            .map(|f| {
+                if let Some(repo) = resolve_filter_repo(&f.repo, scope_repo.as_deref())
+                    && repo != f.repo.as_str()
+                {
+                    return ActionsFilter { repo: repo.to_owned(), ..f.clone() };
+                }
+                f.clone()
+            })
+            .collect();
         eng.send(Request::RegisterActionsRefresh {
-            filter_configs: filters_cfg.to_vec(),
+            filter_configs: resolved_for_refresh,
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);
@@ -392,12 +413,21 @@ pub fn ActionsView<'a>(
         refresh_all.set(false);
         let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, cfg) in filters_cfg.iter().enumerate() {
+            let Some(resolved_repo) = resolve_filter_repo(&cfg.repo, scope_repo.as_deref()) else {
+                tracing::debug!("actions: skipping @current filter[{filter_idx}] — no scope repo");
+                continue;
+            };
+            let filter = if resolved_repo == cfg.repo.as_str() {
+                cfg.clone()
+            } else {
+                ActionsFilter { repo: resolved_repo.to_owned(), ..cfg.clone() }
+            };
             if filter_idx < in_flight.len() {
                 in_flight[filter_idx] = true;
             }
             eng.send(Request::FetchActions {
                 filter_idx,
-                filter: cfg.clone(),
+                filter,
                 reply_tx: event_tx.clone(),
             });
         }
@@ -406,8 +436,14 @@ pub fn ActionsView<'a>(
         && !active_in_flight
         && is_active
         && let Some(cfg) = filters_cfg.get(current_filter_idx)
+        && let Some(resolved_repo) = resolve_filter_repo(&cfg.repo, scope_repo.as_deref())
         && let Some(ref eng) = engine
     {
+        let filter = if resolved_repo == cfg.repo.as_str() {
+            cfg.clone()
+        } else {
+            ActionsFilter { repo: resolved_repo.to_owned(), ..cfg.clone() }
+        };
         let mut in_flight = filter_in_flight.read().clone();
         if current_filter_idx < in_flight.len() {
             in_flight[current_filter_idx] = true;
@@ -415,9 +451,24 @@ pub fn ActionsView<'a>(
         filter_in_flight.set(in_flight);
         eng.send(Request::FetchActions {
             filter_idx: current_filter_idx,
-            filter: cfg.clone(),
+            filter,
             reply_tx: event_tx.clone(),
         });
+    } else if active_needs_fetch
+        && !active_in_flight
+        && is_active
+        && let Some(cfg) = filters_cfg.get(current_filter_idx)
+        && resolve_filter_repo(&cfg.repo, scope_repo.as_deref()).is_none()
+    {
+        // `@current` filter with no scope resolved — clear loading to show empty tab.
+        tracing::debug!(
+            "actions: @current filter[{current_filter_idx}] — no scope, clearing loading state"
+        );
+        let mut state = actions_state.read().clone();
+        if current_filter_idx < state.filters.len() {
+            state.filters[current_filter_idx].loading = false;
+        }
+        actions_state.set(state);
     }
 
     // Poll engine events.
@@ -1181,7 +1232,11 @@ pub fn ActionsView<'a>(
     let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
     let scope_label = filters_cfg
         .get(current_filter_idx)
-        .map_or_else(String::new, |f| f.repo.clone());
+        .map_or_else(String::new, |f| {
+            resolve_filter_repo(&f.repo, scope_repo.as_deref())
+                .unwrap_or("@current")
+                .to_owned()
+        });
 
     let rendered_footer = RenderedFooter::build(
         ViewKind::Actions,

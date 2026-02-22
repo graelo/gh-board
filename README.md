@@ -207,6 +207,12 @@ name = "Approve PR"
 key = "ctrl+b"
 command = "open {{.Url}}"
 name = "Open in browser"
+
+# Override an Actions view binding
+[[keybindings.actions]]
+key = "ctrl+r"
+builtin = "rerun_failed"
+name = "Re-run failed jobs"
 ```
 
 **Template Variables** (for custom commands):
@@ -304,6 +310,17 @@ The PR view displays the following columns:
 | `n`     | Switch view               |
 | `N`     | Switch view back          |
 | `S`     | Toggle repo scope         |
+
+### Actions View
+
+| Key        | Action                    |
+| ---------- | ------------------------- |
+| `w`        | Toggle workflow navigator |
+| `Ctrl+r`   | Re-run failed jobs        |
+| `Ctrl+R`   | Re-run all jobs           |
+| `Ctrl+c`   | Cancel run                |
+| `n`        | Switch view               |
+| `N`        | Switch view back          |
 
 ### Branches View
 

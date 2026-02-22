@@ -337,9 +337,9 @@ pub(crate) fn default_actions() -> Vec<Keybinding> {
         kb("w", "toggle_workflow_nav", "Toggle workflow navigator"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
-        kb("r", "rerun_failed", "Re-run failed jobs"),
-        kb("R", "rerun_all", "Re-run all jobs"),
-        kb("c", "cancel_run", "Cancel run"),
+        kb("ctrl+r", "rerun_failed", "Re-run failed jobs"),
+        kb("ctrl+R", "rerun_all", "Re-run all jobs"),
+        kb("ctrl+c", "cancel_run", "Cancel run"),
     ]
 }
 

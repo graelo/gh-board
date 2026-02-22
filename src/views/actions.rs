@@ -809,7 +809,7 @@ pub fn ActionsView<'a>(
                                 }
                             }
                             // Re-run failed jobs (or confirm)
-                            KeyCode::Char('r') => {
+                            KeyCode::Char('r') if modifiers.contains(KeyModifiers::CONTROL) => {
                                 if let Some(pa) = pending_action.get() {
                                     if pa == PendingAction::RerunFailed {
                                         send_rerun(
@@ -844,7 +844,7 @@ pub fn ActionsView<'a>(
                                 }
                             }
                             // Re-run all jobs (or confirm)
-                            KeyCode::Char('R') => {
+                            KeyCode::Char('R') if modifiers.contains(KeyModifiers::CONTROL) => {
                                 if let Some(pa) = pending_action.get() {
                                     if pa == PendingAction::RerunAll {
                                         send_rerun(
@@ -878,7 +878,7 @@ pub fn ActionsView<'a>(
                                 }
                             }
                             // Cancel run (or confirm)
-                            KeyCode::Char('c') if !modifiers.contains(KeyModifiers::CONTROL) => {
+                            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                                 if let Some(pa) = pending_action.get() {
                                     if pa == PendingAction::Cancel {
                                         send_cancel(
@@ -1099,13 +1099,13 @@ pub fn ActionsView<'a>(
     let context_text = if let Some(pa) = pending_action.get() {
         match pa {
             PendingAction::RerunFailed => {
-                "Press r again to re-run failed jobs \u{2014} Esc to abort".to_owned()
+                "Press ctrl+r again to re-run failed jobs \u{2014} Esc to abort".to_owned()
             }
             PendingAction::RerunAll => {
-                "Press R again to re-run all jobs \u{2014} Esc to abort".to_owned()
+                "Press ctrl+R again to re-run all jobs \u{2014} Esc to abort".to_owned()
             }
             PendingAction::Cancel => {
-                "Press c again to cancel this run \u{2014} Esc to abort".to_owned()
+                "Press ctrl+c again to cancel this run \u{2014} Esc to abort".to_owned()
             }
         }
     } else if let Some(ref status) = *action_status.read() {

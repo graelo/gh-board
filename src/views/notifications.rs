@@ -13,8 +13,8 @@ use crate::components::table::{
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{
-    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
-    ViewContext, expand_template, execute_shell_command,
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::NotificationFilter;
 use crate::engine::{EngineHandle, Event, Request};
@@ -604,7 +604,13 @@ pub fn NotificationsView<'a>(
                             let vars = TemplateVars {
                                 url: notif.as_ref().map_or_else(String::new, |n| n.url.clone()),
                                 number: String::new(),
-                                repo_name: notif.as_ref().and_then(|n| n.repository.as_ref()).map_or_else(String::new, crate::github::types::RepoRef::full_name),
+                                repo_name: notif
+                                    .as_ref()
+                                    .and_then(|n| n.repository.as_ref())
+                                    .map_or_else(
+                                        String::new,
+                                        crate::github::types::RepoRef::full_name,
+                                    ),
                                 ..Default::default()
                             };
                             match keybindings
@@ -749,15 +755,14 @@ pub fn NotificationsView<'a>(
                                             let new_cursor = (cursor.get() + visible_rows)
                                                 .min(total_rows.saturating_sub(1));
                                             cursor.set(new_cursor);
-                                            scroll_offset.set(
-                                                new_cursor
-                                                    .saturating_sub(visible_rows.saturating_sub(1)),
-                                            );
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
                                         }
                                     }
                                     BuiltinAction::PageUp => {
-                                        let new_cursor =
-                                            cursor.get().saturating_sub(visible_rows);
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
                                         cursor.set(new_cursor);
                                         scroll_offset
                                             .set(scroll_offset.get().saturating_sub(visible_rows));

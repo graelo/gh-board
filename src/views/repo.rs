@@ -14,8 +14,8 @@ use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
 use crate::config::keybindings::{
-    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
-    ViewContext, expand_template, execute_shell_command,
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
@@ -568,15 +568,14 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             let new_cursor = (cursor.get() + visible_rows)
                                                 .min(total_rows.saturating_sub(1));
                                             cursor.set(new_cursor);
-                                            scroll_offset.set(
-                                                new_cursor
-                                                    .saturating_sub(visible_rows.saturating_sub(1)),
-                                            );
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
                                         }
                                     }
                                     BuiltinAction::PageUp => {
-                                        let new_cursor =
-                                            cursor.get().saturating_sub(visible_rows);
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
                                         cursor.set(new_cursor);
                                         scroll_offset
                                             .set(scroll_offset.get().saturating_sub(visible_rows));

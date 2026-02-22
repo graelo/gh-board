@@ -15,8 +15,8 @@ use crate::components::table::{
 };
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
 use crate::config::keybindings::{
-    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
-    ViewContext, expand_template, execute_shell_command,
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::IssueFilter;
 use crate::engine::{EngineHandle, Event, Request};
@@ -794,8 +794,12 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 url: info.as_ref().map_or_else(String::new, |(o, r, n)| {
                                     format!("https://github.com/{o}/{r}/issues/{n}")
                                 }),
-                                number: info.as_ref().map_or_else(String::new, |(_, _, n)| n.to_string()),
-                                repo_name: info.as_ref().map_or_else(String::new, |(o, r, _)| format!("{o}/{r}")),
+                                number: info
+                                    .as_ref()
+                                    .map_or_else(String::new, |(_, _, n)| n.to_string()),
+                                repo_name: info
+                                    .as_ref()
+                                    .map_or_else(String::new, |(o, r, _)| format!("{o}/{r}")),
                                 ..Default::default()
                             };
                             match keybindings
@@ -919,13 +923,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         }
                                     }
                                     BuiltinAction::Close => {
-                                        input_mode
-                                            .set(InputMode::Confirm(BuiltinAction::Close));
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Close));
                                         action_status.set(None);
                                     }
                                     BuiltinAction::Reopen => {
-                                        input_mode
-                                            .set(InputMode::Confirm(BuiltinAction::Reopen));
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Reopen));
                                         action_status.set(None);
                                     }
                                     BuiltinAction::CopyNumber => {
@@ -941,7 +943,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                     }
                                     BuiltinAction::CopyUrl => {
                                         if let Some((owner, repo, number)) = info {
-                                            let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
+                                            let url = format!(
+                                                "https://github.com/{owner}/{repo}/issues/{number}"
+                                            );
                                             match clipboard::copy_to_clipboard(&url) {
                                                 Ok(()) => action_status
                                                     .set(Some(format!("Copied URL for #{number}"))),
@@ -952,7 +956,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                     }
                                     BuiltinAction::OpenBrowser => {
                                         if let Some((owner, repo, number)) = info {
-                                            let url = format!("https://github.com/{owner}/{repo}/issues/{number}");
+                                            let url = format!(
+                                                "https://github.com/{owner}/{repo}/issues/{number}"
+                                            );
                                             match clipboard::open_in_browser(&url) {
                                                 Ok(()) => action_status
                                                     .set(Some(format!("Opened #{number}"))),
@@ -1037,16 +1043,15 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             let new_cursor = (cursor.get() + visible_rows)
                                                 .min(total_rows.saturating_sub(1));
                                             cursor.set(new_cursor);
-                                            scroll_offset.set(
-                                                new_cursor
-                                                    .saturating_sub(visible_rows.saturating_sub(1)),
-                                            );
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
                                             preview_scroll.set(0);
                                         }
                                     }
                                     BuiltinAction::PageUp => {
-                                        let new_cursor =
-                                            cursor.get().saturating_sub(visible_rows);
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
                                         cursor.set(new_cursor);
                                         scroll_offset
                                             .set(scroll_offset.get().saturating_sub(visible_rows));
@@ -1105,8 +1110,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             .iter()
                                             .position(|&t| t == current)
                                             .unwrap_or(0);
-                                        sidebar_tab
-                                            .set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
+                                        sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
                                         preview_scroll.set(0);
                                     } else if key_str == "[" {
                                         let current = sidebar_tab.get();
@@ -1114,11 +1118,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             .iter()
                                             .position(|&t| t == current)
                                             .unwrap_or(0);
-                                        sidebar_tab.set(ISSUE_TABS[if idx == 0 {
-                                            ISSUE_TABS.len() - 1
-                                        } else {
-                                            idx - 1
-                                        }]);
+                                        sidebar_tab.set(
+                                            ISSUE_TABS[if idx == 0 {
+                                                ISSUE_TABS.len() - 1
+                                            } else {
+                                                idx - 1
+                                            }],
+                                        );
                                         preview_scroll.set(0);
                                     }
                                 }

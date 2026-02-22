@@ -15,8 +15,8 @@ use crate::components::table::{
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{
-    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
-    ViewContext, expand_template, execute_shell_command,
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::PrFilter;
 use crate::engine::{EngineHandle, Event, PrRef, Request};
@@ -1098,9 +1098,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             let (pr_owner, pr_repo, pr_number) =
                                 pr_info.unwrap_or_else(|| (String::new(), String::new(), 0));
                             let pr_url = if pr_number > 0 {
-                                format!(
-                                    "https://github.com/{pr_owner}/{pr_repo}/pull/{pr_number}"
-                                )
+                                format!("https://github.com/{pr_owner}/{pr_repo}/pull/{pr_number}")
                             } else {
                                 String::new()
                             };
@@ -1238,9 +1236,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     BuiltinAction::ViewDiff => {
                                         if pr_number > 0 {
                                             match crate::actions::local::open_diff(
-                                                &pr_owner,
-                                                &pr_repo,
-                                                pr_number,
+                                                &pr_owner, &pr_repo, pr_number,
                                             ) {
                                                 Ok(msg) => action_status.set(Some(msg)),
                                                 Err(e) => action_status
@@ -1437,20 +1433,18 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             let new_cursor = (cursor.get() + visible_rows)
                                                 .min(total_rows.saturating_sub(1));
                                             cursor.set(new_cursor);
-                                            scroll_offset.set(
-                                                new_cursor
-                                                    .saturating_sub(visible_rows.saturating_sub(1)),
-                                            );
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
                                             preview_scroll.set(0);
                                         }
                                     }
                                     BuiltinAction::PageUp => {
-                                        let new_cursor =
-                                            cursor.get().saturating_sub(visible_rows);
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
                                         cursor.set(new_cursor);
-                                        scroll_offset.set(
-                                            scroll_offset.get().saturating_sub(visible_rows),
-                                        );
+                                        scroll_offset
+                                            .set(scroll_offset.get().saturating_sub(visible_rows));
                                         preview_scroll.set(0);
                                     }
                                     BuiltinAction::ToggleHelp => {
@@ -1471,9 +1465,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     }
                                     BuiltinAction::NextFilter => {
                                         if filter_count > 0 {
-                                            active_filter.set(
-                                                (active_filter.get() + 1) % filter_count,
-                                            );
+                                            active_filter
+                                                .set((active_filter.get() + 1) % filter_count);
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                             preview_scroll.set(0);
@@ -1509,7 +1502,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 }
                             }
                         }
-                    },
+                    }
                     InputMode::UpdateBranchMethod => match code {
                         // Merge-update (only merge strategy supported).
                         KeyCode::Char('m' | 'M') => {

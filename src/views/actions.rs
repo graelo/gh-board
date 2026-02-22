@@ -14,8 +14,8 @@ use crate::components::table::{
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
 use crate::config::keybindings::{
-    key_event_to_string, BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars,
-    ViewContext, expand_template, execute_shell_command,
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::ActionsFilter;
 use crate::engine::{EngineHandle, Event, Request};
@@ -184,6 +184,7 @@ struct ActionsState {
 enum InputMode {
     Normal,
     Search,
+    Confirm(BuiltinAction),
 }
 
 // ---------------------------------------------------------------------------
@@ -340,7 +341,6 @@ pub fn ActionsView<'a>(
     let mut jobs_cache = hooks.use_state(HashMap::<u64, Vec<WorkflowJob>>::new);
     let mut jobs_in_flight = hooks.use_state(HashSet::<u64>::new);
 
-    let mut pending_action = hooks.use_state(|| Option::<BuiltinAction>::None);
     let mut action_status = hooks.use_state(|| Option::<String>::None);
 
     let mut refresh_registered = hooks.use_state(|| false);
@@ -476,7 +476,6 @@ pub fn ActionsView<'a>(
                         }
                         Event::MutationOk { description } => {
                             action_status.set(Some(format!("\u{2713} {description}")));
-                            pending_action.set(None);
                             // Refetch current filter.
                             let mut state = actions_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -494,7 +493,6 @@ pub fn ActionsView<'a>(
                             message,
                         } => {
                             action_status.set(Some(format!("\u{2717} {description}: {message}")));
-                            pending_action.set(None);
                         }
                         Event::FetchError { message, .. } => {
                             let ifl = filter_in_flight.read().clone();
@@ -683,6 +681,54 @@ pub fn ActionsView<'a>(
                         }
                         _ => {}
                     },
+                    InputMode::Confirm(ref pending) => match code {
+                        KeyCode::Char('y' | 'Y') => {
+                            match pending {
+                                BuiltinAction::RerunFailed => {
+                                    send_rerun(
+                                        &actions_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                        &filtered_run_indices_for_kb,
+                                        current_filter_cfg_for_kb.as_ref(),
+                                        true,
+                                        engine_for_keys.as_ref(),
+                                        &event_tx_for_keys,
+                                    );
+                                }
+                                BuiltinAction::RerunAll => {
+                                    send_rerun(
+                                        &actions_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                        &filtered_run_indices_for_kb,
+                                        current_filter_cfg_for_kb.as_ref(),
+                                        false,
+                                        engine_for_keys.as_ref(),
+                                        &event_tx_for_keys,
+                                    );
+                                }
+                                BuiltinAction::CancelRun => {
+                                    send_cancel(
+                                        &actions_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                        &filtered_run_indices_for_kb,
+                                        current_filter_cfg_for_kb.as_ref(),
+                                        engine_for_keys.as_ref(),
+                                        &event_tx_for_keys,
+                                    );
+                                }
+                                _ => {}
+                            }
+                            input_mode.set(InputMode::Normal);
+                        }
+                        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            action_status.set(Some("Cancelled".to_owned()));
+                        }
+                        _ => {}
+                    },
                     InputMode::Normal => {
                         // Nav panel focused: route j/k/Enter/Esc to navigator.
                         if nav_focused.get() {
@@ -826,31 +872,16 @@ pub fn ActionsView<'a>(
                                         }
                                     }
                                     BuiltinAction::RerunFailed => {
-                                        if pending_action.get()
-                                            == Some(BuiltinAction::RerunFailed)
-                                        {
-                                            send_rerun(
-                                                &actions_state,
-                                                current_filter_idx,
-                                                cursor.get(),
-                                                &filtered_run_indices_for_kb,
-                                                current_filter_cfg_for_kb.as_ref(),
-                                                true,
-                                                engine_for_keys.as_ref(),
-                                                &event_tx_for_keys,
-                                            );
-                                            pending_action.set(None);
-                                        } else if pending_action.get().is_some() {
-                                            pending_action.set(Some(BuiltinAction::RerunFailed));
-                                        } else if let Some(run) = get_run_at_cursor(
+                                        if let Some(run) = get_run_at_cursor(
                                             &actions_state,
                                             current_filter_idx,
                                             cursor.get(),
                                             &filtered_run_indices_for_kb,
                                         ) {
                                             if run.status == RunStatus::Completed {
-                                                pending_action
-                                                    .set(Some(BuiltinAction::RerunFailed));
+                                                input_mode.set(InputMode::Confirm(
+                                                    BuiltinAction::RerunFailed,
+                                                ));
                                                 action_status.set(None);
                                             } else {
                                                 action_status.set(Some(
@@ -861,28 +892,16 @@ pub fn ActionsView<'a>(
                                         }
                                     }
                                     BuiltinAction::RerunAll => {
-                                        if pending_action.get() == Some(BuiltinAction::RerunAll) {
-                                            send_rerun(
-                                                &actions_state,
-                                                current_filter_idx,
-                                                cursor.get(),
-                                                &filtered_run_indices_for_kb,
-                                                current_filter_cfg_for_kb.as_ref(),
-                                                false,
-                                                engine_for_keys.as_ref(),
-                                                &event_tx_for_keys,
-                                            );
-                                            pending_action.set(None);
-                                        } else if pending_action.get().is_some() {
-                                            pending_action.set(Some(BuiltinAction::RerunAll));
-                                        } else if let Some(run) = get_run_at_cursor(
+                                        if let Some(run) = get_run_at_cursor(
                                             &actions_state,
                                             current_filter_idx,
                                             cursor.get(),
                                             &filtered_run_indices_for_kb,
                                         ) {
                                             if run.status == RunStatus::Completed {
-                                                pending_action.set(Some(BuiltinAction::RerunAll));
+                                                input_mode.set(InputMode::Confirm(
+                                                    BuiltinAction::RerunAll,
+                                                ));
                                                 action_status.set(None);
                                             } else {
                                                 action_status.set(Some(
@@ -893,21 +912,7 @@ pub fn ActionsView<'a>(
                                         }
                                     }
                                     BuiltinAction::CancelRun => {
-                                        if pending_action.get() == Some(BuiltinAction::CancelRun)
-                                        {
-                                            send_cancel(
-                                                &actions_state,
-                                                current_filter_idx,
-                                                cursor.get(),
-                                                &filtered_run_indices_for_kb,
-                                                current_filter_cfg_for_kb.as_ref(),
-                                                engine_for_keys.as_ref(),
-                                                &event_tx_for_keys,
-                                            );
-                                            pending_action.set(None);
-                                        } else if pending_action.get().is_some() {
-                                            pending_action.set(Some(BuiltinAction::CancelRun));
-                                        } else if let Some(run) = get_run_at_cursor(
+                                        if let Some(run) = get_run_at_cursor(
                                             &actions_state,
                                             current_filter_idx,
                                             cursor.get(),
@@ -917,7 +922,9 @@ pub fn ActionsView<'a>(
                                                 run.status,
                                                 RunStatus::Queued | RunStatus::InProgress
                                             ) {
-                                                pending_action.set(Some(BuiltinAction::CancelRun));
+                                                input_mode.set(InputMode::Confirm(
+                                                    BuiltinAction::CancelRun,
+                                                ));
                                                 action_status.set(None);
                                             } else {
                                                 action_status.set(Some(
@@ -966,19 +973,17 @@ pub fn ActionsView<'a>(
                                             let new_cursor = (cursor.get() + visible_rows)
                                                 .min(total_rows.saturating_sub(1));
                                             cursor.set(new_cursor);
-                                            scroll_offset.set(
-                                                new_cursor
-                                                    .saturating_sub(visible_rows.saturating_sub(1)),
-                                            );
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
                                         }
                                     }
                                     BuiltinAction::PageUp => {
-                                        let new_cursor =
-                                            cursor.get().saturating_sub(visible_rows);
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
                                         cursor.set(new_cursor);
-                                        scroll_offset.set(
-                                            scroll_offset.get().saturating_sub(visible_rows),
-                                        );
+                                        scroll_offset
+                                            .set(scroll_offset.get().saturating_sub(visible_rows));
                                     }
                                     BuiltinAction::PrevFilter => {
                                         if filter_count > 0 {
@@ -994,9 +999,8 @@ pub fn ActionsView<'a>(
                                     }
                                     BuiltinAction::NextFilter => {
                                         if filter_count > 0 {
-                                            active_filter.set(
-                                                (active_filter.get() + 1) % filter_count,
-                                            );
+                                            active_filter
+                                                .set((active_filter.get() + 1) % filter_count);
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         }
@@ -1008,12 +1012,9 @@ pub fn ActionsView<'a>(
                                     let _ = execute_shell_command(&expanded);
                                 }
                                 None => {
-                                    // Esc: clear pending → close nav → close detail
+                                    // Esc: close nav → close detail
                                     if key_str == "esc" {
-                                        if pending_action.get().is_some() {
-                                            pending_action.set(None);
-                                            action_status.set(Some("Cancelled".to_owned()));
-                                        } else if nav_open.get() {
+                                        if nav_open.get() {
                                             nav_focused.set(false);
                                             nav_open.set(false);
                                         } else if detail_open.get() {
@@ -1024,9 +1025,7 @@ pub fn ActionsView<'a>(
                                             detail_scroll
                                                 .set(detail_scroll.get().saturating_sub(1));
                                         }
-                                    } else if key_str == "]"
-                                        && detail_open.get()
-                                    {
+                                    } else if key_str == "]" && detail_open.get() {
                                         detail_scroll.set(detail_scroll.get() + 1);
                                     }
                                 }
@@ -1110,34 +1109,36 @@ pub fn ActionsView<'a>(
     );
 
     let current_mode = input_mode.read().clone();
-    let rendered_text_input = if current_mode == InputMode::Search {
-        Some(RenderedTextInput::build(
+    let rendered_text_input = match current_mode {
+        InputMode::Confirm(ref action) => {
+            let prompt = match action {
+                BuiltinAction::RerunFailed => "Re-run failed jobs? (y/n)",
+                BuiltinAction::RerunAll => "Re-run ALL jobs? (y/n)",
+                BuiltinAction::CancelRun => "Cancel this run? (y/n)",
+                _ => "(y/n)",
+            };
+            Some(RenderedTextInput::build(
+                prompt,
+                "",
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_warning),
+                Some(theme.border_faint),
+            ))
+        }
+        InputMode::Search => Some(RenderedTextInput::build(
             "/",
             &search_query.read(),
             depth,
             Some(theme.text_primary),
             Some(theme.text_secondary),
             Some(theme.border_faint),
-        ))
-    } else {
-        None
+        )),
+        InputMode::Normal => None,
     };
 
-    // Context text: pending action > action status > normal.
-    let context_text = if let Some(pa) = pending_action.get() {
-        match pa {
-            BuiltinAction::RerunFailed => {
-                "Press ctrl+r again to re-run failed jobs \u{2014} Esc to abort".to_owned()
-            }
-            BuiltinAction::RerunAll => {
-                "Press ctrl+R again to re-run all jobs \u{2014} Esc to abort".to_owned()
-            }
-            BuiltinAction::CancelRun => {
-                "Press ctrl+c again to cancel this run \u{2014} Esc to abort".to_owned()
-            }
-            _ => String::new(),
-        }
-    } else if let Some(ref status) = *action_status.read() {
+    // Context text: action status > normal.
+    let context_text = if let Some(ref status) = *action_status.read() {
         status.clone()
     } else if current_data.is_some_and(|d| d.loading) {
         "Fetching workflow runs\u{2026}".to_owned()

@@ -9,6 +9,7 @@ use crate::engine::EngineHandle;
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 use crate::types::RepoRef;
+use crate::views::actions::ActionsView;
 use crate::views::issues::IssuesView;
 use crate::views::notifications::NotificationsView;
 use crate::views::prs::PrsView;
@@ -22,14 +23,16 @@ use crate::views::repo::RepoView;
 pub enum ViewKind {
     Prs,
     Issues,
+    Actions,
     Notifications,
     Repo,
 }
 
 impl ViewKind {
-    pub const ALL: [ViewKind; 4] = [
+    pub const ALL: [ViewKind; 5] = [
         ViewKind::Prs,
         ViewKind::Issues,
+        ViewKind::Actions,
         ViewKind::Notifications,
         ViewKind::Repo,
     ];
@@ -38,6 +41,7 @@ impl ViewKind {
         match self {
             Self::Prs => "PRs",
             Self::Issues => "Issues",
+            Self::Actions => "Actions",
             Self::Notifications => "Notifs",
             Self::Repo => "Repo",
         }
@@ -47,6 +51,7 @@ impl ViewKind {
         match self {
             Self::Prs => format!("{} {}", icons.view_prs, self.label()),
             Self::Issues => format!("{} {}", icons.view_issues, self.label()),
+            Self::Actions => format!("{} {}", icons.view_actions, self.label()),
             Self::Notifications => format!("{} {}", icons.view_notifications, self.label()),
             Self::Repo => format!("{} {}", icons.view_repo, self.label()),
         }
@@ -81,10 +86,11 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
 
     // View switching state.
     let initial_view = config.map_or(ViewKind::Prs, |c| match c.defaults.view {
+        crate::config::types::View::Prs => ViewKind::Prs,
         crate::config::types::View::Issues => ViewKind::Issues,
+        crate::config::types::View::Actions => ViewKind::Actions,
         crate::config::types::View::Notifications => ViewKind::Notifications,
         crate::config::types::View::Repo => ViewKind::Repo,
-        crate::config::types::View::Prs => ViewKind::Prs,
     });
     let mut active_view = hooks.use_state(move || initial_view);
 
@@ -94,7 +100,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         switch_signal.set(false);
         let next = match active_view.get() {
             ViewKind::Prs => ViewKind::Issues,
-            ViewKind::Issues => ViewKind::Notifications,
+            ViewKind::Issues => ViewKind::Actions,
+            ViewKind::Actions => ViewKind::Notifications,
             ViewKind::Notifications => ViewKind::Repo,
             ViewKind::Repo => ViewKind::Prs,
         };
@@ -108,7 +115,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         let prev = match active_view.get() {
             ViewKind::Prs => ViewKind::Repo,
             ViewKind::Issues => ViewKind::Prs,
-            ViewKind::Notifications => ViewKind::Issues,
+            ViewKind::Actions => ViewKind::Issues,
+            ViewKind::Notifications => ViewKind::Actions,
             ViewKind::Repo => ViewKind::Notifications,
         };
         active_view.set(prev);
@@ -156,6 +164,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let prefetch_pr_details = config.map_or(0, |c| c.github.prefetch_pr_details);
     let filters_pr = config.map(|c| c.pr_filters.as_slice());
     let filters_issue = config.map(|c| c.issues_filters.as_slice());
+    let filters_actions = config.map(|c| c.actions_filters.as_slice());
     let filters_notif = config.map(|c| c.notifications_filters.as_slice());
     let repo_path = props.repo_path;
 
@@ -210,6 +219,29 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     scope_repo: scope_repo.clone(),
                     date_format,
                     is_active: active == ViewKind::Issues,
+                    refetch_interval_minutes: refetch_minutes,
+                )
+            }
+            View(
+                display: if active == ViewKind::Actions { Display::Flex } else { Display::None },
+                flex_grow: 1.0,
+            ) {
+                ActionsView(
+                    filters: filters_actions,
+                    engine: props.engine,
+                    theme,
+                    keybindings,
+                    color_depth: depth,
+                    width,
+                    height,
+                    preview_width_pct,
+                    show_filter_count: show_count,
+                    show_separator,
+                    should_exit,
+                    switch_view: switch_signal,
+                    switch_view_back: switch_back_signal,
+                    scope_toggle: scope_toggle_signal,
+                    is_active: active == ViewKind::Actions,
                     refetch_interval_minutes: refetch_minutes,
                 )
             }

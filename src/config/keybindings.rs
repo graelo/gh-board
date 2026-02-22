@@ -22,6 +22,7 @@ pub struct KeybindingsConfig {
     pub universal: Vec<Keybinding>,
     pub prs: Vec<Keybinding>,
     pub issues: Vec<Keybinding>,
+    pub actions: Vec<Keybinding>,
     pub branches: Vec<Keybinding>,
 }
 
@@ -74,6 +75,11 @@ pub enum BuiltinAction {
     SwitchViewBack,
     // Scope
     ToggleScope,
+    // Actions view
+    ToggleWorkflowNav,
+    RerunFailed,
+    RerunAll,
+    CancelRun,
 }
 
 impl BuiltinAction {
@@ -119,6 +125,10 @@ impl BuiltinAction {
             "switch_view" => Self::SwitchView,
             "switch_view_back" => Self::SwitchViewBack,
             "toggle_scope" => Self::ToggleScope,
+            "toggle_workflow_nav" => Self::ToggleWorkflowNav,
+            "rerun_failed" => Self::RerunFailed,
+            "rerun_all" => Self::RerunAll,
+            "cancel_run" => Self::CancelRun,
             _ => return None,
         })
     }
@@ -165,6 +175,10 @@ impl BuiltinAction {
             Self::SwitchView => "Switch view",
             Self::SwitchViewBack => "Switch view back",
             Self::ToggleScope => "Toggle repo scope",
+            Self::ToggleWorkflowNav => "Toggle workflow navigator",
+            Self::RerunFailed => "Re-run failed jobs",
+            Self::RerunAll => "Re-run all jobs",
+            Self::CancelRun => "Cancel run",
         }
     }
 }
@@ -317,6 +331,18 @@ pub(crate) fn default_issues() -> Vec<Keybinding> {
     ]
 }
 
+/// Default Actions view keybindings.
+pub(crate) fn default_actions() -> Vec<Keybinding> {
+    vec![
+        kb("w", "toggle_workflow_nav", "Toggle workflow navigator"),
+        kb("n", "switch_view", "Switch view"),
+        kb("N", "switch_view_back", "Switch view back"),
+        kb("r", "rerun_failed", "Re-run failed jobs"),
+        kb("R", "rerun_all", "Re-run all jobs"),
+        kb("c", "cancel_run", "Cancel run"),
+    ]
+}
+
 /// Default Notification view keybindings.
 pub(crate) fn default_notifications() -> Vec<Keybinding> {
     vec![
@@ -354,6 +380,7 @@ pub struct MergedBindings {
     pub universal: Vec<Keybinding>,
     pub prs: Vec<Keybinding>,
     pub issues: Vec<Keybinding>,
+    pub actions: Vec<Keybinding>,
     pub notifications: Vec<Keybinding>,
     pub branches: Vec<Keybinding>,
 }
@@ -368,6 +395,7 @@ impl MergedBindings {
             universal: merge_lists(&default_universal(), &config.universal),
             prs: merge_lists(&default_prs(), &config.prs),
             issues: merge_lists(&default_issues(), &config.issues),
+            actions: merge_lists(&default_actions(), &config.actions),
             notifications: merge_lists(&default_notifications(), &[]),
             branches: merge_lists(&default_branches(), &config.branches),
         }
@@ -379,6 +407,7 @@ impl MergedBindings {
         let context_bindings = match context {
             ViewContext::Prs => &self.prs,
             ViewContext::Issues => &self.issues,
+            ViewContext::Actions => &self.actions,
             ViewContext::Notifications => &self.notifications,
             ViewContext::Branches => &self.branches,
         };
@@ -395,6 +424,7 @@ impl MergedBindings {
         let context_bindings = match context {
             ViewContext::Prs => ("PR", self.prs.as_slice()),
             ViewContext::Issues => ("Issue", self.issues.as_slice()),
+            ViewContext::Actions => ("Actions", self.actions.as_slice()),
             ViewContext::Notifications => ("Notification", self.notifications.as_slice()),
             ViewContext::Branches => ("Branch", self.branches.as_slice()),
         };
@@ -408,6 +438,7 @@ impl MergedBindings {
 pub enum ViewContext {
     Prs,
     Issues,
+    Actions,
     Notifications,
     Branches,
 }

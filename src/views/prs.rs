@@ -1883,6 +1883,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
+            Some(theme.footer_actions),
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],

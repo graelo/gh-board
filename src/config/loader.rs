@@ -125,6 +125,11 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
         } else {
             local.issues_filters
         },
+        actions_filters: if local.actions_filters.is_empty() {
+            global.actions_filters
+        } else {
+            local.actions_filters
+        },
         notifications_filters: if local.notifications_filters.is_empty() {
             global.notifications_filters
         } else {

@@ -86,6 +86,7 @@ pub struct ResolvedTheme {
     // Footer
     pub footer_prs: Color,
     pub footer_issues: Color,
+    pub footer_actions: Color,
     pub footer_notifications: Color,
     pub footer_repo: Color,
     // Icons
@@ -161,6 +162,7 @@ impl ResolvedTheme {
             // Footer
             footer_prs: theme.colors.footer.prs.unwrap_or(d.footer_prs),
             footer_issues: theme.colors.footer.issues.unwrap_or(d.footer_issues),
+            footer_actions: theme.colors.footer.actions.unwrap_or(d.footer_actions),
             footer_notifications: theme
                 .colors
                 .footer
@@ -207,6 +209,7 @@ struct Defaults {
     // Footer
     footer_prs: Color,
     footer_issues: Color,
+    footer_actions: Color,
     footer_notifications: Color,
     footer_repo: Color,
 }
@@ -248,6 +251,7 @@ impl Defaults {
                 // Footer
                 footer_prs: Color::Ansi256(4),           // blue
                 footer_issues: Color::Ansi256(2),        // green
+                footer_actions: Color::Ansi256(6),       // cyan
                 footer_notifications: Color::Ansi256(5), // magenta
                 footer_repo: Color::Ansi256(13),         // bright magenta/violet
             },
@@ -285,6 +289,7 @@ impl Defaults {
                 // Footer
                 footer_prs: Color::Ansi256(4),           // blue
                 footer_issues: Color::Ansi256(2),        // green
+                footer_actions: Color::Ansi256(6),       // cyan
                 footer_notifications: Color::Ansi256(5), // magenta
                 footer_repo: Color::Ansi256(13),         // bright magenta/violet
             },

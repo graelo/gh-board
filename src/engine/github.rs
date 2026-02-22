@@ -6,6 +6,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::actions::{issue_actions, pr_actions};
 use crate::config::types::AppConfig;
 use crate::github::{
+    actions as gh_actions,
     client::GitHubClient,
     graphql, notifications as notif,
     rate_limit::{format_rate_limit_message, is_rate_limited},
@@ -165,6 +166,68 @@ async fn handle_request(
                         } else {
                             e.to_string()
                         },
+                    });
+                }
+            }
+        }
+
+        // --- Fetch Actions ---
+        Request::FetchActions {
+            filter_idx,
+            filter,
+            reply_tx,
+        } => {
+            let host = filter.host.as_deref().unwrap_or("github.com");
+            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchActions") else {
+                return;
+            };
+            match gh_actions::fetch_workflow_runs(&octocrab, &filter).await {
+                Ok(runs) => {
+                    scheduler.mark_fetched(filter_idx, ViewKind::Actions);
+                    tracing::debug!(
+                        "engine: sending ActionsFetched[{filter_idx}] count={}",
+                        runs.len()
+                    );
+                    let _ = reply_tx.send(Event::ActionsFetched { filter_idx, runs });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: FetchActions[{filter_idx}] error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("FetchActions[{filter_idx}]"),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
+                    });
+                }
+            }
+        }
+
+        // --- Fetch Run Jobs ---
+        Request::FetchRunJobs {
+            owner,
+            repo,
+            run_id,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchRunJobs")
+            else {
+                return;
+            };
+            match gh_actions::fetch_run_jobs(&octocrab, &owner, &repo, run_id).await {
+                Ok(jobs) => {
+                    tracing::debug!(
+                        "engine: sending RunJobsFetched run_id={run_id} count={}",
+                        jobs.len()
+                    );
+                    let _ = reply_tx.send(Event::RunJobsFetched { run_id, jobs });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: FetchRunJobs run_id={run_id} error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("FetchRunJobs[{run_id}]"),
+                        message: e.to_string(),
                     });
                 }
             }
@@ -360,6 +423,19 @@ async fn handle_request(
                 filter_configs
                     .into_iter()
                     .map(FilterConfig::Issue)
+                    .collect(),
+                refresh_interval,
+                &notify_tx,
+            );
+        }
+        Request::RegisterActionsRefresh {
+            filter_configs,
+            notify_tx,
+        } => {
+            scheduler.register(
+                filter_configs
+                    .into_iter()
+                    .map(FilterConfig::Action)
                     .collect(),
                 refresh_interval,
                 &notify_tx,
@@ -803,6 +879,71 @@ async fn handle_request(
         }
 
         // -----------------------------------------------------------------------
+        // Mutation operations — Actions
+        // -----------------------------------------------------------------------
+        Request::RerunWorkflowRun {
+            owner,
+            repo,
+            run_id,
+            failed_only,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RerunWorkflowRun")
+            else {
+                return;
+            };
+            match gh_actions::rerun_workflow_run(&octocrab, &owner, &repo, run_id, failed_only)
+                .await
+            {
+                Ok(()) => {
+                    let label = if failed_only {
+                        "failed jobs"
+                    } else {
+                        "all jobs"
+                    };
+                    tracing::debug!("engine: RerunWorkflowRun run_id={run_id} ({label}) ok");
+                    let _ = reply_tx.send(Event::MutationOk {
+                        description: format!("Re-run {label} queued for run #{run_id}"),
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: RerunWorkflowRun run_id={run_id} error: {e}");
+                    let _ = reply_tx.send(Event::MutationError {
+                        description: format!("Re-run workflow run #{run_id}"),
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        Request::CancelWorkflowRun {
+            owner,
+            repo,
+            run_id,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CancelWorkflowRun")
+            else {
+                return;
+            };
+            match gh_actions::cancel_workflow_run(&octocrab, &owner, &repo, run_id).await {
+                Ok(()) => {
+                    tracing::debug!("engine: CancelWorkflowRun run_id={run_id} ok");
+                    let _ = reply_tx.send(Event::MutationOk {
+                        description: format!("Cancelled run #{run_id}"),
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: CancelWorkflowRun run_id={run_id} error: {e}");
+                    let _ = reply_tx.send(Event::MutationError {
+                        description: format!("Cancel workflow run #{run_id}"),
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------
         // Mutation operations — Notification
         // -----------------------------------------------------------------------
         Request::MarkNotificationRead { id, reply_tx } => {
@@ -1052,6 +1193,25 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                         tracing::debug!(
                             "engine: refresh FetchNotifications[{filter_idx}] error: {e}"
                         );
+                    }
+                }
+            }
+            FilterConfig::Action(actions_filter) => {
+                let host = actions_filter.host.as_deref().unwrap_or("github.com");
+                let Ok(octocrab) = client.octocrab_for(host) else {
+                    continue;
+                };
+                match gh_actions::fetch_workflow_runs(&octocrab, &actions_filter).await {
+                    Ok(runs) => {
+                        scheduler.mark_fetched(filter_idx, ViewKind::Actions);
+                        tracing::debug!(
+                            "engine: refresh ActionsFetched[{filter_idx}] count={}",
+                            runs.len()
+                        );
+                        let _ = notify_tx.send(Event::ActionsFetched { filter_idx, runs });
+                    }
+                    Err(e) => {
+                        tracing::debug!("engine: refresh FetchActions[{filter_idx}] error: {e}");
                     }
                 }
             }

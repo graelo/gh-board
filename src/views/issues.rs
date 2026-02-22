@@ -323,6 +323,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut action_status = hooks.use_state(|| Option::<String>::None);
     let mut label_candidates = hooks.use_state(Vec::<String>::new);
     let mut label_selection = hooks.use_state(|| 0usize);
+    let mut label_selected = hooks.use_state(Vec::<String>::new);
     let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
     let mut assignee_selection = hooks.use_state(|| 0usize);
 
@@ -716,6 +717,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             action_status,
                             label_candidates,
                             label_selection,
+                            label_selected,
                             &issues_state,
                             current_filter_idx,
                             cursor.get(),
@@ -841,6 +843,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         input_buffer.set(String::new());
                                         label_selection.set(0);
                                         label_candidates.set(Vec::new());
+                                        label_selected.set(Vec::new());
                                         action_status.set(None);
                                         if let Some(engine) = engine
                                             && let Some((owner, repo, _)) = &info
@@ -1361,8 +1364,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             } else {
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
-            Some(RenderedTextInput::build_with_suggestions(
-                "Label:",
+            let selected = label_selected.read();
+            let prompt = if selected.is_empty() {
+                "Label:".to_owned()
+            } else {
+                format!("Label [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1373,6 +1382,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 Some(theme.text_primary),
                 Some(theme.bg_selected),
                 Some(theme.text_faint),
+                &selected,
             ))
         }
         InputMode::Confirm(action) => {
@@ -1781,6 +1791,7 @@ fn handle_label_input(
     _action_status: State<Option<String>>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
+    mut label_selected: State<Vec<String>>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
@@ -1809,19 +1820,45 @@ fn handle_label_input(
                 });
             }
         }
-        KeyCode::Enter => {
-            // Submit the selected label.
+        KeyCode::Char(' ') => {
             let buf = input_buffer.read().clone();
             let candidates = label_candidates.read();
             let filtered = text_input::filter_suggestions(&candidates, &buf);
-            let label = if filtered.is_empty() {
-                buf.clone()
-            } else {
+            if !filtered.is_empty() {
                 let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                filtered[sel].clone()
+                let item = filtered[sel].clone();
+                let mut selected = label_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
+                }
+                label_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            label_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let checked = label_selected.read().clone();
+            let labels = if checked.is_empty() {
+                let buf = input_buffer.read().clone();
+                let candidates = label_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let label = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = label_selection.get().min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if label.is_empty() {
+                    vec![]
+                } else {
+                    vec![label]
+                }
+            } else {
+                checked
             };
-
-            if !label.is_empty() {
+            if !labels.is_empty() {
                 let info = get_current_issue_info(issues_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info
                     && let Some(engine) = engine
@@ -1830,7 +1867,7 @@ fn handle_label_input(
                         owner,
                         repo,
                         number,
-                        labels: vec![label.clone()],
+                        labels,
                         reply_tx: event_tx.clone(),
                     });
                 }
@@ -1838,11 +1875,13 @@ fn handle_label_input(
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             label_selection.set(0);
+            label_selected.set(Vec::new());
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             label_selection.set(0);
+            label_selected.set(Vec::new());
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();

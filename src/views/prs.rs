@@ -537,6 +537,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: label autocomplete.
     let mut label_candidates = hooks.use_state(Vec::<String>::new);
     let mut label_selection = hooks.use_state(|| 0usize);
+    let mut label_selected = hooks.use_state(Vec::<String>::new);
 
     let mut help_visible = hooks.use_state(|| false);
 
@@ -967,6 +968,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             action_status,
                             label_candidates,
                             label_selection,
+                            label_selected,
                             &prs_state,
                             current_filter_idx,
                             cursor.get(),
@@ -1355,10 +1357,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         input_buffer.set(String::new());
                                         label_selection.set(0);
                                         label_candidates.set(Vec::new());
+                                        label_selected.set(Vec::new());
                                         action_status.set(None);
                                         if let Some(ref eng) = engine
-                                            && let Some((owner, repo, _)) =
-                                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get())
+                                            && let Some((owner, repo, _)) = get_current_pr_info(
+                                                &prs_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                            )
                                         {
                                             eng.send(Request::FetchRepoLabels {
                                                 owner,
@@ -1817,16 +1823,21 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         InputMode::Label => {
             let buf = input_buffer.read().clone();
             let candidates = label_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
             let sel = label_selection.get();
             let selected_idx = if filtered.is_empty() {
                 None
             } else {
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
-            Some(RenderedTextInput::build_with_suggestions(
-                "Label:",
+            let selected = label_selected.read();
+            let prompt = if selected.is_empty() {
+                "Label:".to_owned()
+            } else {
+                format!("Label [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1837,6 +1848,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 Some(theme.text_primary),
                 Some(theme.bg_selected),
                 Some(theme.text_faint),
+                &selected,
             ))
         }
         InputMode::Comment => Some(RenderedTextInput::build(
@@ -2200,6 +2212,7 @@ fn handle_label_input(
     _action_status: State<Option<String>>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
+    mut label_selected: State<Vec<String>>,
     prs_state: &State<PrsState>,
     filter_idx: usize,
     cursor: usize,
@@ -2229,17 +2242,45 @@ fn handle_label_input(
                 });
             }
         }
-        KeyCode::Enter => {
+        KeyCode::Char(' ') => {
             let buf = input_buffer.read().clone();
             let candidates = label_candidates.read();
             let filtered = text_input::filter_suggestions(&candidates, &buf);
-            let label = if filtered.is_empty() {
-                buf.clone()
-            } else {
+            if !filtered.is_empty() {
                 let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                filtered[sel].clone()
+                let item = filtered[sel].clone();
+                let mut selected = label_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
+                }
+                label_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            label_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let checked = label_selected.read().clone();
+            let labels = if checked.is_empty() {
+                let buf = input_buffer.read().clone();
+                let candidates = label_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let label = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = label_selection.get().min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if label.is_empty() {
+                    vec![]
+                } else {
+                    vec![label]
+                }
+            } else {
+                checked
             };
-            if !label.is_empty() {
+            if !labels.is_empty() {
                 let info = get_current_pr_info(prs_state, filter_idx, cursor);
                 if let Some((owner, repo, number)) = info
                     && let Some(eng) = engine
@@ -2248,7 +2289,7 @@ fn handle_label_input(
                         owner,
                         repo,
                         number,
-                        labels: vec![label],
+                        labels,
                         reply_tx: event_tx.clone(),
                     });
                 }
@@ -2256,11 +2297,13 @@ fn handle_label_input(
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             label_selection.set(0);
+            label_selected.set(Vec::new());
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             label_selection.set(0);
+            label_selected.set(Vec::new());
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();

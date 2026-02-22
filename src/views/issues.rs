@@ -595,7 +595,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         }
                         Event::MutationOk { description } => {
                             action_status.set(Some(format!("✓ {description}")));
-                            force_refresh.set(true);
+                            // Trigger a refetch of the active filter.
                             let mut state = issues_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
                                 state.filters[current_filter_for_poll] = FilterData::default();
@@ -606,6 +606,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 times[current_filter_for_poll] = None;
                             }
                             filter_fetch_times.set(times);
+                            // Must come LAST: force_refresh is consumed by the
+                            // lazy-fetch trigger only when active_needs_fetch
+                            // (loading=true) is already visible in the same
+                            // render. Setting it before issues_state.set()
+                            // risks a render where loading is still false and
+                            // the flag is silently dropped, causing a
+                            // non-forced (cached) refetch.
+                            force_refresh.set(true);
                         }
                         Event::MutationError {
                             description,

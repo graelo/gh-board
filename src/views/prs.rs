@@ -875,6 +875,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 times[current_filter_for_poll] = None;
                             }
                             filter_fetch_times.set(times);
+                            // Must come LAST: force_refresh is consumed by the
+                            // lazy-fetch trigger only when active_needs_fetch
+                            // (loading=true) is already visible in the same
+                            // render. Setting it before prs_state.set() risks
+                            // a render where loading is still false and the
+                            // flag is silently dropped, causing a non-forced
+                            // (cached) refetch.
                             force_refresh.set(true);
                         }
                         Event::MutationError {

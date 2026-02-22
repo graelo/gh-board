@@ -297,6 +297,7 @@ pub fn default_universal() -> Vec<Keybinding> {
 pub fn default_prs() -> Vec<Keybinding> {
     vec![
         kb("v", "approve", "Approve"),
+        kb("L", "label", "Label (autocomplete)"),
         kb("a", "assign", "Assign (multi, autocomplete)"),
         kb("ctrl+a", "assign_self", "Assign to me"),
         kb("A", "unassign", "Unassign"),

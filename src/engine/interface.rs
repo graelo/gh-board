@@ -194,6 +194,13 @@ pub enum Request {
         login: String,
         reply_tx: Sender<Event>,
     },
+    AddPrLabels {
+        owner: String,
+        repo: String,
+        number: u64,
+        labels: Vec<String>,
+        reply_tx: Sender<Event>,
+    },
 
     // -----------------------------------------------------------------------
     // Mutation operations — Issue

@@ -733,6 +733,34 @@ async fn handle_request(
             }
         }
 
+        Request::AddPrLabels {
+            owner,
+            repo,
+            number,
+            labels,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddPrLabels")
+            else {
+                return;
+            };
+            match issue_actions::add_labels(&octocrab, &owner, &repo, number, &labels).await {
+                Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk AddPrLabels #{number}");
+                    let _ = reply_tx.send(Event::MutationOk {
+                        description: format!("Added labels to PR #{number}"),
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: AddPrLabels #{number} error: {e}");
+                    let _ = reply_tx.send(Event::MutationError {
+                        description: format!("Add labels to PR #{number}"),
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
+
         // -----------------------------------------------------------------------
         // Mutation operations — Issue
         // -----------------------------------------------------------------------

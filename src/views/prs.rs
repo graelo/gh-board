@@ -392,6 +392,8 @@ enum InputMode {
     Search,
     /// Text input mode for assigning to any user.
     Assign,
+    /// Text input mode for adding a label.
+    Label,
     /// Prompt for which branch-update method to use (merge or rebase).
     UpdateBranchMethod,
 }
@@ -531,6 +533,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: assignee autocomplete.
     let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
     let mut assignee_selection = hooks.use_state(|| 0usize);
+
+    // State: label autocomplete.
+    let mut label_candidates = hooks.use_state(Vec::<String>::new);
+    let mut label_selection = hooks.use_state(|| 0usize);
 
     let mut help_visible = hooks.use_state(|| false);
 
@@ -877,6 +883,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
                         }
+                        Event::RepoLabelsFetched { labels, .. } => {
+                            label_candidates.set(labels);
+                        }
                         _ => {}
                     }
                 }
@@ -947,6 +956,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             &event_tx,
                             assignee_candidates,
                             assignee_selection,
+                        );
+                    }
+                    InputMode::Label => {
+                        handle_label_input(
+                            code,
+                            modifiers,
+                            input_mode,
+                            input_buffer,
+                            action_status,
+                            label_candidates,
+                            label_selection,
+                            &prs_state,
+                            current_filter_idx,
+                            cursor.get(),
+                            engine.as_ref(),
+                            &event_tx,
                         );
                     }
                     InputMode::Comment => match code {
@@ -1321,6 +1346,23 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                 repo: pr_repo.clone(),
                                                 number: pr_number,
                                                 login: "@me".to_owned(),
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                        }
+                                    }
+                                    BuiltinAction::LabelAction => {
+                                        input_mode.set(InputMode::Label);
+                                        input_buffer.set(String::new());
+                                        label_selection.set(0);
+                                        label_candidates.set(Vec::new());
+                                        action_status.set(None);
+                                        if let Some(ref eng) = engine
+                                            && let Some((owner, repo, _)) =
+                                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get())
+                                        {
+                                            eng.send(Request::FetchRepoLabels {
+                                                owner,
+                                                repo,
                                                 reply_tx: event_tx.clone(),
                                             });
                                         }
@@ -1772,6 +1814,31 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 Some(theme.text_faint),
             ))
         }
+        InputMode::Label => {
+            let buf = input_buffer.read().clone();
+            let candidates = label_candidates.read();
+            let filtered =
+                crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let sel = label_selection.get();
+            let selected_idx = if filtered.is_empty() {
+                None
+            } else {
+                Some(sel.min(filtered.len().saturating_sub(1)))
+            };
+            Some(RenderedTextInput::build_with_suggestions(
+                "Label:",
+                &buf,
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_secondary),
+                Some(theme.border_faint),
+                &filtered,
+                selected_idx,
+                Some(theme.text_primary),
+                Some(theme.bg_selected),
+                Some(theme.text_faint),
+            ))
+        }
         InputMode::Comment => Some(RenderedTextInput::build(
             "Comment (Ctrl+D to submit, Esc to cancel):",
             &input_buffer.read(),
@@ -2118,6 +2185,94 @@ fn handle_assign_input(
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+        }
+        _ => {}
+    }
+}
+
+/// Handle text input for adding a label to a PR.
+#[allow(clippy::too_many_arguments)]
+fn handle_label_input(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    mut input_mode: State<InputMode>,
+    mut input_buffer: State<String>,
+    _action_status: State<Option<String>>,
+    label_candidates: State<Vec<String>>,
+    mut label_selection: State<usize>,
+    prs_state: &State<PrsState>,
+    filter_idx: usize,
+    cursor: usize,
+    engine: Option<&EngineHandle>,
+    event_tx: &std::sync::mpsc::Sender<Event>,
+) {
+    use crate::components::text_input;
+    match code {
+        KeyCode::Tab | KeyCode::Down => {
+            let buf = input_buffer.read().clone();
+            let candidates = label_candidates.read();
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                label_selection.set((label_selection.get() + 1) % filtered.len());
+            }
+        }
+        KeyCode::Up | KeyCode::BackTab => {
+            let buf = input_buffer.read().clone();
+            let candidates = label_candidates.read();
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                let sel = label_selection.get();
+                label_selection.set(if sel == 0 {
+                    filtered.len() - 1
+                } else {
+                    sel - 1
+                });
+            }
+        }
+        KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
+            let candidates = label_candidates.read();
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            let label = if filtered.is_empty() {
+                buf.clone()
+            } else {
+                let sel = label_selection.get().min(filtered.len().saturating_sub(1));
+                filtered[sel].clone()
+            };
+            if !label.is_empty() {
+                let info = get_current_pr_info(prs_state, filter_idx, cursor);
+                if let Some((owner, repo, number)) = info
+                    && let Some(eng) = engine
+                {
+                    eng.send(Request::AddPrLabels {
+                        owner,
+                        repo,
+                        number,
+                        labels: vec![label],
+                        reply_tx: event_tx.clone(),
+                    });
+                }
+            }
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+            label_selection.set(0);
+        }
+        KeyCode::Esc => {
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+            label_selection.set(0);
+        }
+        KeyCode::Backspace => {
+            let mut buf = input_buffer.read().clone();
+            buf.pop();
+            input_buffer.set(buf);
+            label_selection.set(0);
+        }
+        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+            let mut buf = input_buffer.read().clone();
+            buf.push(ch);
+            input_buffer.set(buf);
+            label_selection.set(0);
         }
         _ => {}
     }

@@ -126,6 +126,37 @@ title = "My Repo"
 filters = "repo:owner/my-repo"        # unread from one repo
 ```
 
+---
+
+## GitHub Enterprise (GHE) support
+
+Every filter type (`[[pr_filters]]`, `[[issues_filters]]`,
+`[[actions_filters]]`, `[[notifications_filters]]`) accepts an optional
+`host` field. When set, all API calls for that filter are routed to the
+specified GHE hostname instead of `github.com`.
+
+```toml
+[[pr_filters]]
+title   = "My GHE PRs"
+filters = "author:@me is:open"
+host    = "ghe.example.com"
+
+[[actions_filters]]
+title = "GHE CI"
+repo  = "myorg/myrepo"
+host  = "ghe.example.com"
+```
+
+The `host` value should be the bare hostname (no scheme, no trailing slash).
+Filters without a `host` field default to `github.com`.
+
+When mixing public GitHub and GHE filters in the same config, each filter is
+fetched from its own host independently. Authentication tokens are resolved
+per-host through the `gh` CLI credential store or the appropriate
+`GH_TOKEN_<HOST>` environment variables.
+
+---
+
 ### Search bar (in-app filter)
 
 While viewing notifications you can open the search bar and type the same

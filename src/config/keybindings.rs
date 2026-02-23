@@ -220,7 +220,16 @@ pub fn key_event_to_string(
         KeyCode::Char(c) => {
             // For ctrl+<char>, use lowercase in the key string.
             if modifiers.contains(KeyModifiers::CONTROL) {
-                Some(c.to_ascii_lowercase().to_string())
+                // Crossterm's legacy parser maps ctrl+\/]/^/_ (bytes 0x1C-0x1F)
+                // to ctrl+4/5/6/7. Normalize back to the actual keys.
+                let normalized = match c {
+                    '4' => '\\',
+                    '5' => ']',
+                    '6' => '^',
+                    '7' => '_',
+                    other => other,
+                };
+                Some(normalized.to_ascii_lowercase().to_string())
             } else {
                 Some(c.to_string())
             }
@@ -580,6 +589,28 @@ mod tests {
             KeyEventKind::Press,
         );
         assert_eq!(s, Some("ctrl+d".to_owned()));
+    }
+
+    #[test]
+    fn key_event_to_string_ctrl_bracket_normalized() {
+        // Crossterm legacy parser sends ctrl+] as Char('5') + CONTROL.
+        let s = key_event_to_string(
+            KeyCode::Char('5'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Press,
+        );
+        assert_eq!(s, Some("ctrl+]".to_owned()));
+    }
+
+    #[test]
+    fn key_event_to_string_ctrl_backslash_normalized() {
+        // Crossterm legacy parser sends ctrl+\ as Char('4') + CONTROL.
+        let s = key_event_to_string(
+            KeyCode::Char('4'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Press,
+        );
+        assert_eq!(s, Some("ctrl+\\".to_owned()));
     }
 
     #[test]

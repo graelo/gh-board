@@ -257,8 +257,14 @@ fn pr_to_row(
         Cell::colored(created, theme.text_faint),
     );
 
-    // Update status (refined from detail if available, coarse from PR otherwise)
-    let update = if let Some(d) = detail {
+    // Update status (refined from detail if available, coarse from PR otherwise).
+    // Skip for closed/merged PRs — branch status is irrelevant once the PR is done.
+    let update = if matches!(
+        pr.state,
+        crate::github::types::PrState::Closed | crate::github::types::PrState::Merged
+    ) {
+        Cell::colored("-".to_owned(), theme.text_faint)
+    } else if let Some(d) = detail {
         update_cell_from_detail(d, theme)
     } else {
         update_cell(branch_update_status(pr), theme)
@@ -831,10 +837,19 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 rate_limit_state.set(rate_limit);
                             }
                             // Update the "update" cell in the table row.
-                            let update = update_cell_from_detail(&detail, &theme_for_poll);
+                            // Skip for closed/merged PRs — branch status is irrelevant.
                             let mut state = prs_state.read().clone();
                             'update: for fd in &mut state.filters {
                                 if let Some(idx) = fd.prs.iter().position(|p| p.number == number) {
+                                    let update = if matches!(
+                                        fd.prs[idx].state,
+                                        crate::github::types::PrState::Closed
+                                            | crate::github::types::PrState::Merged
+                                    ) {
+                                        Cell::colored("-".to_owned(), theme_for_poll.text_faint)
+                                    } else {
+                                        update_cell_from_detail(&detail, &theme_for_poll)
+                                    };
                                     fd.rows[idx].insert("update".to_owned(), update);
                                     break 'update;
                                 }
@@ -2453,6 +2468,57 @@ fn get_current_pr_assignees(
     pr.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
+/// Compute update-status text and color for the sidebar.
+///
+/// Returns `(None, text_faint)` for closed/merged PRs or when no data is available.
+fn sidebar_update_status(
+    pr: &PullRequest,
+    detail: Option<&PrDetail>,
+    theme: &ResolvedTheme,
+) -> (Option<String>, AppColor) {
+    let icons = &theme.icons;
+
+    if matches!(
+        pr.state,
+        crate::github::types::PrState::Closed | crate::github::types::PrState::Merged
+    ) {
+        return (None, theme.text_faint);
+    }
+
+    if let Some(d) = detail {
+        match effective_update_status(d) {
+            Some(MergeStateStatus::Behind) => {
+                let suffix = d.behind_by.map_or(String::new(), |b| format!(" by {b}"));
+                (
+                    Some(format!("{} Behind{suffix}", icons.update_needed)),
+                    theme.text_warning,
+                )
+            }
+            Some(MergeStateStatus::Dirty) => (
+                Some(format!("{} Conflicts", icons.update_conflict)),
+                theme.text_error,
+            ),
+            Some(_) => (
+                Some(format!("{} Up to date", icons.update_ok)),
+                theme.text_success,
+            ),
+            None => (None, theme.text_faint),
+        }
+    } else {
+        match branch_update_status(pr) {
+            BranchUpdateStatus::NeedsUpdate => (
+                Some(format!("{} Behind", icons.update_needed)),
+                theme.text_warning,
+            ),
+            BranchUpdateStatus::HasConflicts => (
+                Some(format!("{} Conflicts", icons.update_conflict)),
+                theme.text_error,
+            ),
+            BranchUpdateStatus::Unknown => (None, theme.text_faint),
+        }
+    }
+}
+
 /// Build the `SidebarMeta` header from a pull request.
 fn build_sidebar_meta(
     pr: &PullRequest,
@@ -2513,39 +2579,7 @@ fn build_sidebar_meta(
     // commenters, reviewers, label editors, etc.)
     let participants: Vec<String> = pr.participants.iter().map(|l| format!("@{l}")).collect();
 
-    // Update status: prefer confirmed detail info; fall back to coarse status from search.
-    let (update_text, update_fg_app) = if let Some(d) = detail {
-        match effective_update_status(d) {
-            Some(MergeStateStatus::Behind) => {
-                let suffix = d.behind_by.map_or(String::new(), |b| format!(" by {b}"));
-                (
-                    Some(format!("{} Behind{suffix}", icons.update_needed)),
-                    theme.text_warning,
-                )
-            }
-            Some(MergeStateStatus::Dirty) => (
-                Some(format!("{} Conflicts", icons.update_conflict)),
-                theme.text_error,
-            ),
-            Some(_) => (
-                Some(format!("{} Up to date", icons.update_ok)),
-                theme.text_success,
-            ),
-            None => (None, theme.text_faint),
-        }
-    } else {
-        match branch_update_status(pr) {
-            BranchUpdateStatus::NeedsUpdate => (
-                Some(format!("{} Behind", icons.update_needed)),
-                theme.text_warning,
-            ),
-            BranchUpdateStatus::HasConflicts => (
-                Some(format!("{} Conflicts", icons.update_conflict)),
-                theme.text_error,
-            ),
-            BranchUpdateStatus::Unknown => (None, theme.text_faint),
-        }
-    };
+    let (update_text, update_fg_app) = sidebar_update_status(pr, detail, theme);
 
     let author_login = pr
         .author

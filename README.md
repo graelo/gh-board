@@ -210,7 +210,7 @@ name = "Open in browser"
 
 # Override an Actions view binding
 [[keybindings.actions]]
-key = "ctrl+r"
+key = "e"
 builtin = "rerun_failed"
 name = "Re-run failed jobs"
 ```
@@ -316,9 +316,9 @@ The PR view displays the following columns:
 | Key        | Action                    |
 | ---------- | ------------------------- |
 | `w`        | Toggle workflow navigator |
-| `Ctrl+r`   | Re-run failed jobs        |
-| `Ctrl+R`   | Re-run all jobs           |
-| `Ctrl+c`   | Cancel run                |
+| `e`        | Re-run failed jobs        |
+| `E`        | Re-run all jobs           |
+| `Ctrl+x`   | Cancel run                |
 | `n`        | Switch view               |
 | `N`        | Switch view back          |
 

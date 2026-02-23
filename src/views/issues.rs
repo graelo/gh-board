@@ -374,8 +374,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     // Clone the EngineHandle so it can be captured in 'static use_future closures.
     let engine: Option<EngineHandle> = props.engine.cloned();
-    // Pre-clone for each consumer: debounce future, polling future, fetch trigger, keyboard handler.
-    let engine_for_poll = engine.clone();
+    // Pre-clone for each consumer: debounce future, fetch trigger, keyboard handler.
     let engine_for_keyboard = engine.clone();
 
     // Debounce future: waits for cursor to settle, then sends FetchIssueDetail via engine.
@@ -499,8 +498,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         let theme_for_poll = theme.clone();
         let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
         let current_filter_for_poll = current_filter_idx;
-        let _engine = engine_for_poll;
-        let _event_tx = event_tx.clone();
         hooks.use_future(async move {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;

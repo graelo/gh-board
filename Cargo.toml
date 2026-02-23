@@ -1,6 +1,6 @@
 [package]
 name = "gh-board"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.88.0"
 description = "A blazingly fast terminal dashboard for GitHub pull requests, issues, and notifications"
@@ -19,14 +19,14 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"  # pinned by iocraft 0.7
 #
+# GitHub API
+http = "1"
+#
 # TUI framework
 iocraft = "0.7"
 #
 # Cache
 moka = { version = "0.12", features = ["future"] }
-#
-# GitHub API
-http = "1"
 octocrab = "0.49"
 #
 # Markdown

@@ -80,6 +80,9 @@ pub enum BuiltinAction {
     RerunFailed,
     RerunAll,
     CancelRun,
+    // Cross-view navigation
+    JumpToRun,
+    GoBack,
 }
 
 impl BuiltinAction {
@@ -129,6 +132,8 @@ impl BuiltinAction {
             "rerun_failed" => Self::RerunFailed,
             "rerun_all" => Self::RerunAll,
             "cancel_run" => Self::CancelRun,
+            "jump_to_run" => Self::JumpToRun,
+            "go_back" => Self::GoBack,
             _ => return None,
         })
     }
@@ -178,6 +183,8 @@ impl BuiltinAction {
             Self::RerunFailed => "Re-run failed jobs",
             Self::RerunAll => "Re-run all jobs",
             Self::CancelRun => "Cancel run",
+            Self::JumpToRun => "Jump to Actions run",
+            Self::GoBack => "Go back to previous view",
         }
     }
 }
@@ -307,6 +314,7 @@ pub fn default_prs() -> Vec<Keybinding> {
         kb("W", "mark_ready", "Mark ready for review"),
         kb("m", "merge", "Merge PR"),
         kb("u", "update_from_base", "Update from base"),
+        kb("ctrl+]", "jump_to_run", "Jump to Actions run"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("S", "toggle_scope", "Toggle repo scope"),
@@ -331,6 +339,7 @@ pub(crate) fn default_issues() -> Vec<Keybinding> {
 pub(crate) fn default_actions() -> Vec<Keybinding> {
     vec![
         kb("w", "toggle_workflow_nav", "Toggle workflow navigator"),
+        kb("ctrl+t", "go_back", "Go back to previous view"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("e", "rerun_failed", "Re-run failed jobs"),

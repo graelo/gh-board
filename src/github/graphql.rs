@@ -70,7 +70,15 @@ query SearchPullRequests($query: String!, $first: Int!, $after: String) {
               statusCheckRollup {
                 contexts(first: 50) {
                   nodes {
-                    ... on CheckRun { name status conclusion detailsUrl }
+                    ... on CheckRun {
+                      name status conclusion detailsUrl
+                      checkSuite {
+                        workflowRun {
+                          databaseId
+                          workflow { name }
+                        }
+                      }
+                    }
                     ... on StatusContext { context state targetUrl }
                   }
                 }
@@ -541,11 +549,32 @@ struct RawCheckContext {
     conclusion: Option<CheckConclusion>,
     #[serde(rename = "detailsUrl")]
     details_url: Option<String>,
+    #[serde(rename = "checkSuite")]
+    check_suite: Option<RawCheckSuite>,
     // StatusContext fields
     context: Option<String>,
     state: Option<String>,
     #[serde(rename = "targetUrl")]
     target_url: Option<String>,
+}
+
+/// Nested `checkSuite.workflowRun` from the GraphQL response.
+#[derive(Debug, Deserialize)]
+struct RawCheckSuite {
+    #[serde(rename = "workflowRun")]
+    workflow_run: Option<RawCheckSuiteWorkflowRun>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCheckSuiteWorkflowRun {
+    #[serde(rename = "databaseId")]
+    database_id: Option<u64>,
+    workflow: Option<RawCheckSuiteWorkflow>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawCheckSuiteWorkflow {
+    name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -680,11 +709,22 @@ impl RawPullRequest {
                             (None, None)
                         };
 
+                        // Extract workflow_run_id and workflow_name from
+                        // checkSuite.workflowRun nesting (null for non-Actions checks).
+                        let (workflow_run_id, workflow_name) = ctx
+                            .check_suite
+                            .and_then(|cs| cs.workflow_run)
+                            .map_or((None, None), |wr| {
+                                (wr.database_id, wr.workflow.and_then(|w| w.name))
+                            });
+
                         CheckRun {
                             name,
                             status,
                             conclusion,
                             url,
+                            workflow_run_id,
+                            workflow_name,
                         }
                     })
                     .collect()

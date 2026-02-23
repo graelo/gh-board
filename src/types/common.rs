@@ -125,6 +125,12 @@ pub struct CheckRun {
     pub status: Option<CheckStatus>,
     pub conclusion: Option<CheckConclusion>,
     pub url: Option<String>,
+    /// Actions workflow run ID; `None` for non-Actions checks.
+    #[serde(default)]
+    pub workflow_run_id: Option<u64>,
+    /// Workflow display name (e.g., "Essentials"); `None` for non-Actions checks.
+    #[serde(default)]
+    pub workflow_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

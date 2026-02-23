@@ -16,6 +16,21 @@ use crate::views::prs::PrsView;
 use crate::views::repo::RepoView;
 
 // ---------------------------------------------------------------------------
+// Navigation target (cross-view deep-link context)
+// ---------------------------------------------------------------------------
+
+/// Carries cross-view navigation context (e.g., "jump to this Actions run").
+#[derive(Clone, Debug)]
+pub enum NavigationTarget {
+    ActionsRun {
+        owner: String,
+        repo: String,
+        run_id: u64,
+        host: Option<String>,
+    },
+}
+
+// ---------------------------------------------------------------------------
 // View kind enum (public for status bar)
 // ---------------------------------------------------------------------------
 
@@ -93,6 +108,33 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         crate::config::types::View::Repo => ViewKind::Repo,
     });
     let mut active_view = hooks.use_state(move || initial_view);
+
+    // Cross-view navigation target (deep-link).
+    let mut nav_target: State<Option<NavigationTarget>> = hooks.use_state(|| None);
+    let mut previous_view: State<Option<ViewKind>> = hooks.use_state(|| None);
+
+    // Go-back signal: when a child view sets this to true, we return to previous view.
+    let mut go_back_signal = hooks.use_state(|| false);
+    if go_back_signal.get() {
+        go_back_signal.set(false);
+        let prev = *previous_view.read();
+        nav_target.set(None);
+        if let Some(prev) = prev {
+            active_view.set(prev);
+            previous_view.set(None);
+        }
+    }
+
+    // When nav_target is set, store current view and switch to target.
+    if let Some(target) = &*nav_target.read() {
+        let dest = match target {
+            NavigationTarget::ActionsRun { .. } => ViewKind::Actions,
+        };
+        if active_view.get() != dest {
+            previous_view.set(Some(active_view.get()));
+            active_view.set(dest);
+        }
+    }
 
     // Switch-view signal: when a child view sets this to true, we cycle forward.
     let mut switch_signal = hooks.use_state(|| false);
@@ -195,6 +237,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     is_active: active == ViewKind::Prs,
                     refetch_interval_minutes: refetch_minutes,
                     prefetch_pr_details,
+                    nav_target,
                 )
             }
             View(
@@ -244,6 +287,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     scope_toggle: scope_toggle_signal,
                     is_active: active == ViewKind::Actions,
                     refetch_interval_minutes: refetch_minutes,
+                    nav_target,
+                    go_back: go_back_signal,
                 )
             }
             View(

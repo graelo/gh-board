@@ -114,3 +114,39 @@ fn stub_engine_detail_returns_fetch_error() {
         "detail fetch on stub should return FetchError"
     );
 }
+
+#[test]
+fn stub_engine_fetch_run_by_id_returns_not_found() {
+    let stub = StubEngine {
+        prs: vec![],
+        issues: vec![],
+        notifications: vec![],
+    };
+
+    let handle = stub.start();
+    let (tx, rx) = std::sync::mpsc::channel::<Event>();
+
+    handle.send(Request::FetchRunById {
+        owner: "example".into(),
+        repo: "repo".into(),
+        run_id: 999,
+        host: None,
+        reply_tx: tx,
+    });
+
+    let event = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("engine should reply within 2 seconds");
+
+    assert!(
+        matches!(
+            event,
+            Event::SingleRunFetched {
+                run_id: 999,
+                run: None,
+                ..
+            }
+        ),
+        "FetchRunById on stub should return SingleRunFetched with run: None"
+    );
+}

@@ -3,7 +3,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use iocraft::prelude::*;
 
 use crate::actions::clipboard;
-use crate::app::ViewKind;
+use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::footer::{self, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
@@ -317,6 +317,10 @@ pub struct ActionsViewProps<'a> {
     pub scope_toggle: Option<State<bool>>,
     pub is_active: bool,
     pub refetch_interval_minutes: u32,
+    /// Navigation target state — set by `PrsView`, consumed here.
+    pub nav_target: Option<State<Option<NavigationTarget>>>,
+    /// Go-back signal — set to true to return to previous view.
+    pub go_back: Option<State<bool>>,
 }
 
 #[component]
@@ -352,6 +356,9 @@ pub fn ActionsView<'a>(
     let mut detail_scroll = hooks.use_state(|| 0usize);
     let mut jobs_cache = hooks.use_state(HashMap::<u64, Vec<WorkflowJob>>::new);
     let mut jobs_in_flight = hooks.use_state(HashSet::<u64>::new);
+
+    // State: pinned run fetched by ID when the deep-linked run is not in any filter.
+    let mut pinned_run = hooks.use_state(|| Option::<WorkflowRun>::None);
 
     let mut action_status = hooks.use_state(|| Option::<String>::None);
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
@@ -581,6 +588,28 @@ pub fn ActionsView<'a>(
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
                         }
+                        Event::SingleRunFetched {
+                            run_id,
+                            run,
+                            rate_limit,
+                        } => {
+                            if let Some(fetched) = run {
+                                pinned_run.set(Some(fetched));
+                                // Auto-select the pinned run.
+                                cursor.set(0);
+                                scroll_offset.set(0);
+                                detail_open.set(true);
+                                detail_scroll.set(0);
+                            } else {
+                                action_status.set(Some(format!(
+                                    "Run #{run_id} not found (deleted or inaccessible)"
+                                )));
+                                pinned_run.set(None);
+                            }
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
+                            }
+                        }
                         Event::FetchError { message, .. } => {
                             let ifl = filter_in_flight.read().clone();
                             let fi = ifl.iter().position(|&f| f);
@@ -611,6 +640,73 @@ pub fn ActionsView<'a>(
                 }
             }
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // Process cross-view navigation target (deep-link from PR checks)
+    // -----------------------------------------------------------------------
+
+    let nav_target_prop = props.nav_target;
+    let go_back_prop = props.go_back;
+
+    if is_active && let Some(ref nt_state) = nav_target_prop {
+        let target = nt_state.read().clone();
+        if let Some(NavigationTarget::ActionsRun { run_id, .. }) = target {
+            // Search all loaded filter data for this run.
+            let found = {
+                let state = actions_state.read();
+                state.filters.iter().enumerate().find_map(|(fi, fd)| {
+                    if fd.loading {
+                        return None;
+                    }
+                    fd.runs
+                        .iter()
+                        .position(|r| r.id == run_id)
+                        .map(|pos| (fi, pos))
+                })
+            };
+            if let Some((filter_idx, run_pos)) = found {
+                active_filter.set(filter_idx);
+                cursor.set(run_pos);
+                scroll_offset.set(run_pos.saturating_sub(5));
+                detail_open.set(true);
+                detail_scroll.set(0);
+                // Reset search and workflow nav to avoid stale filtering.
+                search_query.set(String::new());
+                nav_cursor.set(0);
+                nav_focused.set(false);
+                // Clear nav_target to prevent re-processing.
+                if let Some(mut nt) = nav_target_prop {
+                    nt.set(None);
+                }
+            } else {
+                // Check if any filter is still loading.
+                let any_loading = actions_state.read().filters.iter().any(|f| f.loading);
+                if !any_loading {
+                    // All filters loaded but run not found — fetch by ID.
+                    if let Some(NavigationTarget::ActionsRun {
+                        ref owner,
+                        ref repo,
+                        run_id,
+                        ref host,
+                    }) = *nt_state.read()
+                        && let Some(ref eng) = engine
+                    {
+                        eng.send(Request::FetchRunById {
+                            owner: owner.clone(),
+                            repo: repo.clone(),
+                            run_id,
+                            host: host.clone(),
+                            reply_tx: event_tx.clone(),
+                        });
+                    }
+                    if let Some(mut nt) = nav_target_prop {
+                        nt.set(None);
+                    }
+                }
+                // If still loading, wait for next render cycle.
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -673,11 +769,16 @@ pub fn ActionsView<'a>(
             .collect()
     };
 
-    let filtered_rows: Vec<Row> = filtered_run_indices
+    let mut filtered_rows: Vec<Row> = filtered_run_indices
         .iter()
         .filter_map(|&i| all_rows.get(i))
         .cloned()
         .collect();
+
+    // Prepend pinned run (fetched by ID for out-of-filter deep-link).
+    if let Some(ref run) = *pinned_run.read() {
+        filtered_rows.insert(0, run_to_row(run, &theme));
+    }
 
     let total_rows = filtered_rows.len();
     let visible_rows = props.height.saturating_sub(5) as usize;
@@ -687,21 +788,30 @@ pub fn ActionsView<'a>(
     let current_filter_cfg_for_kb = filters_cfg.get(current_filter_idx).cloned();
 
     // Trigger job fetch when detail sidebar is open.
-    // Uses filtered_run_indices to correctly map cursor → unfiltered run index,
-    // so this works correctly regardless of the active workflow nav selection.
+    // Accounts for pinned run (prepended at index 0) by adjusting cursor.
+    let has_pinned = pinned_run.read().is_some();
+    let pinned_offset: usize = usize::from(has_pinned);
+
+    let cur_run_for_fetch: Option<WorkflowRun> = if has_pinned && cursor.get() == 0 {
+        pinned_run.read().clone()
+    } else {
+        let adjusted = cursor.get().saturating_sub(pinned_offset);
+        filtered_run_indices
+            .get(adjusted)
+            .and_then(|&orig_idx| current_data.and_then(|d| d.runs.get(orig_idx)))
+            .cloned()
+    };
+
     if detail_open.get()
         && is_active
-        && let Some(cur_run) = filtered_run_indices
-            .get(cursor.get())
-            .and_then(|&orig_idx| current_data?.runs.get(orig_idx))
-            .cloned()
+        && let Some(ref cur_run) = cur_run_for_fetch
     {
         let run_id = cur_run.id;
         if !jobs_in_flight.read().contains(&run_id)
             && !jobs_cache.read().contains_key(&run_id)
             && let Some(ref eng) = engine
             && let Some((owner, repo)) =
-                owner_repo_for_run(&cur_run, filters_cfg.get(current_filter_idx))
+                owner_repo_for_run(cur_run, filters_cfg.get(current_filter_idx))
         {
             let host = filters_cfg
                 .get(current_filter_idx)
@@ -940,6 +1050,7 @@ pub fn ActionsView<'a>(
                                         // a new FetchRunJobs from being sent).
                                         jobs_cache.set(HashMap::new());
                                         jobs_in_flight.set(HashSet::new());
+                                        pinned_run.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -954,6 +1065,7 @@ pub fn ActionsView<'a>(
                                         filter_fetch_times.set(times);
                                         jobs_cache.set(HashMap::new());
                                         jobs_in_flight.set(HashSet::new());
+                                        pinned_run.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);
@@ -1033,6 +1145,13 @@ pub fn ActionsView<'a>(
                                             }
                                         }
                                     }
+                                    BuiltinAction::GoBack => {
+                                        pinned_run.set(None);
+                                        detail_open.set(false);
+                                        if let Some(mut gb) = go_back_prop {
+                                            gb.set(true);
+                                        }
+                                    }
                                     BuiltinAction::Search => {
                                         input_mode.set(InputMode::Search);
                                         search_query.set(String::new());
@@ -1092,6 +1211,7 @@ pub fn ActionsView<'a>(
                                             } else {
                                                 current - 1
                                             });
+                                            pinned_run.set(None);
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         }
@@ -1100,6 +1220,7 @@ pub fn ActionsView<'a>(
                                         if filter_count > 0 {
                                             active_filter
                                                 .set((active_filter.get() + 1) % filter_count);
+                                            pinned_run.set(None);
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         }

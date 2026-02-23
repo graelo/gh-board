@@ -294,7 +294,11 @@ pub fn default_universal() -> Vec<Keybinding> {
         kb("home", "first", "Jump to first item"),
         kb("G", "last", "Jump to last item"),
         kb("end", "last", "Jump to last item"),
-        kb("ctrl+d", "half_page_down", "Half page down / scroll sidebar"),
+        kb(
+            "ctrl+d",
+            "half_page_down",
+            "Half page down / scroll sidebar",
+        ),
         kb("pagedown", "page_down", "Page down"),
         kb("ctrl+u", "half_page_up", "Half page up / scroll sidebar"),
         kb("pageup", "page_up", "Page up"),

@@ -586,9 +586,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             let new_cursor = (cursor.get() + half)
                                                 .min(total_rows.saturating_sub(1));
                                             cursor.set(new_cursor);
-                                            if new_cursor
-                                                >= scroll_offset.get() + visible_rows
-                                            {
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
                                                 scroll_offset.set(
                                                     new_cursor.saturating_sub(visible_rows) + 1,
                                                 );
@@ -597,8 +595,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     }
                                     BuiltinAction::HalfPageUp => {
                                         let half = visible_rows / 2;
-                                        let new_cursor =
-                                            cursor.get().saturating_sub(half);
+                                        let new_cursor = cursor.get().saturating_sub(half);
                                         cursor.set(new_cursor);
                                         if new_cursor < scroll_offset.get() {
                                             scroll_offset.set(new_cursor);

@@ -126,6 +126,83 @@ title = "My Repo"
 filters = "repo:owner/my-repo"        # unread from one repo
 ```
 
+---
+
+## Actions Filters
+
+Actions filters use the GitHub REST API (`GET /repos/{owner}/{repo}/actions/runs`)
+and always target a specific repository.
+
+### Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | yes | Tab label |
+| `repo` | string | yes | `"owner/repo"` or `"@current"` |
+| `host` | string | no | GHE hostname; defaults to `github.com` |
+| `limit` | integer | no | Max runs to fetch (1–100, default 30) |
+| `status` | string | no | `queued`, `in_progress`, `completed`, `waiting`, `requested`, `pending`, or a conclusion value (`success`, `failure`, `cancelled`, …) |
+| `event` | string | no | `push`, `pull_request`, `schedule`, `workflow_dispatch`, … |
+
+### `@current` — follow the working directory
+
+Set `repo = "@current"` to use the repository detected from the current
+working directory. gh-board parses the git remote URL when launched, so
+this works without any per-repo configuration.
+
+The fetch is skipped (tab shows empty) when no repo can be detected — for
+example when launched outside a git repository or when the scope is toggled
+to global mode.
+
+```toml
+# Always shows CI for this exact repo, regardless of where you launch gh-board.
+[[actions_filters]]
+title = "infra CI"
+repo  = "myorg/infra"
+
+# Follows whichever repo you're currently working in.
+[[actions_filters]]
+title = "CI"
+repo  = "@current"
+
+# Combine: filter by event type too.
+[[actions_filters]]
+title = "CI (push)"
+repo  = "@current"
+event = "push"
+```
+
+---
+
+## GitHub Enterprise (GHE) support
+
+Every filter type (`[[pr_filters]]`, `[[issues_filters]]`,
+`[[actions_filters]]`, `[[notifications_filters]]`) accepts an optional
+`host` field. When set, all API calls for that filter are routed to the
+specified GHE hostname instead of `github.com`.
+
+```toml
+[[pr_filters]]
+title   = "My GHE PRs"
+filters = "author:@me is:open"
+host    = "ghe.example.com"
+
+[[actions_filters]]
+title = "GHE CI"
+repo  = "myorg/myrepo"
+host  = "ghe.example.com"
+```
+
+The `host` value should be the bare hostname (no scheme, no trailing slash).
+Filters without a `host` field default to `github.com`.
+
+When mixing public GitHub and GHE filters in the same config, each filter is
+fetched from its own host independently. Authentication tokens are resolved
+per-host through the `gh` CLI credential store or the appropriate
+`GH_TOKEN_<HOST>` environment variables.
+
+---
+
 ### Search bar (in-app filter)
 
 While viewing notifications you can open the search bar and type the same

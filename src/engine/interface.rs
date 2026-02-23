@@ -1,7 +1,10 @@
 use std::sync::mpsc::Sender;
 
-use crate::config::types::{IssueFilter, NotificationFilter, PrFilter};
-use crate::types::{Issue, IssueDetail, Notification, PrDetail, PullRequest, RateLimitInfo};
+use crate::config::types::{ActionsFilter, IssueFilter, NotificationFilter, PrFilter};
+use crate::types::{
+    Issue, IssueDetail, Notification, PrDetail, PullRequest, RateLimitInfo, WorkflowJob,
+    WorkflowRun,
+};
 
 /// Handle to the backend engine held by the UI layer.
 ///
@@ -58,6 +61,18 @@ pub enum Request {
         force: bool,
         reply_tx: Sender<Event>,
     },
+    FetchActions {
+        filter_idx: usize,
+        filter: ActionsFilter,
+        reply_tx: Sender<Event>,
+    },
+    FetchRunJobs {
+        owner: String,
+        repo: String,
+        run_id: u64,
+        host: Option<String>,
+        reply_tx: Sender<Event>,
+    },
     FetchNotifications {
         filter_idx: usize,
         filter: NotificationFilter,
@@ -107,6 +122,10 @@ pub enum Request {
     },
     RegisterIssuesRefresh {
         filter_configs: Vec<IssueFilter>,
+        notify_tx: Sender<Event>,
+    },
+    RegisterActionsRefresh {
+        filter_configs: Vec<ActionsFilter>,
         notify_tx: Sender<Event>,
     },
     RegisterNotificationsRefresh {
@@ -161,18 +180,20 @@ pub enum Request {
         number: u64,
         reply_tx: Sender<Event>,
     },
-    AssignPr {
+    /// Replace the full assignee set on a PR. An empty `logins` vec unassigns everyone.
+    SetPrAssignees {
         owner: String,
         repo: String,
         number: u64,
         logins: Vec<String>,
         reply_tx: Sender<Event>,
     },
-    UnassignPr {
+    /// Replace the full label set on a PR. An empty `labels` vec clears all labels.
+    SetPrLabels {
         owner: String,
         repo: String,
         number: u64,
-        login: String,
+        labels: Vec<String>,
         reply_tx: Sender<Event>,
     },
 
@@ -198,25 +219,38 @@ pub enum Request {
         body: String,
         reply_tx: Sender<Event>,
     },
-    AddIssueLabels {
+    /// Replace the full label set on an issue. An empty `labels` vec clears all labels.
+    SetIssueLabels {
         owner: String,
         repo: String,
         number: u64,
         labels: Vec<String>,
         reply_tx: Sender<Event>,
     },
-    AssignIssue {
+    /// Replace the full assignee set on an issue. An empty `logins` vec unassigns everyone.
+    SetIssueAssignees {
         owner: String,
         repo: String,
         number: u64,
         logins: Vec<String>,
         reply_tx: Sender<Event>,
     },
-    UnassignIssue {
+
+    // -----------------------------------------------------------------------
+    // Mutation operations — Actions
+    // -----------------------------------------------------------------------
+    RerunWorkflowRun {
         owner: String,
         repo: String,
-        number: u64,
-        login: String,
+        run_id: u64,
+        /// true = rerun-failed-jobs, false = rerun all
+        failed_only: bool,
+        reply_tx: Sender<Event>,
+    },
+    CancelWorkflowRun {
+        owner: String,
+        repo: String,
+        run_id: u64,
         reply_tx: Sender<Event>,
     },
 
@@ -259,6 +293,17 @@ pub enum Event {
     NotificationsFetched {
         filter_idx: usize,
         notifications: Vec<Notification>,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    ActionsFetched {
+        filter_idx: usize,
+        runs: Vec<WorkflowRun>,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    RunJobsFetched {
+        run_id: u64,
+        jobs: Vec<WorkflowJob>,
+        rate_limit: Option<RateLimitInfo>,
     },
     PrDetailFetched {
         number: u64,

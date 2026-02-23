@@ -13,8 +13,11 @@ use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
-use crate::components::text_input::{RenderedTextInput, TextInput};
-use crate::config::keybindings::{MergedBindings, ViewContext};
+use crate::components::text_input::{self, RenderedTextInput, TextInput};
+use crate::config::keybindings::{
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
+};
 use crate::config::types::PrFilter;
 use crate::engine::{EngineHandle, Event, PrRef, Request};
 use crate::filter::{self, apply_scope};
@@ -384,23 +387,15 @@ enum InputMode {
     /// Typing a comment; buffer accumulates chars.
     Comment,
     /// Confirmation prompt for a destructive action (y/n).
-    Confirm(PendingAction),
+    Confirm(BuiltinAction),
     /// Search/filter mode (T087).
     Search,
     /// Text input mode for assigning to any user.
     Assign,
+    /// Text input mode for adding a label.
+    Label,
     /// Prompt for which branch-update method to use (merge or rebase).
     UpdateBranchMethod,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PendingAction {
-    Close,
-    Reopen,
-    Merge,
-    Approve,
-    UpdateBranch,
-    ReadyForReview,
 }
 
 // ---------------------------------------------------------------------------
@@ -538,6 +533,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: assignee autocomplete.
     let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
     let mut assignee_selection = hooks.use_state(|| 0usize);
+    let mut assignee_selected = hooks.use_state(Vec::<String>::new);
+
+    // State: label autocomplete.
+    let mut label_candidates = hooks.use_state(Vec::<String>::new);
+    let mut label_selection = hooks.use_state(|| 0usize);
+    let mut label_selected = hooks.use_state(Vec::<String>::new);
 
     let mut help_visible = hooks.use_state(|| false);
 
@@ -874,6 +875,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 times[current_filter_for_poll] = None;
                             }
                             filter_fetch_times.set(times);
+                            // Must come LAST: force_refresh is consumed by the
+                            // lazy-fetch trigger only when active_needs_fetch
+                            // (loading=true) is already visible in the same
+                            // render. Setting it before prs_state.set() risks
+                            // a render where loading is still false and the
+                            // flag is silently dropped, causing a non-forced
+                            // (cached) refetch.
+                            force_refresh.set(true);
                         }
                         Event::MutationError {
                             description,
@@ -883,6 +892,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
+                        }
+                        Event::RepoLabelsFetched { labels, .. } => {
+                            label_candidates.set(labels);
+                        }
+                        Event::RepoCollaboratorsFetched { logins, .. } => {
+                            let mut combined = assignee_candidates.read().clone();
+                            combined.extend(logins);
+                            combined.sort();
+                            combined.dedup();
+                            assignee_candidates.set(combined);
                         }
                         _ => {}
                     }
@@ -915,6 +934,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Engine handle for the keyboard handler closure.
     let engine = engine_for_keyboard;
 
+    let keybindings = props.keybindings.cloned();
     // Keyboard handling.
     hooks.use_terminal_events({
         move |event| match event {
@@ -945,7 +965,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             modifiers,
                             input_mode,
                             input_buffer,
-                            action_status,
                             &prs_state,
                             current_filter_idx,
                             cursor.get(),
@@ -953,6 +972,23 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             &event_tx,
                             assignee_candidates,
                             assignee_selection,
+                            assignee_selected,
+                        );
+                    }
+                    InputMode::Label => {
+                        handle_label_input(
+                            code,
+                            modifiers,
+                            input_mode,
+                            input_buffer,
+                            label_candidates,
+                            label_selection,
+                            label_selected,
+                            &prs_state,
+                            current_filter_idx,
+                            cursor.get(),
+                            engine.as_ref(),
+                            &event_tx,
                         );
                     }
                     InputMode::Comment => match code {
@@ -1012,7 +1048,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 && let Some(ref eng) = engine
                             {
                                 match pending {
-                                    PendingAction::Close => {
+                                    BuiltinAction::Close => {
                                         eng.send(Request::ClosePr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1020,7 +1056,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::Reopen => {
+                                    BuiltinAction::Reopen => {
                                         eng.send(Request::ReopenPr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1028,7 +1064,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::Merge => {
+                                    BuiltinAction::Merge => {
                                         eng.send(Request::MergePr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1036,7 +1072,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::Approve => {
+                                    BuiltinAction::Approve => {
                                         eng.send(Request::ApprovePr {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1045,7 +1081,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::UpdateBranch => {
+                                    BuiltinAction::UpdateFromBase => {
                                         eng.send(Request::UpdateBranch {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1053,7 +1089,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
-                                    PendingAction::ReadyForReview => {
+                                    BuiltinAction::MarkReady => {
                                         eng.send(Request::ReadyForReview {
                                             owner: owner.clone(),
                                             repo: repo.clone(),
@@ -1061,6 +1097,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             reply_tx: event_tx.clone(),
                                         });
                                     }
+                                    _ => {}
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -1096,440 +1133,410 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         _ => {}
                     },
-                    InputMode::Normal => match code {
-                        // Quit
-                        KeyCode::Char('q') => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        // Switch view
-                        KeyCode::Char('n') => {
-                            if let Some(mut sv) = switch_view {
-                                sv.set(true);
-                            }
-                        }
-                        // Switch view back
-                        KeyCode::Char('N') => {
-                            if let Some(mut sv) = switch_view_back {
-                                sv.set(true);
-                            }
-                        }
-                        // Toggle repo scope
-                        KeyCode::Char('S') => {
-                            if let Some(mut st) = scope_toggle {
-                                st.set(true);
-                            }
-                        }
-                        // Toggle preview pane
-                        KeyCode::Char('p') => {
-                            preview_open.set(!preview_open.get());
-                            preview_scroll.set(0);
-                        }
-                        // --- PR Actions (T061) ---
-                        // Approve (with confirmation)
-                        KeyCode::Char('v') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Approve));
-                            action_status.set(None);
-                        }
-                        // Comment
-                        KeyCode::Char('c') => {
-                            input_mode.set(InputMode::Comment);
-                            input_buffer.set(String::new());
-                            action_status.set(None);
-                        }
-                        // Close (with confirmation)
-                        KeyCode::Char('x') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Close));
-                            action_status.set(None);
-                        }
-                        // Reopen (with confirmation)
-                        KeyCode::Char('X') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Reopen));
-                            action_status.set(None);
-                        }
-                        // Merge (with confirmation)
-                        KeyCode::Char('m') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Merge));
-                            action_status.set(None);
-                        }
-                        // Update branch — prefer refined detail-cache status, fall back to coarse.
-                        KeyCode::Char('u') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            let (pr_number, coarse) = {
+                    InputMode::Normal => {
+                        if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
+                            let pr_info =
+                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
+                            let (pr_owner, pr_repo, pr_number) =
+                                pr_info.unwrap_or_else(|| (String::new(), String::new(), 0));
+                            let pr_url = if pr_number > 0 {
+                                format!("https://github.com/{pr_owner}/{pr_repo}/pull/{pr_number}")
+                            } else {
+                                String::new()
+                            };
+                            let head_branch = {
                                 let state = prs_state.read();
-                                let pr = state
+                                state
                                     .filters
                                     .get(current_filter_idx)
-                                    .and_then(|f| f.prs.get(cursor.get()));
-                                (pr.map(|p| p.number), pr.map(branch_update_status))
+                                    .and_then(|f| f.prs.get(cursor.get()))
+                                    .map_or_else(String::new, |p| p.head_ref.clone())
                             };
-                            let effective = pr_number.and_then(|num| {
-                                let cache = detail_cache.read();
-                                cache.get(&num).and_then(effective_update_status)
-                            });
-                            match effective {
-                                Some(MergeStateStatus::Clean) => {
-                                    action_status.set(Some("Branch is already up-to-date".into()));
-                                }
-                                Some(MergeStateStatus::Dirty) => {
-                                    action_status.set(Some(
-                                        "Cannot auto-update: branch has conflicts".into(),
-                                    ));
-                                }
-                                Some(MergeStateStatus::Behind) => {
-                                    input_mode.set(InputMode::UpdateBranchMethod);
-                                    action_status.set(None);
-                                }
-                                _ => {
-                                    // Refined status unavailable; use coarse signal.
-                                    match coarse {
-                                        Some(BranchUpdateStatus::HasConflicts) => {
-                                            action_status.set(Some(
-                                                "Cannot auto-update: branch has conflicts".into(),
-                                            ));
-                                        }
-                                        Some(BranchUpdateStatus::NeedsUpdate) => {
-                                            input_mode.set(InputMode::UpdateBranchMethod);
-                                            action_status.set(None);
-                                        }
-                                        _ => {
-                                            input_mode.set(InputMode::Confirm(
-                                                PendingAction::UpdateBranch,
-                                            ));
-                                            action_status.set(None);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        // Ready for review (with confirmation)
-                        KeyCode::Char('W') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::ReadyForReview));
-                            action_status.set(None);
-                        }
-                        // Diff (plain d, not Ctrl+d)
-                        KeyCode::Char('d') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info {
-                                match crate::actions::local::open_diff(&owner, &repo, number) {
-                                    Ok(msg) => action_status.set(Some(msg)),
-                                    Err(e) => {
-                                        action_status.set(Some(format!("Diff error: {e}")));
-                                    }
-                                }
-                            }
-                        }
-                        // Checkout
-                        KeyCode::Char(' ') => {
-                            let current_data =
-                                prs_state.read().filters.get(current_filter_idx).cloned();
-                            if let Some(data) = current_data
-                                && let Some(pr) = data.prs.get(cursor.get())
+                            let base_branch = {
+                                let state = prs_state.read();
+                                state
+                                    .filters
+                                    .get(current_filter_idx)
+                                    .and_then(|f| f.prs.get(cursor.get()))
+                                    .map_or_else(String::new, |p| p.base_ref.clone())
+                            };
+                            let vars = TemplateVars {
+                                url: pr_url.clone(),
+                                number: if pr_number > 0 {
+                                    pr_number.to_string()
+                                } else {
+                                    String::new()
+                                },
+                                repo_name: format!("{pr_owner}/{pr_repo}"),
+                                head_branch,
+                                base_branch,
+                            };
+                            match keybindings
+                                .as_ref()
+                                .and_then(|kb| kb.resolve(&key_str, ViewContext::Prs))
                             {
-                                let repo_name = pr
-                                    .repo
-                                    .as_ref()
-                                    .map(crate::github::types::RepoRef::full_name)
-                                    .unwrap_or_default();
-                                match crate::actions::local::checkout_branch(
-                                    &pr.head_ref,
-                                    &repo_name,
-                                    &repo_paths,
-                                ) {
-                                    Ok(msg) => action_status.set(Some(msg)),
-                                    Err(e) => {
-                                        action_status.set(Some(format!("Checkout error: {e}")));
+                                Some(ResolvedBinding::Builtin(action)) => match action {
+                                    BuiltinAction::Quit => {
+                                        if let Some(mut exit) = should_exit {
+                                            exit.set(true);
+                                        }
                                     }
-                                }
-                            }
-                        }
-                        // Quick self-assign (Ctrl+a) - engine resolves "@me" to current user.
-                        KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info
-                                && let Some(ref eng) = engine
-                            {
-                                eng.send(Request::AssignPr {
-                                    owner,
-                                    repo,
-                                    number,
-                                    logins: vec!["@me".to_owned()],
-                                    reply_tx: event_tx.clone(),
-                                });
-                            }
-                        }
-                        // Assign (text input for any user)
-                        KeyCode::Char('a') => {
-                            input_mode.set(InputMode::Assign);
-                            assignee_selection.set(0);
-                            action_status.set(None);
-
-                            // Get current PR and build candidates from its data
-                            let (current_assignees, candidates) = {
-                                let pr_info = get_current_pr_info(
-                                    &prs_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((_owner, _repo, number)) = pr_info {
-                                    let state = prs_state.read();
-                                    let pr = state
-                                        .filters
-                                        .get(current_filter_idx)
-                                        .and_then(|s| s.prs.iter().find(|p| p.number == number));
-
-                                    if let Some(pr) = pr {
-                                        let assignees = pr
-                                            .assignees
-                                            .iter()
-                                            .map(|a| a.login.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join(", ");
-
-                                        // Add trailing ", " to show all suggestions immediately
-                                        let assignees_str = if assignees.is_empty() {
-                                            String::new()
-                                        } else {
-                                            format!("{assignees}, ")
+                                    BuiltinAction::SwitchView => {
+                                        if let Some(mut sv) = switch_view {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SwitchViewBack => {
+                                        if let Some(mut sv) = switch_view_back {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleScope => {
+                                        if let Some(mut st) = scope_toggle {
+                                            st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::TogglePreview => {
+                                        preview_open.set(!preview_open.get());
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::Approve => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Approve));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::CommentAction => {
+                                        input_mode.set(InputMode::Comment);
+                                        input_buffer.set(String::new());
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Close => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Close));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Reopen => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Reopen));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Merge => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Merge));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::UpdateFromBase => {
+                                        let (pn, coarse) = {
+                                            let state = prs_state.read();
+                                            let pr = state
+                                                .filters
+                                                .get(current_filter_idx)
+                                                .and_then(|f| f.prs.get(cursor.get()));
+                                            (pr.map(|p| p.number), pr.map(branch_update_status))
                                         };
-
-                                        // Build candidates from PR data (instant, no API call)
-                                        let candidates = build_pr_assignee_candidates(pr);
-
-                                        (assignees_str, candidates)
-                                    } else {
-                                        (String::new(), Vec::new())
+                                        let effective = pn.and_then(|num| {
+                                            let cache = detail_cache.read();
+                                            cache.get(&num).and_then(effective_update_status)
+                                        });
+                                        match effective {
+                                            Some(MergeStateStatus::Clean) => {
+                                                action_status.set(Some(
+                                                    "Branch is already up-to-date".into(),
+                                                ));
+                                            }
+                                            Some(MergeStateStatus::Dirty) => {
+                                                action_status.set(Some(
+                                                    "Cannot auto-update: branch has conflicts"
+                                                        .into(),
+                                                ));
+                                            }
+                                            Some(MergeStateStatus::Behind) => {
+                                                input_mode.set(InputMode::UpdateBranchMethod);
+                                                action_status.set(None);
+                                            }
+                                            _ => match coarse {
+                                                Some(BranchUpdateStatus::HasConflicts) => {
+                                                    action_status.set(Some(
+                                                        "Cannot auto-update: branch has conflicts"
+                                                            .into(),
+                                                    ));
+                                                }
+                                                Some(BranchUpdateStatus::NeedsUpdate) => {
+                                                    input_mode.set(InputMode::UpdateBranchMethod);
+                                                    action_status.set(None);
+                                                }
+                                                _ => {
+                                                    input_mode.set(InputMode::Confirm(
+                                                        BuiltinAction::UpdateFromBase,
+                                                    ));
+                                                    action_status.set(None);
+                                                }
+                                            },
+                                        }
                                     }
-                                } else {
-                                    (String::new(), Vec::new())
-                                }
-                            };
-
-                            input_buffer.set(current_assignees);
-                            assignee_candidates.set(candidates); // Set immediately, no async fetch
-                        }
-                        // Unassign (self) - engine resolves "@me" to current user.
-                        KeyCode::Char('A') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info
-                                && let Some(ref eng) = engine
-                            {
-                                eng.send(Request::UnassignPr {
-                                    owner,
-                                    repo,
-                                    number,
-                                    login: "@me".to_owned(),
-                                    reply_tx: event_tx.clone(),
-                                });
-                            }
-                        }
-                        // --- Clipboard & Browser (T091, T092) ---
-                        // Copy issue number
-                        KeyCode::Char('y') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((_, _, number)) = pr_info {
-                                let text = number.to_string();
-                                match clipboard::copy_to_clipboard(&text) {
-                                    Ok(()) => action_status.set(Some(format!("Copied #{number}"))),
-                                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
-                                }
-                            }
-                        }
-                        // Copy PR URL
-                        KeyCode::Char('Y') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info {
-                                let url =
-                                    format!("https://github.com/{owner}/{repo}/pull/{number}");
-                                match clipboard::copy_to_clipboard(&url) {
-                                    Ok(()) => {
-                                        action_status
-                                            .set(Some(format!("Copied URL for #{number}")));
+                                    BuiltinAction::MarkReady => {
+                                        input_mode
+                                            .set(InputMode::Confirm(BuiltinAction::MarkReady));
+                                        action_status.set(None);
                                     }
-                                    Err(e) => action_status.set(Some(format!("Copy failed: {e}"))),
+                                    BuiltinAction::ViewDiff => {
+                                        if pr_number > 0 {
+                                            match crate::actions::local::open_diff(
+                                                &pr_owner, &pr_repo, pr_number,
+                                            ) {
+                                                Ok(msg) => action_status.set(Some(msg)),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Diff error: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Checkout => {
+                                        let current_data = prs_state
+                                            .read()
+                                            .filters
+                                            .get(current_filter_idx)
+                                            .cloned();
+                                        if let Some(data) = current_data
+                                            && let Some(pr) = data.prs.get(cursor.get())
+                                        {
+                                            let repo_name = pr
+                                                .repo
+                                                .as_ref()
+                                                .map(crate::github::types::RepoRef::full_name)
+                                                .unwrap_or_default();
+                                            match crate::actions::local::checkout_branch(
+                                                &pr.head_ref,
+                                                &repo_name,
+                                                &repo_paths,
+                                            ) {
+                                                Ok(msg) => action_status.set(Some(msg)),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Checkout error: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Assign | BuiltinAction::Unassign => {
+                                        input_mode.set(InputMode::Assign);
+                                        input_buffer.set(String::new());
+                                        assignee_selection.set(0);
+                                        let current = get_current_pr_assignees(
+                                            &prs_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        assignee_selected.set(current);
+                                        let initial = {
+                                            let state = prs_state.read();
+                                            state
+                                                .filters
+                                                .get(current_filter_idx)
+                                                .and_then(|f| f.prs.get(cursor.get()))
+                                                .map(build_pr_assignee_candidates)
+                                                .unwrap_or_default()
+                                        };
+                                        assignee_candidates.set(initial);
+                                        action_status.set(None);
+                                        if let Some(ref eng) = engine
+                                            && let Some((owner, repo, _)) = get_current_pr_info(
+                                                &prs_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                            )
+                                        {
+                                            eng.send(Request::FetchRepoCollaborators {
+                                                owner,
+                                                repo,
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                        }
+                                    }
+                                    BuiltinAction::LabelAction => {
+                                        input_mode.set(InputMode::Label);
+                                        input_buffer.set(String::new());
+                                        label_selection.set(0);
+                                        label_candidates.set(Vec::new());
+                                        let current_labels = get_current_pr_labels(
+                                            &prs_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        label_selected.set(current_labels);
+                                        action_status.set(None);
+                                        if let Some(ref eng) = engine
+                                            && let Some((owner, repo, _)) = get_current_pr_info(
+                                                &prs_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                            )
+                                        {
+                                            eng.send(Request::FetchRepoLabels {
+                                                owner,
+                                                repo,
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                        }
+                                    }
+                                    BuiltinAction::CopyNumber => {
+                                        if pr_number > 0 {
+                                            let text = pr_number.to_string();
+                                            match clipboard::copy_to_clipboard(&text) {
+                                                Ok(()) => action_status
+                                                    .set(Some(format!("Copied #{pr_number}"))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Copy failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::CopyUrl => {
+                                        if !pr_url.is_empty() {
+                                            match clipboard::copy_to_clipboard(&pr_url) {
+                                                Ok(()) => action_status.set(Some(format!(
+                                                    "Copied URL for #{pr_number}"
+                                                ))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Copy failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::OpenBrowser => {
+                                        if !pr_url.is_empty() {
+                                            match clipboard::open_in_browser(&pr_url) {
+                                                Ok(()) => action_status
+                                                    .set(Some(format!("Opened #{pr_number}"))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Open failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Refresh => {
+                                        force_refresh.set(true);
+                                        let idx = active_filter.get();
+                                        let mut state = prs_state.read().clone();
+                                        if idx < state.filters.len() {
+                                            state.filters[idx] = FilterData::default();
+                                        }
+                                        prs_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        if idx < times.len() {
+                                            times[idx] = None;
+                                        }
+                                        filter_fetch_times.set(times);
+                                        pending_detail.set(None);
+                                        detail_cache.set(HashMap::new());
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::RefreshAll => {
+                                        let mut state = prs_state.read().clone();
+                                        for filter in &mut state.filters {
+                                            *filter = FilterData::default();
+                                        }
+                                        prs_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        times.fill(None);
+                                        filter_fetch_times.set(times);
+                                        pending_detail.set(None);
+                                        detail_cache.set(HashMap::new());
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        refresh_all.set(true);
+                                    }
+                                    BuiltinAction::Search => {
+                                        input_mode.set(InputMode::Search);
+                                        search_query.set(String::new());
+                                    }
+                                    BuiltinAction::MoveDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + 1)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::MoveUp => {
+                                        let new_cursor = cursor.get().saturating_sub(1);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::First => {
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::Last => {
+                                        if total_rows > 0 {
+                                            cursor.set(total_rows.saturating_sub(1));
+                                            scroll_offset
+                                                .set(total_rows.saturating_sub(visible_rows));
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::PageDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + visible_rows)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::PageUp => {
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
+                                        cursor.set(new_cursor);
+                                        scroll_offset
+                                            .set(scroll_offset.get().saturating_sub(visible_rows));
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::ToggleHelp => {
+                                        help_visible.set(true);
+                                    }
+                                    BuiltinAction::PrevFilter => {
+                                        if filter_count > 0 {
+                                            let current = active_filter.get();
+                                            active_filter.set(if current == 0 {
+                                                filter_count.saturating_sub(1)
+                                            } else {
+                                                current - 1
+                                            });
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::NextFilter => {
+                                        if filter_count > 0 {
+                                            active_filter
+                                                .set((active_filter.get() + 1) % filter_count);
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    _ => {}
+                                },
+                                Some(ResolvedBinding::ShellCommand(cmd)) => {
+                                    let expanded = expand_template(&cmd, &vars);
+                                    let _ = execute_shell_command(&expanded);
+                                }
+                                None => {
+                                    if key_str == "]" {
+                                        sidebar_tab.set(sidebar_tab.get().next());
+                                        preview_scroll.set(0);
+                                    } else if key_str == "[" {
+                                        sidebar_tab.set(sidebar_tab.get().prev());
+                                        preview_scroll.set(0);
+                                    }
                                 }
                             }
                         }
-                        // Open in browser
-                        KeyCode::Char('o') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info {
-                                let url =
-                                    format!("https://github.com/{owner}/{repo}/pull/{number}");
-                                match clipboard::open_in_browser(&url) {
-                                    Ok(()) => action_status.set(Some(format!("Opened #{number}"))),
-                                    Err(e) => action_status.set(Some(format!("Open failed: {e}"))),
-                                }
-                            }
-                        }
-                        // Retry / refresh (active filter only)
-                        KeyCode::Char('r') => {
-                            force_refresh.set(true);
-                            let idx = active_filter.get();
-                            let mut state = prs_state.read().clone();
-                            if idx < state.filters.len() {
-                                state.filters[idx] = FilterData::default();
-                            }
-                            prs_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            if idx < times.len() {
-                                times[idx] = None;
-                            }
-                            filter_fetch_times.set(times);
-                            pending_detail.set(None);
-                            detail_cache.set(HashMap::new());
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                        }
-                        // Refresh all filters
-                        KeyCode::Char('R') => {
-                            let mut state = prs_state.read().clone();
-                            for filter in &mut state.filters {
-                                *filter = FilterData::default();
-                            }
-                            prs_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            times.fill(None);
-                            filter_fetch_times.set(times);
-                            pending_detail.set(None);
-                            detail_cache.set(HashMap::new());
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                            // Signal the render body to eagerly fetch all filters.
-                            refresh_all.set(true);
-                        }
-                        // --- Search ---
-                        KeyCode::Char('/') => {
-                            input_mode.set(InputMode::Search);
-                            search_query.set(String::new());
-                        }
-                        // --- Navigation ---
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if total_rows > 0 {
-                                let new_cursor =
-                                    (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                if new_cursor >= scroll_offset.get() + visible_rows {
-                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                                }
-                                // Reset preview scroll on cursor change.
-                                preview_scroll.set(0);
-                            }
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let new_cursor = cursor.get().saturating_sub(1);
-                            cursor.set(new_cursor);
-                            if new_cursor < scroll_offset.get() {
-                                scroll_offset.set(new_cursor);
-                            }
-                            preview_scroll.set(0);
-                        }
-                        // Jump to top/bottom
-                        KeyCode::Char('g') => {
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                            preview_scroll.set(0);
-                        }
-                        KeyCode::Char('G') => {
-                            if total_rows > 0 {
-                                cursor.set(total_rows.saturating_sub(1));
-                                scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                                preview_scroll.set(0);
-                            }
-                        }
-                        // Page up/down
-                        KeyCode::PageDown => {
-                            if total_rows > 0 {
-                                let new_cursor =
-                                    (cursor.get() + visible_rows).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                scroll_offset
-                                    .set(new_cursor.saturating_sub(visible_rows.saturating_sub(1)));
-                                preview_scroll.set(0);
-                            }
-                        }
-                        // Ctrl+d/u: scroll preview if open, else scroll table
-                        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if preview_open.get() {
-                                let half = visible_rows / 2;
-                                preview_scroll.set(preview_scroll.get() + half);
-                            } else if total_rows > 0 {
-                                let half = visible_rows / 2;
-                                let new_cursor =
-                                    (cursor.get() + half).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                if new_cursor >= scroll_offset.get() + visible_rows {
-                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                                }
-                            }
-                        }
-                        KeyCode::PageUp => {
-                            let new_cursor = cursor.get().saturating_sub(visible_rows);
-                            cursor.set(new_cursor);
-                            scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
-                            preview_scroll.set(0);
-                        }
-                        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if preview_open.get() {
-                                let half = visible_rows / 2;
-                                preview_scroll.set(preview_scroll.get().saturating_sub(half));
-                            } else {
-                                let half = visible_rows / 2;
-                                let new_cursor = cursor.get().saturating_sub(half);
-                                cursor.set(new_cursor);
-                                if new_cursor < scroll_offset.get() {
-                                    scroll_offset.set(new_cursor);
-                                }
-                            }
-                        }
-                        // Sidebar tab cycling (T072)
-                        KeyCode::Char(']') => {
-                            sidebar_tab.set(sidebar_tab.get().next());
-                            preview_scroll.set(0);
-                        }
-                        KeyCode::Char('[') => {
-                            sidebar_tab.set(sidebar_tab.get().prev());
-                            preview_scroll.set(0);
-                        }
-                        // Help overlay
-                        KeyCode::Char('?') => {
-                            help_visible.set(true);
-                        }
-                        // Section switching
-                        KeyCode::Char('h') | KeyCode::Left => {
-                            if filter_count > 0 {
-                                let current = active_filter.get();
-                                active_filter.set(if current == 0 {
-                                    filter_count.saturating_sub(1)
-                                } else {
-                                    current - 1
-                                });
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                preview_scroll.set(0);
-                            }
-                        }
-                        KeyCode::Char('l') | KeyCode::Right => {
-                            if filter_count > 0 {
-                                active_filter.set((active_filter.get() + 1) % filter_count);
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                preview_scroll.set(0);
-                            }
-                        }
-                        _ => {}
-                    },
+                    }
                     InputMode::UpdateBranchMethod => match code {
                         // Merge-update (only merge strategy supported).
                         KeyCode::Char('m' | 'M') => {
@@ -1775,18 +1782,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let rendered_text_input = match &current_mode {
         InputMode::Assign => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
             let sel = assignee_selection.get();
             let selected_idx = if filtered.is_empty() {
                 None
             } else {
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
-            Some(RenderedTextInput::build_with_suggestions(
-                "Assign users (comma-separated):",
+            let selected = assignee_selected.read();
+            let prompt = if selected.is_empty() {
+                "Assign:".to_owned()
+            } else {
+                format!("Assign [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1797,6 +1808,38 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 Some(theme.text_primary),
                 Some(theme.bg_selected),
                 Some(theme.text_faint),
+                &selected,
+            ))
+        }
+        InputMode::Label => {
+            let buf = input_buffer.read().clone();
+            let candidates = label_candidates.read();
+            let filtered = crate::components::text_input::filter_suggestions(&candidates, &buf);
+            let sel = label_selection.get();
+            let selected_idx = if filtered.is_empty() {
+                None
+            } else {
+                Some(sel.min(filtered.len().saturating_sub(1)))
+            };
+            let selected = label_selected.read();
+            let prompt = if selected.is_empty() {
+                "Label:".to_owned()
+            } else {
+                format!("Label [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
+                &buf,
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_secondary),
+                Some(theme.border_faint),
+                &filtered,
+                selected_idx,
+                Some(theme.text_primary),
+                Some(theme.bg_selected),
+                Some(theme.text_faint),
+                &selected,
             ))
         }
         InputMode::Comment => Some(RenderedTextInput::build(
@@ -1809,12 +1852,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         )),
         InputMode::Confirm(action) => {
             let prompt = match action {
-                PendingAction::Close => "Close this PR? (y/n)",
-                PendingAction::Reopen => "Reopen this PR? (y/n)",
-                PendingAction::Merge => "Merge this PR? (y/n)",
-                PendingAction::Approve => "Approve this PR? (y/n)",
-                PendingAction::UpdateBranch => "Update branch from base? (y/n)",
-                PendingAction::ReadyForReview => "Mark this draft PR ready for review? (y/n)",
+                BuiltinAction::Close => "Close this PR? (y/n)",
+                BuiltinAction::Reopen => "Reopen this PR? (y/n)",
+                BuiltinAction::Merge => "Merge this PR? (y/n)",
+                BuiltinAction::Approve => "Approve this PR? (y/n)",
+                BuiltinAction::UpdateFromBase => "Update branch from base? (y/n)",
+                BuiltinAction::MarkReady => "Mark this draft PR ready for review? (y/n)",
+                _ => "(y/n)",
             };
             Some(RenderedTextInput::build(
                 prompt,
@@ -1883,6 +1927,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
+            Some(theme.footer_actions),
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],
@@ -1929,61 +1974,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     .into_any()
 }
 
-/// Parse comma-separated usernames from input string.
-/// - Splits on commas
-/// - Trims whitespace
-/// - Strips @ prefix if present
-/// - Handles @me syntax (replaces with current user login)
-/// - Deduplicates usernames
-/// - Filters empty strings
-///
-/// Returns: `(parsed_usernames, needs_current_user_fetch)`
-/// The bool indicates if @me was found and we need to fetch `current().user()`
-fn parse_assignee_input(input: &str) -> (Vec<String>, bool) {
-    let mut needs_me = false;
-    let usernames: Vec<String> = input
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            let cleaned = s.strip_prefix('@').unwrap_or(s);
-            if cleaned.eq_ignore_ascii_case("me") {
-                needs_me = true;
-                "@me".to_string() // Placeholder, will be replaced
-            } else {
-                cleaned.to_string()
-            }
-        })
-        .collect();
-
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    let deduped: Vec<String> = usernames
-        .into_iter()
-        .filter(|u| seen.insert(u.clone()))
-        .collect();
-
-    (deduped, needs_me)
-}
-
-/// Extract the "current word" being typed for autocomplete.
-///
-/// Example: `"alice, bob, ch"` → `("alice, bob, ", "ch", 2)`
-///          Returns: `(prefix, current_word, word_index)`
-///
-/// Used for filtering autocomplete suggestions based only on the last username.
-fn extract_current_word(input: &str) -> (&str, &str, usize) {
-    if let Some(last_comma_pos) = input.rfind(',') {
-        let prefix = &input[..=last_comma_pos]; // "alice, bob, "
-        let current = input[last_comma_pos + 1..].trim_start(); // "ch"
-        let word_count = input[..=last_comma_pos].matches(',').count();
-        (prefix, current, word_count)
-    } else {
-        // No comma yet - entire input is one word
-        ("", input.trim(), 0)
-    }
-}
-
 /// Build autocomplete candidates from PR data (participants, reviewers, assignees).
 /// Returns a deduplicated, sorted list of usernames.
 fn build_pr_assignee_candidates(pr: &PullRequest) -> Vec<String> {
@@ -2017,7 +2007,6 @@ fn handle_assign_input(
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
     prs_state: &State<PrsState>,
     filter_idx: usize,
     cursor: usize,
@@ -2025,25 +2014,21 @@ fn handle_assign_input(
     event_tx: &std::sync::mpsc::Sender<Event>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
+    mut assignee_selected: State<Vec<String>>,
 ) {
     match code {
-        // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _word_idx) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
             }
         }
         KeyCode::Up | KeyCode::BackTab => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 let sel = assignee_selection.get();
                 assignee_selection.set(if sel == 0 {
@@ -2053,48 +2038,76 @@ fn handle_assign_input(
                 });
             }
         }
-        KeyCode::Enter => {
+        KeyCode::Char(' ') => {
             let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            // If user selected from suggestions, replace current word with selection
-            // Otherwise, keep the buffer as-is
-            let final_input = if filtered.is_empty() {
-                buf.clone() // No suggestions, use typed input
-            } else {
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
                 let sel = assignee_selection
                     .get()
                     .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_pr_info(prs_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info
-                    && let Some(eng) = engine
-                {
-                    let (usernames, _needs_me) = parse_assignee_input(&final_input);
-                    // Engine resolves "@me" to authenticated user login.
-                    eng.send(Request::AssignPr {
-                        owner,
-                        repo,
-                        number,
-                        logins: usernames,
-                        reply_tx: event_tx.clone(),
-                    });
+                let item = filtered[sel].clone();
+                let mut selected = assignee_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
                 }
+                assignee_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            assignee_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
+            let checked = assignee_selected.read().clone();
+            let logins: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = unassign all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
+                let candidates = assignee_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let login = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = assignee_selection
+                        .get()
+                        .min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if login.is_empty() {
+                    checked
+                } else {
+                    let mut all = checked;
+                    if !all.contains(&login) {
+                        all.push(login);
+                    }
+                    all
+                }
+            };
+            let info = get_current_pr_info(prs_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(eng) = engine
+            {
+                eng.send(Request::SetPrAssignees {
+                    owner,
+                    repo,
+                    number,
+                    logins,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();
@@ -2108,41 +2121,126 @@ fn handle_assign_input(
             input_buffer.set(buf);
             assignee_selection.set(0);
         }
-        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            // Backward compatibility: Ctrl+D also submits
+        _ => {}
+    }
+}
+
+/// Handle text input for adding a label to a PR.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+fn handle_label_input(
+    code: KeyCode,
+    modifiers: KeyModifiers,
+    mut input_mode: State<InputMode>,
+    mut input_buffer: State<String>,
+    label_candidates: State<Vec<String>>,
+    mut label_selection: State<usize>,
+    mut label_selected: State<Vec<String>>,
+    prs_state: &State<PrsState>,
+    filter_idx: usize,
+    cursor: usize,
+    engine: Option<&EngineHandle>,
+    event_tx: &std::sync::mpsc::Sender<Event>,
+) {
+    match code {
+        KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
-            let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            let final_input = if filtered.is_empty() {
-                buf.clone()
-            } else {
-                let sel = assignee_selection
-                    .get()
-                    .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel])
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_pr_info(prs_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info
-                    && let Some(eng) = engine
-                {
-                    let (usernames, _needs_me) = parse_assignee_input(&final_input);
-                    eng.send(Request::AssignPr {
-                        owner,
-                        repo,
-                        number,
-                        logins: usernames,
-                        reply_tx: event_tx.clone(),
-                    });
+            let candidates = label_candidates.read();
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                label_selection.set((label_selection.get() + 1) % filtered.len());
+            }
+        }
+        KeyCode::Up | KeyCode::BackTab => {
+            let buf = input_buffer.read().clone();
+            let candidates = label_candidates.read();
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                let sel = label_selection.get();
+                label_selection.set(if sel == 0 {
+                    filtered.len() - 1
+                } else {
+                    sel - 1
+                });
+            }
+        }
+        KeyCode::Char(' ') => {
+            let buf = input_buffer.read().clone();
+            let candidates = label_candidates.read();
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
+                let sel = label_selection.get().min(filtered.len().saturating_sub(1));
+                let item = filtered[sel].clone();
+                let mut selected = label_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
                 }
+                label_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            label_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
+            let checked = label_selected.read().clone();
+            let labels: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = clear all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
+                let candidates = label_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let label = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = label_selection.get().min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if label.is_empty() {
+                    checked
+                } else {
+                    let mut all = checked;
+                    if !all.contains(&label) {
+                        all.push(label);
+                    }
+                    all
+                }
+            };
+            let info = get_current_pr_info(prs_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(eng) = engine
+            {
+                eng.send(Request::SetPrLabels {
+                    owner,
+                    repo,
+                    number,
+                    labels,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
-            assignee_selection.set(0);
+            label_selection.set(0);
+            label_selected.set(Vec::new());
+        }
+        KeyCode::Esc => {
+            input_mode.set(InputMode::Normal);
+            input_buffer.set(String::new());
+            label_selection.set(0);
+            label_selected.set(Vec::new());
+        }
+        KeyCode::Backspace => {
+            let mut buf = input_buffer.read().clone();
+            buf.pop();
+            input_buffer.set(buf);
+            label_selection.set(0);
+        }
+        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+            let mut buf = input_buffer.read().clone();
+            buf.push(ch);
+            input_buffer.set(buf);
+            label_selection.set(0);
         }
         _ => {}
     }
@@ -2159,6 +2257,36 @@ fn get_current_pr_info(
     let pr = filter.prs.get(cursor)?;
     let repo_ref = pr.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), pr.number))
+}
+
+fn get_current_pr_labels(
+    prs_state: &State<PrsState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = prs_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(pr) = filter.prs.get(cursor) else {
+        return vec![];
+    };
+    pr.labels.iter().map(|l| l.name.clone()).collect()
+}
+
+fn get_current_pr_assignees(
+    prs_state: &State<PrsState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = prs_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(pr) = filter.prs.get(cursor) else {
+        return vec![];
+    };
+    pr.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
 /// Build the `SidebarMeta` header from a pull request.

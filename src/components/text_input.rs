@@ -95,6 +95,48 @@ impl RenderedTextInput {
             selected_index,
         }
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_with_multiselect_suggestions(
+        prompt: &str,
+        text: &str,
+        depth: ColorDepth,
+        text_color: Option<AppColor>,
+        prompt_color: Option<AppColor>,
+        border_color: Option<AppColor>,
+        suggestions: &[String],
+        highlighted_idx: Option<usize>,
+        highlight_color: Option<AppColor>,
+        highlight_bg_color: Option<AppColor>,
+        suggestion_color: Option<AppColor>,
+        selected_labels: &[String],
+    ) -> Self {
+        use std::collections::HashSet;
+        let checked: HashSet<&str> = selected_labels.iter().map(String::as_str).collect();
+        let display: Vec<String> = suggestions
+            .iter()
+            .map(|s| {
+                if checked.contains(s.as_str()) {
+                    format!("[✓] {s}")
+                } else {
+                    format!("[ ] {s}")
+                }
+            })
+            .collect();
+        Self::build_with_suggestions(
+            prompt,
+            text,
+            depth,
+            text_color,
+            prompt_color,
+            border_color,
+            &display,
+            highlighted_idx,
+            highlight_color,
+            highlight_bg_color,
+            suggestion_color,
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------

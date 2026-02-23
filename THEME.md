@@ -198,8 +198,9 @@ The foreground text is always white and bold for the active filter.
 | --------------- | ------------- | ----------------------------------------- |
 | `prs`           | `4` (blue)    | Background of the PRs indicator           |
 | `issues`        | `2` (green)   | Background of the Issues indicator        |
+| `actions`       | `13` (violet) | Background of the Actions indicator       |
 | `notifications` | `5` (magenta) | Background of the Notifications indicator |
-| `repo`          | `13` (violet) | Background of the Repo indicator          |
+| `repo`          | `6` (cyan)    | Background of the Repo indicator          |
 
 ---
 

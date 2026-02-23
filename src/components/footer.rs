@@ -40,7 +40,7 @@ impl RenderedFooter {
         updated_text: String,
         rate_limit_text: String,
         depth: ColorDepth,
-        view_colors: [Option<AppColor>; 4],
+        view_colors: [Option<AppColor>; 5],
         inactive_color: Option<AppColor>,
         text_color: Option<AppColor>,
         border_color: Option<AppColor>,

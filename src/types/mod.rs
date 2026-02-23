@@ -5,8 +5,10 @@ pub mod common;
 pub mod issue;
 pub mod notification;
 pub mod pr;
+pub mod workflow_run;
 
 pub use common::*;
 pub use issue::*;
 pub use notification::*;
 pub use pr::*;
+pub use workflow_run::*;

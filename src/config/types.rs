@@ -41,6 +41,8 @@ pub struct AppConfig {
     pub pr_filters: Vec<PrFilter>,
     #[serde(default, rename = "issues_filters")]
     pub issues_filters: Vec<IssueFilter>,
+    #[serde(default, rename = "actions_filters")]
+    pub actions_filters: Vec<ActionsFilter>,
     #[serde(default, rename = "notifications_filters")]
     pub notifications_filters: Vec<NotificationFilter>,
     pub github: GitHubConfig,
@@ -102,6 +104,25 @@ pub struct IssueFilter {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct ActionsFilter {
+    pub title: String,
+    /// `"owner/repo"` — the repository to fetch workflow runs for.
+    /// Use `"@current"` to resolve to the repository detected from the
+    /// current working directory (requires running gh-board inside a git repo).
+    /// The fetch is skipped when `@current` is used but no repo is in context.
+    pub repo: String,
+    pub host: Option<String>,
+    pub limit: Option<u32>,
+    /// GitHub API `status` query param: `"queued"`, `"in_progress"`, `"completed"`,
+    /// `"waiting"`, `"requested"`, `"pending"`, or a conclusion value like
+    /// `"failure"`, `"success"`, `"cancelled"`, …
+    pub status: Option<String>,
+    /// GitHub API `event` query param: `"push"`, `"pull_request"`, `"schedule"`,
+    /// `"workflow_dispatch"`, …
+    pub event: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct NotificationFilter {
     pub title: String,
     pub filters: String,
@@ -137,6 +158,7 @@ pub enum View {
     #[default]
     Prs,
     Issues,
+    Actions,
     Notifications,
     Repo,
 }
@@ -253,6 +275,7 @@ fn merge_colors(base: &ColorsTheme, overlay: &ColorsTheme) -> ColorsTheme {
             issues: overlay.footer.issues.or(base.footer.issues),
             notifications: overlay.footer.notifications.or(base.footer.notifications),
             repo: overlay.footer.repo.or(base.footer.repo),
+            actions: overlay.footer.actions.or(base.footer.actions),
         },
     }
 }
@@ -369,6 +392,7 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         view_issues: overlay.view_issues.or(base.view_issues),
         view_notifications: overlay.view_notifications.or(base.view_notifications),
         view_repo: overlay.view_repo.or(base.view_repo),
+        view_actions: overlay.view_actions.or(base.view_actions),
         tab_filter: overlay.tab_filter.or(base.tab_filter),
         pill_left: overlay.pill_left.or(base.pill_left),
         pill_right: overlay.pill_right.or(base.pill_right),
@@ -420,6 +444,8 @@ pub struct FooterColors {
     pub notifications: Option<Color>,
     #[serde(default, deserialize_with = "color_de::deserialize")]
     pub repo: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub actions: Option<Color>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -668,6 +694,7 @@ pub struct IconConfig {
     pub view_issues: Option<String>,
     pub view_notifications: Option<String>,
     pub view_repo: Option<String>,
+    pub view_actions: Option<String>,
     // Tab filter marker
     pub tab_filter: Option<String>,
     // Pill caps (rounded edges)

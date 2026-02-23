@@ -14,7 +14,10 @@ use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
 use crate::components::text_input::{self, RenderedTextInput, TextInput};
-use crate::config::keybindings::{MergedBindings, ViewContext};
+use crate::config::keybindings::{
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
+};
 use crate::config::types::IssueFilter;
 use crate::engine::{EngineHandle, Event, Request};
 use crate::filter::{self, apply_scope};
@@ -208,14 +211,8 @@ enum InputMode {
     Comment,
     Label,
     Assign,
-    Confirm(PendingAction),
+    Confirm(BuiltinAction),
     Search,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PendingAction {
-    Close,
-    Reopen,
 }
 
 // ---------------------------------------------------------------------------
@@ -326,8 +323,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut action_status = hooks.use_state(|| Option::<String>::None);
     let mut label_candidates = hooks.use_state(Vec::<String>::new);
     let mut label_selection = hooks.use_state(|| 0usize);
+    let mut label_selected = hooks.use_state(Vec::<String>::new);
     let mut assignee_candidates = hooks.use_state(Vec::<String>::new);
     let mut assignee_selection = hooks.use_state(|| 0usize);
+    let mut assignee_selected = hooks.use_state(Vec::<String>::new);
 
     // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
     let mut force_refresh = hooks.use_state(|| false);
@@ -596,7 +595,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         }
                         Event::MutationOk { description } => {
                             action_status.set(Some(format!("✓ {description}")));
-                            force_refresh.set(true);
+                            // Trigger a refetch of the active filter.
                             let mut state = issues_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
                                 state.filters[current_filter_for_poll] = FilterData::default();
@@ -607,6 +606,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 times[current_filter_for_poll] = None;
                             }
                             filter_fetch_times.set(times);
+                            // Must come LAST: force_refresh is consumed by the
+                            // lazy-fetch trigger only when active_needs_fetch
+                            // (loading=true) is already visible in the same
+                            // render. Setting it before issues_state.set()
+                            // risks a render where loading is still false and
+                            // the flag is silently dropped, causing a
+                            // non-forced (cached) refetch.
+                            force_refresh.set(true);
                         }
                         Event::MutationError {
                             description,
@@ -656,6 +663,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let event_tx_kb = event_tx.clone();
 
     // Keyboard handling.
+    let keybindings = props.keybindings.cloned();
     hooks.use_terminal_events({
         move |event| match event {
             TerminalEvent::Key(KeyEvent {
@@ -699,7 +707,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             modifiers,
                             input_mode,
                             input_buffer,
-                            action_status,
                             &issues_state,
                             current_filter_idx,
                             cursor.get(),
@@ -707,6 +714,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             &event_tx_kb,
                             assignee_candidates,
                             assignee_selection,
+                            assignee_selected,
                         );
                     }
                     InputMode::Label => {
@@ -715,9 +723,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             modifiers,
                             input_mode,
                             input_buffer,
-                            action_status,
                             label_candidates,
                             label_selection,
+                            label_selected,
                             &issues_state,
                             current_filter_idx,
                             cursor.get(),
@@ -736,18 +744,19 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 && let Some(eng) = engine.as_ref()
                             {
                                 match pending {
-                                    PendingAction::Close => eng.send(Request::CloseIssue {
+                                    BuiltinAction::Close => eng.send(Request::CloseIssue {
                                         owner,
                                         repo,
                                         number,
                                         reply_tx: event_tx_kb.clone(),
                                     }),
-                                    PendingAction::Reopen => eng.send(Request::ReopenIssue {
+                                    BuiltinAction::Reopen => eng.send(Request::ReopenIssue {
                                         owner,
                                         repo,
                                         number,
                                         reply_tx: event_tx_kb.clone(),
                                     }),
+                                    _ => {}
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -785,387 +794,305 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                     InputMode::Normal => {
                         let engine = engine.as_ref();
                         let event_tx = &event_tx_kb;
-                        match code {
-                            KeyCode::Char('q') => {
-                                if let Some(mut exit) = should_exit {
-                                    exit.set(true);
-                                }
-                            }
-                            KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if let Some(mut exit) = should_exit {
-                                    exit.set(true);
-                                }
-                            }
-                            KeyCode::Char('n') => {
-                                if let Some(mut sv) = switch_view {
-                                    sv.set(true);
-                                }
-                            }
-                            KeyCode::Char('N') => {
-                                if let Some(mut sv) = switch_view_back {
-                                    sv.set(true);
-                                }
-                            }
-                            KeyCode::Char('S') => {
-                                if let Some(mut st) = scope_toggle {
-                                    st.set(true);
-                                }
-                            }
-                            KeyCode::Char('p') => {
-                                preview_open.set(!preview_open.get());
-                                preview_scroll.set(0);
-                            }
-                            // --- Issue Actions ---
-                            KeyCode::Char('c') => {
-                                input_mode.set(InputMode::Comment);
-                                input_buffer.set(String::new());
-                                action_status.set(None);
-                            }
-                            KeyCode::Char('L') => {
-                                input_mode.set(InputMode::Label);
-                                input_buffer.set(String::new());
-                                label_selection.set(0);
-                                label_candidates.set(Vec::new());
-                                action_status.set(None);
-                                if let Some(engine) = engine
-                                    && let Some((owner, repo, _)) = get_current_issue_info(
-                                        &issues_state,
-                                        current_filter_idx,
-                                        cursor.get(),
-                                    )
-                                {
-                                    engine.send(Request::FetchRepoLabels {
-                                        owner,
-                                        repo,
-                                        reply_tx: event_tx.clone(),
-                                    });
-                                }
-                            }
-                            // Quick self-assign (Ctrl+a) - immediate action without text input
-                            KeyCode::Char('a') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                let info = get_current_issue_info(
-                                    &issues_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = info
-                                    && let Some(engine) = engine
-                                {
-                                    engine.send(Request::AssignIssue {
-                                        owner,
-                                        repo,
-                                        number,
-                                        logins: vec!["@me".to_owned()],
-                                        reply_tx: event_tx.clone(),
-                                    });
-                                }
-                            }
-                            KeyCode::Char('a') => {
-                                input_mode.set(InputMode::Assign);
-                                assignee_selection.set(0);
-                                action_status.set(None);
-
-                                let (current_assignees, candidates) = {
-                                    let state = issues_state.read();
-                                    let issue = state
-                                        .filters
-                                        .get(current_filter_idx)
-                                        .and_then(|s| s.issues.get(cursor.get()));
-
-                                    if let Some(issue) = issue {
-                                        let assignees = issue
-                                            .assignees
-                                            .iter()
-                                            .map(|a| a.login.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join(", ");
-                                        let assignees_str = if assignees.is_empty() {
-                                            String::new()
-                                        } else {
-                                            format!("{assignees}, ")
-                                        };
-                                        let candidates = build_issue_assignee_candidates(issue);
-                                        (assignees_str, candidates)
-                                    } else {
-                                        (String::new(), Vec::new())
+                        if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
+                            let info = get_current_issue_info(
+                                &issues_state,
+                                current_filter_idx,
+                                cursor.get(),
+                            );
+                            let vars = TemplateVars {
+                                url: info.as_ref().map_or_else(String::new, |(o, r, n)| {
+                                    format!("https://github.com/{o}/{r}/issues/{n}")
+                                }),
+                                number: info
+                                    .as_ref()
+                                    .map_or_else(String::new, |(_, _, n)| n.to_string()),
+                                repo_name: info
+                                    .as_ref()
+                                    .map_or_else(String::new, |(o, r, _)| format!("{o}/{r}")),
+                                ..Default::default()
+                            };
+                            match keybindings
+                                .as_ref()
+                                .and_then(|kb| kb.resolve(&key_str, ViewContext::Issues))
+                            {
+                                Some(ResolvedBinding::Builtin(action)) => match action {
+                                    BuiltinAction::Quit => {
+                                        if let Some(mut exit) = should_exit {
+                                            exit.set(true);
+                                        }
                                     }
-                                };
-
-                                input_buffer.set(current_assignees);
-                                assignee_candidates.set(candidates);
-                                if let Some(engine) = engine
-                                    && let Some((owner, repo, _)) = get_current_issue_info(
-                                        &issues_state,
-                                        current_filter_idx,
-                                        cursor.get(),
-                                    )
-                                {
-                                    engine.send(Request::FetchRepoCollaborators {
-                                        owner,
-                                        repo,
-                                        reply_tx: event_tx.clone(),
-                                    });
-                                }
-                            }
-                            KeyCode::Char('A') => {
-                                let state = issues_state.read();
-                                let issue = state
-                                    .filters
-                                    .get(current_filter_idx)
-                                    .and_then(|s| s.issues.get(cursor.get()));
-                                if let Some(issue) = issue
-                                    && let Some(assignee) = issue.assignees.first()
-                                {
-                                    let login = assignee.login.clone();
-                                    if let Some(repo_ref) = &issue.repo {
-                                        let owner = repo_ref.owner.clone();
-                                        let repo = repo_ref.name.clone();
-                                        let number = issue.number;
-                                        if let Some(engine) = engine {
-                                            engine.send(Request::UnassignIssue {
-                                                owner,
-                                                repo,
-                                                number,
-                                                login,
+                                    BuiltinAction::SwitchView => {
+                                        if let Some(mut sv) = switch_view {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SwitchViewBack => {
+                                        if let Some(mut sv) = switch_view_back {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleScope => {
+                                        if let Some(mut st) = scope_toggle {
+                                            st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::TogglePreview => {
+                                        preview_open.set(!preview_open.get());
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::CommentAction => {
+                                        input_mode.set(InputMode::Comment);
+                                        input_buffer.set(String::new());
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::LabelAction => {
+                                        input_mode.set(InputMode::Label);
+                                        input_buffer.set(String::new());
+                                        label_selection.set(0);
+                                        label_candidates.set(Vec::new());
+                                        let current_labels = get_current_issue_labels(
+                                            &issues_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        label_selected.set(current_labels);
+                                        action_status.set(None);
+                                        if let Some(engine) = engine
+                                            && let Some((owner, repo, _)) = &info
+                                        {
+                                            engine.send(Request::FetchRepoLabels {
+                                                owner: owner.clone(),
+                                                repo: repo.clone(),
                                                 reply_tx: event_tx.clone(),
                                             });
                                         }
                                     }
-                                }
-                            }
-                            KeyCode::Char('x') => {
-                                input_mode.set(InputMode::Confirm(PendingAction::Close));
-                                action_status.set(None);
-                            }
-                            KeyCode::Char('X') => {
-                                input_mode.set(InputMode::Confirm(PendingAction::Reopen));
-                                action_status.set(None);
-                            }
-                            // --- Clipboard & Browser ---
-                            KeyCode::Char('y') => {
-                                let info = get_current_issue_info(
-                                    &issues_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((_, _, number)) = info {
-                                    let text = number.to_string();
-                                    match clipboard::copy_to_clipboard(&text) {
-                                        Ok(()) => {
-                                            action_status.set(Some(format!("Copied #{number}")));
-                                        }
-                                        Err(e) => {
-                                            action_status.set(Some(format!("Copy failed: {e}")));
-                                        }
-                                    }
-                                }
-                            }
-                            KeyCode::Char('Y') => {
-                                let info = get_current_issue_info(
-                                    &issues_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = info {
-                                    let url = format!(
-                                        "https://github.com/{owner}/{repo}/issues/{number}"
-                                    );
-                                    match clipboard::copy_to_clipboard(&url) {
-                                        Ok(()) => action_status
-                                            .set(Some(format!("Copied URL for #{number}"))),
-                                        Err(e) => {
-                                            action_status.set(Some(format!("Copy failed: {e}")));
+                                    BuiltinAction::Assign | BuiltinAction::Unassign => {
+                                        input_mode.set(InputMode::Assign);
+                                        input_buffer.set(String::new());
+                                        assignee_selection.set(0);
+                                        let current = get_current_issue_assignees(
+                                            &issues_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                        );
+                                        assignee_selected.set(current);
+                                        let initial = {
+                                            let state = issues_state.read();
+                                            state
+                                                .filters
+                                                .get(current_filter_idx)
+                                                .and_then(|f| f.issues.get(cursor.get()))
+                                                .map(build_issue_assignee_candidates)
+                                                .unwrap_or_default()
+                                        };
+                                        assignee_candidates.set(initial);
+                                        action_status.set(None);
+                                        if let Some(engine) = engine
+                                            && let Some((owner, repo, _)) = &info
+                                        {
+                                            engine.send(Request::FetchRepoCollaborators {
+                                                owner: owner.clone(),
+                                                repo: repo.clone(),
+                                                reply_tx: event_tx.clone(),
+                                            });
                                         }
                                     }
-                                }
-                            }
-                            KeyCode::Char('o') => {
-                                let info = get_current_issue_info(
-                                    &issues_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some((owner, repo, number)) = info {
-                                    let url = format!(
-                                        "https://github.com/{owner}/{repo}/issues/{number}"
-                                    );
-                                    match clipboard::open_in_browser(&url) {
-                                        Ok(()) => {
-                                            action_status.set(Some(format!("Opened #{number}")));
-                                        }
-                                        Err(e) => {
-                                            action_status.set(Some(format!("Open failed: {e}")));
+                                    BuiltinAction::Close => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Close));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Reopen => {
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Reopen));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::CopyNumber => {
+                                        if let Some((_, _, number)) = info {
+                                            let text = number.to_string();
+                                            match clipboard::copy_to_clipboard(&text) {
+                                                Ok(()) => action_status
+                                                    .set(Some(format!("Copied #{number}"))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Copy failed: {e}"))),
+                                            }
                                         }
                                     }
-                                }
-                            }
-                            // --- Refresh ---
-                            KeyCode::Char('r') => {
-                                force_refresh.set(true);
-                                let idx = active_filter.get();
-                                let mut state = issues_state.read().clone();
-                                if idx < state.filters.len() {
-                                    state.filters[idx] = FilterData::default();
-                                }
-                                issues_state.set(state);
-                                let mut times = filter_fetch_times.read().clone();
-                                if idx < times.len() {
-                                    times[idx] = None;
-                                }
-                                filter_fetch_times.set(times);
-                                pending_detail.set(None);
-                                detail_cache.set(HashMap::new());
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                            }
-                            // Refresh all filters
-                            KeyCode::Char('R') => {
-                                let mut state = issues_state.read().clone();
-                                for filter in &mut state.filters {
-                                    *filter = FilterData::default();
-                                }
-                                issues_state.set(state);
-                                let mut times = filter_fetch_times.read().clone();
-                                times.fill(None);
-                                filter_fetch_times.set(times);
-                                pending_detail.set(None);
-                                detail_cache.set(HashMap::new());
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                refresh_all.set(true);
-                            }
-                            // --- Search ---
-                            KeyCode::Char('/') => {
-                                input_mode.set(InputMode::Search);
-                                action_status.set(None);
-                            }
-                            // --- Navigation ---
-                            KeyCode::Down | KeyCode::Char('j') => {
-                                if total_rows > 0 {
-                                    let new_cursor =
-                                        (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                                    cursor.set(new_cursor);
-                                    if new_cursor >= scroll_offset.get() + visible_rows {
+                                    BuiltinAction::CopyUrl => {
+                                        if let Some((owner, repo, number)) = info {
+                                            let url = format!(
+                                                "https://github.com/{owner}/{repo}/issues/{number}"
+                                            );
+                                            match clipboard::copy_to_clipboard(&url) {
+                                                Ok(()) => action_status
+                                                    .set(Some(format!("Copied URL for #{number}"))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Copy failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::OpenBrowser => {
+                                        if let Some((owner, repo, number)) = info {
+                                            let url = format!(
+                                                "https://github.com/{owner}/{repo}/issues/{number}"
+                                            );
+                                            match clipboard::open_in_browser(&url) {
+                                                Ok(()) => action_status
+                                                    .set(Some(format!("Opened #{number}"))),
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Open failed: {e}"))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Refresh => {
+                                        force_refresh.set(true);
+                                        let idx = active_filter.get();
+                                        let mut state = issues_state.read().clone();
+                                        if idx < state.filters.len() {
+                                            state.filters[idx] = FilterData::default();
+                                        }
+                                        issues_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        if idx < times.len() {
+                                            times[idx] = None;
+                                        }
+                                        filter_fetch_times.set(times);
+                                        pending_detail.set(None);
+                                        detail_cache.set(HashMap::new());
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::RefreshAll => {
+                                        let mut state = issues_state.read().clone();
+                                        for filter in &mut state.filters {
+                                            *filter = FilterData::default();
+                                        }
+                                        issues_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        times.fill(None);
+                                        filter_fetch_times.set(times);
+                                        pending_detail.set(None);
+                                        detail_cache.set(HashMap::new());
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        refresh_all.set(true);
+                                    }
+                                    BuiltinAction::Search => {
+                                        input_mode.set(InputMode::Search);
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::MoveDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + 1)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::MoveUp => {
+                                        let new_cursor = cursor.get().saturating_sub(1);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::First => {
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::Last => {
+                                        if total_rows > 0 {
+                                            cursor.set(total_rows.saturating_sub(1));
+                                            scroll_offset
+                                                .set(total_rows.saturating_sub(visible_rows));
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::PageDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + visible_rows)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::PageUp => {
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
+                                        cursor.set(new_cursor);
                                         scroll_offset
-                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                            .set(scroll_offset.get().saturating_sub(visible_rows));
+                                        preview_scroll.set(0);
                                     }
-                                    preview_scroll.set(0);
-                                }
-                            }
-                            KeyCode::Up | KeyCode::Char('k') => {
-                                let new_cursor = cursor.get().saturating_sub(1);
-                                cursor.set(new_cursor);
-                                if new_cursor < scroll_offset.get() {
-                                    scroll_offset.set(new_cursor);
-                                }
-                                preview_scroll.set(0);
-                            }
-                            KeyCode::Char('g') => {
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                preview_scroll.set(0);
-                            }
-                            KeyCode::Char('G') => {
-                                if total_rows > 0 {
-                                    cursor.set(total_rows.saturating_sub(1));
-                                    scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                                    preview_scroll.set(0);
-                                }
-                            }
-                            KeyCode::PageDown => {
-                                if total_rows > 0 {
-                                    let new_cursor = (cursor.get() + visible_rows)
-                                        .min(total_rows.saturating_sub(1));
-                                    cursor.set(new_cursor);
-                                    scroll_offset.set(
-                                        new_cursor.saturating_sub(visible_rows.saturating_sub(1)),
-                                    );
-                                    preview_scroll.set(0);
-                                }
-                            }
-                            KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if preview_open.get() {
-                                    let half = visible_rows / 2;
-                                    preview_scroll.set(preview_scroll.get() + half);
-                                } else if total_rows > 0 {
-                                    let half = visible_rows / 2;
-                                    let new_cursor =
-                                        (cursor.get() + half).min(total_rows.saturating_sub(1));
-                                    cursor.set(new_cursor);
-                                    if new_cursor >= scroll_offset.get() + visible_rows {
-                                        scroll_offset
-                                            .set(new_cursor.saturating_sub(visible_rows) + 1);
+                                    BuiltinAction::PrevFilter => {
+                                        if filter_count > 0 {
+                                            let current = active_filter.get();
+                                            active_filter.set(if current == 0 {
+                                                filter_count.saturating_sub(1)
+                                            } else {
+                                                current - 1
+                                            });
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                            preview_scroll.set(0);
+                                            pending_detail.set(None);
+                                        }
                                     }
+                                    BuiltinAction::NextFilter => {
+                                        if filter_count > 0 {
+                                            active_filter
+                                                .set((active_filter.get() + 1) % filter_count);
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                            preview_scroll.set(0);
+                                            pending_detail.set(None);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleHelp => {
+                                        help_visible.set(true);
+                                    }
+                                    _ => {}
+                                },
+                                Some(ResolvedBinding::ShellCommand(cmd)) => {
+                                    let expanded = expand_template(&cmd, &vars);
+                                    let _ = execute_shell_command(&expanded);
                                 }
-                            }
-                            KeyCode::PageUp => {
-                                let new_cursor = cursor.get().saturating_sub(visible_rows);
-                                cursor.set(new_cursor);
-                                scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
-                                preview_scroll.set(0);
-                            }
-                            KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                                if preview_open.get() {
-                                    let half = visible_rows / 2;
-                                    preview_scroll.set(preview_scroll.get().saturating_sub(half));
-                                } else {
-                                    let half = visible_rows / 2;
-                                    let new_cursor = cursor.get().saturating_sub(half);
-                                    cursor.set(new_cursor);
-                                    if new_cursor < scroll_offset.get() {
-                                        scroll_offset.set(new_cursor);
+                                None => {
+                                    if key_str == "]" {
+                                        let current = sidebar_tab.get();
+                                        let idx = ISSUE_TABS
+                                            .iter()
+                                            .position(|&t| t == current)
+                                            .unwrap_or(0);
+                                        sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
+                                        preview_scroll.set(0);
+                                    } else if key_str == "[" {
+                                        let current = sidebar_tab.get();
+                                        let idx = ISSUE_TABS
+                                            .iter()
+                                            .position(|&t| t == current)
+                                            .unwrap_or(0);
+                                        sidebar_tab.set(
+                                            ISSUE_TABS[if idx == 0 {
+                                                ISSUE_TABS.len() - 1
+                                            } else {
+                                                idx - 1
+                                            }],
+                                        );
+                                        preview_scroll.set(0);
                                     }
                                 }
                             }
-                            // --- Sidebar tab cycling ---
-                            KeyCode::Char(']') => {
-                                let current = sidebar_tab.get();
-                                let idx =
-                                    ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
-                                sidebar_tab.set(ISSUE_TABS[(idx + 1) % ISSUE_TABS.len()]);
-                                preview_scroll.set(0);
-                            }
-                            KeyCode::Char('[') => {
-                                let current = sidebar_tab.get();
-                                let idx =
-                                    ISSUE_TABS.iter().position(|&t| t == current).unwrap_or(0);
-                                sidebar_tab.set(
-                                    ISSUE_TABS[if idx == 0 {
-                                        ISSUE_TABS.len() - 1
-                                    } else {
-                                        idx - 1
-                                    }],
-                                );
-                                preview_scroll.set(0);
-                            }
-                            // --- Filter switching ---
-                            KeyCode::Char('h') | KeyCode::Left => {
-                                if filter_count > 0 {
-                                    let current = active_filter.get();
-                                    active_filter.set(if current == 0 {
-                                        filter_count.saturating_sub(1)
-                                    } else {
-                                        current - 1
-                                    });
-                                    cursor.set(0);
-                                    scroll_offset.set(0);
-                                    preview_scroll.set(0);
-                                    pending_detail.set(None);
-                                }
-                            }
-                            KeyCode::Char('l') | KeyCode::Right => {
-                                if filter_count > 0 {
-                                    active_filter.set((active_filter.get() + 1) % filter_count);
-                                    cursor.set(0);
-                                    scroll_offset.set(0);
-                                    preview_scroll.set(0);
-                                    pending_detail.set(None);
-                                }
-                            }
-                            KeyCode::Char('?') => {
-                                help_visible.set(true);
-                            }
-                            _ => {}
                         }
                     }
                 }
@@ -1365,17 +1292,22 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         )),
         InputMode::Assign => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             let sel = assignee_selection.get();
             let selected_idx = if filtered.is_empty() {
                 None
             } else {
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
-            Some(RenderedTextInput::build_with_suggestions(
-                "Assign users (comma-separated):",
+            let selected = assignee_selected.read();
+            let prompt = if selected.is_empty() {
+                "Assign:".to_owned()
+            } else {
+                format!("Assign [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1386,6 +1318,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 Some(theme.text_primary),
                 Some(theme.bg_selected),
                 Some(theme.text_faint),
+                &selected,
             ))
         }
         InputMode::Label => {
@@ -1398,8 +1331,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             } else {
                 Some(sel.min(filtered.len().saturating_sub(1)))
             };
-            Some(RenderedTextInput::build_with_suggestions(
-                "Label:",
+            let selected = label_selected.read();
+            let prompt = if selected.is_empty() {
+                "Label:".to_owned()
+            } else {
+                format!("Label [{}]:", selected.join(", "))
+            };
+            Some(RenderedTextInput::build_with_multiselect_suggestions(
+                &prompt,
                 &buf,
                 depth,
                 Some(theme.text_primary),
@@ -1410,12 +1349,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 Some(theme.text_primary),
                 Some(theme.bg_selected),
                 Some(theme.text_faint),
+                &selected,
             ))
         }
         InputMode::Confirm(action) => {
             let prompt = match action {
-                PendingAction::Close => "Close this issue? (y/n)",
-                PendingAction::Reopen => "Reopen this issue? (y/n)",
+                BuiltinAction::Close => "Close this issue? (y/n)",
+                BuiltinAction::Reopen => "Reopen this issue? (y/n)",
+                _ => "(y/n)",
             };
             Some(RenderedTextInput::build(
                 prompt,
@@ -1476,6 +1417,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
+            Some(theme.footer_actions),
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],
@@ -1522,61 +1464,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     .into_any()
 }
 
-/// Parse comma-separated usernames from input string.
-/// - Splits on commas
-/// - Trims whitespace
-/// - Strips @ prefix if present
-/// - Handles @me syntax (replaces with current user login)
-/// - Deduplicates usernames
-/// - Filters empty strings
-///
-/// Returns: `(parsed_usernames, needs_current_user_fetch)`
-/// The bool indicates if @me was found and we need to fetch `current().user()`
-fn parse_assignee_input(input: &str) -> (Vec<String>, bool) {
-    let mut needs_me = false;
-    let usernames: Vec<String> = input
-        .split(',')
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            let cleaned = s.strip_prefix('@').unwrap_or(s);
-            if cleaned.eq_ignore_ascii_case("me") {
-                needs_me = true;
-                "@me".to_string() // Placeholder, will be replaced
-            } else {
-                cleaned.to_string()
-            }
-        })
-        .collect();
-
-    // Deduplicate while preserving order
-    let mut seen = std::collections::HashSet::new();
-    let deduped: Vec<String> = usernames
-        .into_iter()
-        .filter(|u| seen.insert(u.clone()))
-        .collect();
-
-    (deduped, needs_me)
-}
-
-/// Extract the "current word" being typed for autocomplete.
-///
-/// Example: `"alice, bob, ch"` → `("alice, bob, ", "ch", 2)`
-///          Returns: `(prefix, current_word, word_index)`
-///
-/// Used for filtering autocomplete suggestions based only on the last username.
-fn extract_current_word(input: &str) -> (&str, &str, usize) {
-    if let Some(last_comma_pos) = input.rfind(',') {
-        let prefix = &input[..=last_comma_pos]; // "alice, bob, "
-        let current = input[last_comma_pos + 1..].trim_start(); // "ch"
-        let word_count = input[..=last_comma_pos].matches(',').count();
-        (prefix, current, word_count)
-    } else {
-        // No comma yet - entire input is one word
-        ("", input.trim(), 0)
-    }
-}
-
 /// Build autocomplete candidates from Issue data (participants, assignees, author).
 /// Returns a deduplicated, sorted list of usernames.
 fn build_issue_assignee_candidates(issue: &Issue) -> Vec<String> {
@@ -1606,7 +1493,6 @@ fn handle_assign_input(
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
@@ -1614,25 +1500,21 @@ fn handle_assign_input(
     event_tx: &std::sync::mpsc::Sender<Event>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
+    mut assignee_selected: State<Vec<String>>,
 ) {
     match code {
-        // Navigate suggestions: Tab/Down moves down, Up/BackTab moves up
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _word_idx) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
             }
         }
         KeyCode::Up | KeyCode::BackTab => {
             let buf = input_buffer.read().clone();
-            let (_prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
             if !filtered.is_empty() {
                 let sel = assignee_selection.get();
                 assignee_selection.set(if sel == 0 {
@@ -1642,47 +1524,76 @@ fn handle_assign_input(
                 });
             }
         }
-        KeyCode::Enter => {
+        KeyCode::Char(' ') => {
             let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
             let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            // If user selected from suggestions, replace current word with selection
-            // Otherwise, keep the buffer as-is
-            let final_input = if filtered.is_empty() {
-                buf.clone() // No suggestions, use typed input
-            } else {
+            let filtered = text_input::filter_suggestions(&candidates, &buf);
+            if !filtered.is_empty() {
                 let sel = assignee_selection
                     .get()
                     .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let (logins, _needs_me) = parse_assignee_input(&final_input);
-                    if let Some(engine) = engine {
-                        engine.send(Request::AssignIssue {
-                            owner,
-                            repo,
-                            number,
-                            logins,
-                            reply_tx: event_tx.clone(),
-                        });
-                    }
+                let item = filtered[sel].clone();
+                let mut selected = assignee_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
                 }
+                assignee_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            assignee_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
+            let checked = assignee_selected.read().clone();
+            let logins: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = unassign all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
+                let candidates = assignee_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let login = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = assignee_selection
+                        .get()
+                        .min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if login.is_empty() {
+                    checked
+                } else {
+                    let mut all = checked;
+                    if !all.contains(&login) {
+                        all.push(login);
+                    }
+                    all
+                }
+            };
+            let info = get_current_issue_info(issues_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(eng) = engine
+            {
+                eng.send(Request::SetIssueAssignees {
+                    owner,
+                    repo,
+                    number,
+                    logins,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             assignee_selection.set(0);
+            assignee_selected.set(Vec::new());
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();
@@ -1694,44 +1605,6 @@ fn handle_assign_input(
             let mut buf = input_buffer.read().clone();
             buf.push(ch);
             input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-            // Backward compatibility: keep Ctrl+D working
-            let buf = input_buffer.read().clone();
-            let (prefix, current_word, _) = extract_current_word(&buf);
-            let candidates = assignee_candidates.read();
-            let filtered =
-                crate::components::text_input::filter_suggestions(&candidates, current_word);
-
-            // If user selected from suggestions, replace current word with selection
-            // Otherwise, keep the buffer as-is
-            let final_input = if filtered.is_empty() {
-                buf.clone() // No suggestions, use typed input
-            } else {
-                let sel = assignee_selection
-                    .get()
-                    .min(filtered.len().saturating_sub(1));
-                format!("{}{}", prefix, filtered[sel]) // Reconstruct: prefix + selected username
-            };
-
-            if !final_input.trim().is_empty() {
-                let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let (logins, _needs_me) = parse_assignee_input(&final_input);
-                    if let Some(engine) = engine {
-                        engine.send(Request::AssignIssue {
-                            owner,
-                            repo,
-                            number,
-                            logins,
-                            reply_tx: event_tx.clone(),
-                        });
-                    }
-                }
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
             assignee_selection.set(0);
         }
         _ => {}
@@ -1757,28 +1630,17 @@ fn handle_text_input(
             let text = input_buffer.read().clone();
             if !text.is_empty() {
                 let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info {
-                    let is_comment = *current_mode == InputMode::Comment;
-                    if let Some(engine) = engine {
-                        if is_comment {
-                            engine.send(Request::AddIssueComment {
-                                owner,
-                                repo,
-                                number,
-                                body: text.clone(),
-                                reply_tx: event_tx.clone(),
-                            });
-                        } else {
-                            let (logins, _needs_me) = parse_assignee_input(&text);
-                            engine.send(Request::AssignIssue {
-                                owner,
-                                repo,
-                                number,
-                                logins,
-                                reply_tx: event_tx.clone(),
-                            });
-                        }
-                    }
+                if let Some((owner, repo, number)) = info
+                    && let Some(engine) = engine
+                    && *current_mode == InputMode::Comment
+                {
+                    engine.send(Request::AddIssueComment {
+                        owner,
+                        repo,
+                        number,
+                        body: text.clone(),
+                        reply_tx: event_tx.clone(),
+                    });
                 }
             }
             input_mode.set(InputMode::Normal);
@@ -1807,15 +1669,15 @@ fn handle_text_input(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn handle_label_input(
     code: KeyCode,
     modifiers: KeyModifiers,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
+    mut label_selected: State<Vec<String>>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
@@ -1844,40 +1706,72 @@ fn handle_label_input(
                 });
             }
         }
-        KeyCode::Enter => {
-            // Submit the selected label.
+        KeyCode::Char(' ') => {
             let buf = input_buffer.read().clone();
             let candidates = label_candidates.read();
             let filtered = text_input::filter_suggestions(&candidates, &buf);
-            let label = if filtered.is_empty() {
-                buf.clone()
-            } else {
+            if !filtered.is_empty() {
                 let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                filtered[sel].clone()
-            };
-
-            if !label.is_empty() {
-                let info = get_current_issue_info(issues_state, filter_idx, cursor);
-                if let Some((owner, repo, number)) = info
-                    && let Some(engine) = engine
-                {
-                    engine.send(Request::AddIssueLabels {
-                        owner,
-                        repo,
-                        number,
-                        labels: vec![label.clone()],
-                        reply_tx: event_tx.clone(),
-                    });
+                let item = filtered[sel].clone();
+                let mut selected = label_selected.read().clone();
+                if let Some(pos) = selected.iter().position(|s| s == &item) {
+                    selected.remove(pos);
+                } else {
+                    selected.push(item);
                 }
+                label_selected.set(selected);
+            }
+            input_buffer.set(String::new());
+            label_selection.set(0);
+        }
+        KeyCode::Enter => {
+            let buf = input_buffer.read().clone();
+            let checked = label_selected.read().clone();
+            let labels: Vec<String> = if buf.is_empty() {
+                // No text typed → submit multiselect state as-is (may be empty = clear all)
+                checked
+            } else {
+                // Text typed → resolve suggestion, merge into checked set
+                let candidates = label_candidates.read();
+                let filtered = text_input::filter_suggestions(&candidates, &buf);
+                let label = if filtered.is_empty() {
+                    buf
+                } else {
+                    let sel = label_selection.get().min(filtered.len().saturating_sub(1));
+                    filtered[sel].clone()
+                };
+                if label.is_empty() {
+                    checked
+                } else {
+                    let mut all = checked;
+                    if !all.contains(&label) {
+                        all.push(label);
+                    }
+                    all
+                }
+            };
+            let info = get_current_issue_info(issues_state, filter_idx, cursor);
+            if let Some((owner, repo, number)) = info
+                && let Some(engine) = engine
+            {
+                engine.send(Request::SetIssueLabels {
+                    owner,
+                    repo,
+                    number,
+                    labels,
+                    reply_tx: event_tx.clone(),
+                });
             }
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             label_selection.set(0);
+            label_selected.set(Vec::new());
         }
         KeyCode::Esc => {
             input_mode.set(InputMode::Normal);
             input_buffer.set(String::new());
             label_selection.set(0);
+            label_selected.set(Vec::new());
         }
         KeyCode::Backspace => {
             let mut buf = input_buffer.read().clone();
@@ -1909,6 +1803,36 @@ fn get_current_issue_info(
     let issue = filter.issues.get(cursor)?;
     let repo_ref = issue.repo.as_ref()?;
     Some((repo_ref.owner.clone(), repo_ref.name.clone(), issue.number))
+}
+
+fn get_current_issue_labels(
+    issues_state: &State<IssuesState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = issues_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(issue) = filter.issues.get(cursor) else {
+        return vec![];
+    };
+    issue.labels.iter().map(|l| l.name.clone()).collect()
+}
+
+fn get_current_issue_assignees(
+    issues_state: &State<IssuesState>,
+    filter_idx: usize,
+    cursor: usize,
+) -> Vec<String> {
+    let state = issues_state.read();
+    let Some(filter) = state.filters.get(filter_idx) else {
+        return vec![];
+    };
+    let Some(issue) = filter.issues.get(cursor) else {
+        return vec![];
+    };
+    issue.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
 fn build_issue_sidebar_meta(

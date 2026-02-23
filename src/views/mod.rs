@@ -1,3 +1,4 @@
+pub mod actions;
 pub mod issues;
 pub mod notifications;
 pub mod prs;

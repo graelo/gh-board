@@ -25,7 +25,7 @@ impl Engine for StubEngine {
 }
 
 impl StubEngine {
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::match_same_arms, clippy::too_many_lines)]
     async fn run_loop(self, mut rx: UnboundedReceiver<Request>) {
         while let Some(req) = rx.recv().await {
             match req {
@@ -51,6 +51,31 @@ impl StubEngine {
                         rate_limit: None,
                     });
                 }
+
+                // Actions — return empty list
+                Request::FetchActions {
+                    filter_idx,
+                    reply_tx,
+                    ..
+                } => {
+                    let _ = reply_tx.send(Event::ActionsFetched {
+                        filter_idx,
+                        runs: vec![],
+                        rate_limit: None,
+                    });
+                }
+
+                // Run jobs — return empty list
+                Request::FetchRunJobs {
+                    run_id, reply_tx, ..
+                } => {
+                    let _ = reply_tx.send(Event::RunJobsFetched {
+                        run_id,
+                        jobs: vec![],
+                        rate_limit: None,
+                    });
+                }
+
                 Request::FetchNotifications {
                     filter_idx,
                     reply_tx,
@@ -59,6 +84,7 @@ impl StubEngine {
                     let _ = reply_tx.send(Event::NotificationsFetched {
                         filter_idx,
                         notifications: self.notifications.clone(),
+                        rate_limit: None,
                     });
                 }
                 Request::FetchPrDetail { reply_tx, .. }
@@ -100,6 +126,7 @@ impl StubEngine {
                 // Refresh registration — ignored by stub
                 Request::RegisterPrsRefresh { .. }
                 | Request::RegisterIssuesRefresh { .. }
+                | Request::RegisterActionsRefresh { .. }
                 | Request::RegisterNotificationsRefresh { .. } => {}
 
                 // All mutations succeed instantly
@@ -110,14 +137,15 @@ impl StubEngine {
                 | Request::AddPrComment { reply_tx, .. }
                 | Request::UpdateBranch { reply_tx, .. }
                 | Request::ReadyForReview { reply_tx, .. }
-                | Request::AssignPr { reply_tx, .. }
-                | Request::UnassignPr { reply_tx, .. }
+                | Request::SetPrAssignees { reply_tx, .. }
+                | Request::SetPrLabels { reply_tx, .. }
                 | Request::CloseIssue { reply_tx, .. }
                 | Request::ReopenIssue { reply_tx, .. }
                 | Request::AddIssueComment { reply_tx, .. }
-                | Request::AddIssueLabels { reply_tx, .. }
-                | Request::AssignIssue { reply_tx, .. }
-                | Request::UnassignIssue { reply_tx, .. }
+                | Request::SetIssueLabels { reply_tx, .. }
+                | Request::SetIssueAssignees { reply_tx, .. }
+                | Request::RerunWorkflowRun { reply_tx, .. }
+                | Request::CancelWorkflowRun { reply_tx, .. }
                 | Request::MarkNotificationRead { reply_tx, .. }
                 | Request::MarkAllNotificationsRead { reply_tx }
                 | Request::UnsubscribeNotification { reply_tx, .. } => {

@@ -6,6 +6,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::actions::{issue_actions, pr_actions};
 use crate::config::types::AppConfig;
 use crate::github::{
+    actions as gh_actions,
     client::GitHubClient,
     graphql, notifications as notif,
     rate_limit::{format_rate_limit_message, is_rate_limited},
@@ -170,6 +171,77 @@ async fn handle_request(
             }
         }
 
+        // --- Fetch Actions ---
+        Request::FetchActions {
+            filter_idx,
+            filter,
+            reply_tx,
+        } => {
+            let host = filter.host.as_deref().unwrap_or("github.com");
+            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchActions") else {
+                return;
+            };
+            match gh_actions::fetch_workflow_runs(&octocrab, &filter).await {
+                Ok((runs, rate_limit)) => {
+                    scheduler.mark_fetched(filter_idx, ViewKind::Actions);
+                    tracing::debug!(
+                        "engine: sending ActionsFetched[{filter_idx}] count={}",
+                        runs.len()
+                    );
+                    let _ = reply_tx.send(Event::ActionsFetched {
+                        filter_idx,
+                        runs,
+                        rate_limit,
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: FetchActions[{filter_idx}] error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("FetchActions[{filter_idx}]"),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
+                    });
+                }
+            }
+        }
+
+        // --- Fetch Run Jobs ---
+        Request::FetchRunJobs {
+            owner,
+            repo,
+            run_id,
+            host,
+            reply_tx,
+        } => {
+            let host = host.as_deref().unwrap_or("github.com");
+            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunJobs") else {
+                return;
+            };
+            match gh_actions::fetch_run_jobs(&octocrab, &owner, &repo, run_id).await {
+                Ok((jobs, rate_limit)) => {
+                    tracing::debug!(
+                        "engine: sending RunJobsFetched run_id={run_id} count={}",
+                        jobs.len()
+                    );
+                    let _ = reply_tx.send(Event::RunJobsFetched {
+                        run_id,
+                        jobs,
+                        rate_limit,
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: FetchRunJobs run_id={run_id} error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("FetchRunJobs[{run_id}]"),
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
+
         // --- Fetch Notifications ---
         Request::FetchNotifications {
             filter_idx,
@@ -183,7 +255,7 @@ async fn handle_request(
             let limit = filter.limit.unwrap_or(50);
             let params = notif::parse_filters(&filter.filters, limit);
             match notif::fetch_notifications(&octocrab, &params).await {
-                Ok(notifications) => {
+                Ok((notifications, rate_limit)) => {
                     scheduler.mark_fetched(filter_idx, ViewKind::Notifications);
                     tracing::debug!(
                         "engine: sending NotificationsFetched[{filter_idx}] count={}",
@@ -192,6 +264,7 @@ async fn handle_request(
                     let _ = reply_tx.send(Event::NotificationsFetched {
                         filter_idx,
                         notifications,
+                        rate_limit,
                     });
                 }
                 Err(e) => {
@@ -360,6 +433,19 @@ async fn handle_request(
                 filter_configs
                     .into_iter()
                     .map(FilterConfig::Issue)
+                    .collect(),
+                refresh_interval,
+                &notify_tx,
+            );
+        }
+        Request::RegisterActionsRefresh {
+            filter_configs,
+            notify_tx,
+        } => {
+            scheduler.register(
+                filter_configs
+                    .into_iter()
+                    .map(FilterConfig::Action)
                     .collect(),
                 refresh_interval,
                 &notify_tx,
@@ -557,89 +643,56 @@ async fn handle_request(
             }
         }
 
-        Request::AssignPr {
+        Request::SetPrAssignees {
             owner,
             repo,
             number,
             logins,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AssignPr") else {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrAssignees")
+            else {
                 return;
             };
-            // Resolve "@me" to the authenticated user's login.
-            let resolved_logins: Vec<String> = if logins.iter().any(|l| l == "@me") {
-                match octocrab.current().user().await {
-                    Ok(user) => logins
-                        .iter()
-                        .map(|l| {
-                            if l == "@me" {
-                                user.login.clone()
-                            } else {
-                                l.clone()
-                            }
-                        })
-                        .collect(),
-                    Err(e) => {
-                        let _ = reply_tx.send(Event::MutationError {
-                            description: format!("Assign PR #{number}"),
-                            message: format!("Failed to resolve current user: {e}"),
-                        });
-                        return;
-                    }
-                }
-            } else {
-                logins
-            };
-            match pr_actions::assign(&octocrab, &owner, &repo, number, &resolved_logins).await {
+            match issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await {
                 Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk SetPrAssignees #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Assigned PR #{number}"),
+                        description: format!("Set assignees on PR #{number}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: SetPrAssignees #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Assign PR #{number}"),
+                        description: format!("Set assignees on PR #{number}"),
                         message: e.to_string(),
                     });
                 }
             }
         }
 
-        Request::UnassignPr {
+        Request::SetPrLabels {
             owner,
             repo,
             number,
-            login,
+            labels,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UnassignPr") else {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrLabels")
+            else {
                 return;
             };
-            // Resolve "@me" to the authenticated user's login.
-            let resolved_login = if login == "@me" {
-                match octocrab.current().user().await {
-                    Ok(user) => user.login,
-                    Err(e) => {
-                        let _ = reply_tx.send(Event::MutationError {
-                            description: format!("Unassign PR #{number}"),
-                            message: format!("Failed to resolve current user: {e}"),
-                        });
-                        return;
-                    }
-                }
-            } else {
-                login
-            };
-            match pr_actions::unassign(&octocrab, &owner, &repo, number, &resolved_login).await {
+            match issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await {
                 Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk SetPrLabels #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Unassigned PR #{number}"),
+                        description: format!("Set labels on PR #{number}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: SetPrLabels #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Unassign PR #{number}"),
+                        description: format!("Set labels on PR #{number}"),
                         message: e.to_string(),
                     });
                 }
@@ -724,78 +777,121 @@ async fn handle_request(
             }
         }
 
-        Request::AddIssueLabels {
+        Request::SetIssueLabels {
             owner,
             repo,
             number,
             labels,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddIssueLabels")
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueLabels")
             else {
                 return;
             };
-            match issue_actions::add_labels(&octocrab, &owner, &repo, number, &labels).await {
+            match issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await {
                 Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk SetIssueLabels #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Added labels to issue #{number}"),
+                        description: format!("Set labels on issue #{number}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: SetIssueLabels #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Add labels to issue #{number}"),
+                        description: format!("Set labels on issue #{number}"),
                         message: e.to_string(),
                     });
                 }
             }
         }
 
-        Request::AssignIssue {
+        Request::SetIssueAssignees {
             owner,
             repo,
             number,
             logins,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AssignIssue")
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueAssignees")
             else {
                 return;
             };
-            match issue_actions::assign(&octocrab, &owner, &repo, number, &logins).await {
+            match issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await {
                 Ok(()) => {
+                    tracing::debug!("engine: sending MutationOk SetIssueAssignees #{number}");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Assigned issue #{number}"),
+                        description: format!("Set assignees on issue #{number}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: SetIssueAssignees #{number} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Assign issue #{number}"),
+                        description: format!("Set assignees on issue #{number}"),
                         message: e.to_string(),
                     });
                 }
             }
         }
 
-        Request::UnassignIssue {
+        // -----------------------------------------------------------------------
+        // Mutation operations — Actions
+        // -----------------------------------------------------------------------
+        Request::RerunWorkflowRun {
             owner,
             repo,
-            number,
-            login,
+            run_id,
+            failed_only,
             reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UnassignIssue")
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RerunWorkflowRun")
             else {
                 return;
             };
-            match issue_actions::unassign(&octocrab, &owner, &repo, number, &login).await {
+            match gh_actions::rerun_workflow_run(&octocrab, &owner, &repo, run_id, failed_only)
+                .await
+            {
                 Ok(()) => {
+                    let label = if failed_only {
+                        "failed jobs"
+                    } else {
+                        "all jobs"
+                    };
+                    tracing::debug!("engine: RerunWorkflowRun run_id={run_id} ({label}) ok");
                     let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Unassigned issue #{number}"),
+                        description: format!("Re-run {label} queued for run #{run_id}"),
                     });
                 }
                 Err(e) => {
+                    tracing::debug!("engine: RerunWorkflowRun run_id={run_id} error: {e}");
                     let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Unassign issue #{number}"),
+                        description: format!("Re-run workflow run #{run_id}"),
+                        message: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        Request::CancelWorkflowRun {
+            owner,
+            repo,
+            run_id,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CancelWorkflowRun")
+            else {
+                return;
+            };
+            match gh_actions::cancel_workflow_run(&octocrab, &owner, &repo, run_id).await {
+                Ok(()) => {
+                    tracing::debug!("engine: CancelWorkflowRun run_id={run_id} ok");
+                    let _ = reply_tx.send(Event::MutationOk {
+                        description: format!("Cancelled run #{run_id}"),
+                    });
+                }
+                Err(e) => {
+                    tracing::debug!("engine: CancelWorkflowRun run_id={run_id} error: {e}");
+                    let _ = reply_tx.send(Event::MutationError {
+                        description: format!("Cancel workflow run #{run_id}"),
                         message: e.to_string(),
                     });
                 }
@@ -1037,7 +1133,7 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                 let limit = notif_filter.limit.unwrap_or(50);
                 let params = notif::parse_filters(&notif_filter.filters, limit);
                 match notif::fetch_notifications(&octocrab, &params).await {
-                    Ok(notifications) => {
+                    Ok((notifications, rate_limit)) => {
                         scheduler.mark_fetched(filter_idx, ViewKind::Notifications);
                         tracing::debug!(
                             "engine: refresh NotificationsFetched[{filter_idx}] count={}",
@@ -1046,12 +1142,36 @@ async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshSchedule
                         let _ = notify_tx.send(Event::NotificationsFetched {
                             filter_idx,
                             notifications,
+                            rate_limit,
                         });
                     }
                     Err(e) => {
                         tracing::debug!(
                             "engine: refresh FetchNotifications[{filter_idx}] error: {e}"
                         );
+                    }
+                }
+            }
+            FilterConfig::Action(actions_filter) => {
+                let host = actions_filter.host.as_deref().unwrap_or("github.com");
+                let Ok(octocrab) = client.octocrab_for(host) else {
+                    continue;
+                };
+                match gh_actions::fetch_workflow_runs(&octocrab, &actions_filter).await {
+                    Ok((runs, rate_limit)) => {
+                        scheduler.mark_fetched(filter_idx, ViewKind::Actions);
+                        tracing::debug!(
+                            "engine: refresh ActionsFetched[{filter_idx}] count={}",
+                            runs.len()
+                        );
+                        let _ = notify_tx.send(Event::ActionsFetched {
+                            filter_idx,
+                            runs,
+                            rate_limit,
+                        });
+                    }
+                    Err(e) => {
+                        tracing::debug!("engine: refresh FetchActions[{filter_idx}] error: {e}");
                     }
                 }
             }

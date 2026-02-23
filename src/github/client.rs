@@ -7,6 +7,7 @@ use moka::future::Cache;
 use octocrab::Octocrab;
 
 use crate::github::auth;
+use crate::types::RateLimitInfo;
 
 /// A GitHub API client that manages per-host Octocrab instances and an LRU
 /// cache for responses.
@@ -60,4 +61,27 @@ impl GitHubClient {
     pub fn cache(&self) -> Cache<String, String> {
         self.cache.clone()
     }
+}
+
+/// Extract REST rate-limit info from response headers.
+///
+/// Reads `x-ratelimit-remaining` and `x-ratelimit-limit`. Returns `None` if
+/// the headers are absent or cannot be parsed (e.g. non-REST responses).
+pub(crate) fn extract_rest_rate_limit(headers: &http::header::HeaderMap) -> Option<RateLimitInfo> {
+    let remaining = headers
+        .get("x-ratelimit-remaining")?
+        .to_str()
+        .ok()?
+        .parse::<u32>()
+        .ok()?;
+    let limit = headers
+        .get("x-ratelimit-limit")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(5000);
+    Some(RateLimitInfo {
+        remaining,
+        limit,
+        cost: 1,
+    })
 }

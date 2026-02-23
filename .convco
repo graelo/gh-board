@@ -54,7 +54,7 @@ owner: null
 repository: null
 template: null
 commitTemplate: null
-scopeRegex: ^[[:alnum:]]+(?:[-_/][[:alnum:]]+)*$
+scopeRegex: ^[[:alnum:]]+(?:[-_/,][[:alnum:]]+)*$
 lineLength: 80
 wrapDisabled: false
 linkCompare: true

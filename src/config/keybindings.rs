@@ -22,6 +22,7 @@ pub struct KeybindingsConfig {
     pub universal: Vec<Keybinding>,
     pub prs: Vec<Keybinding>,
     pub issues: Vec<Keybinding>,
+    pub actions: Vec<Keybinding>,
     pub branches: Vec<Keybinding>,
 }
 
@@ -74,6 +75,11 @@ pub enum BuiltinAction {
     SwitchViewBack,
     // Scope
     ToggleScope,
+    // Actions view
+    ToggleWorkflowNav,
+    RerunFailed,
+    RerunAll,
+    CancelRun,
 }
 
 impl BuiltinAction {
@@ -119,6 +125,10 @@ impl BuiltinAction {
             "switch_view" => Self::SwitchView,
             "switch_view_back" => Self::SwitchViewBack,
             "toggle_scope" => Self::ToggleScope,
+            "toggle_workflow_nav" => Self::ToggleWorkflowNav,
+            "rerun_failed" => Self::RerunFailed,
+            "rerun_all" => Self::RerunAll,
+            "cancel_run" => Self::CancelRun,
             _ => return None,
         })
     }
@@ -144,8 +154,7 @@ impl BuiltinAction {
             Self::ToggleHelp => "Toggle help overlay",
             Self::Quit => "Quit",
             Self::Approve => "Approve",
-            Self::Assign => "Assign",
-            Self::Unassign => "Unassign",
+            Self::Assign | Self::Unassign => "Assign/Unassign (multiselect)",
             Self::CommentAction => "Comment",
             Self::ViewDiff => "View diff in pager",
             Self::Checkout => "Checkout branch",
@@ -165,6 +174,10 @@ impl BuiltinAction {
             Self::SwitchView => "Switch view",
             Self::SwitchViewBack => "Switch view back",
             Self::ToggleScope => "Toggle repo scope",
+            Self::ToggleWorkflowNav => "Toggle workflow navigator",
+            Self::RerunFailed => "Re-run failed jobs",
+            Self::RerunAll => "Re-run all jobs",
+            Self::CancelRun => "Cancel run",
         }
     }
 }
@@ -196,6 +209,7 @@ pub fn key_event_to_string(
     }
 
     let base = match code {
+        KeyCode::Char(' ') => Some("space".to_owned()),
         KeyCode::Char(c) => {
             // For ctrl+<char>, use lowercase in the key string.
             if modifiers.contains(KeyModifiers::CONTROL) {
@@ -275,7 +289,6 @@ pub fn default_universal() -> Vec<Keybinding> {
         kb("Y", "copy_url", "Copy URL"),
         kb("?", "toggle_help", "Toggle help"),
         kb("q", "quit", "Quit"),
-        kb("ctrl+c", "quit", "Quit"),
     ]
 }
 
@@ -283,9 +296,8 @@ pub fn default_universal() -> Vec<Keybinding> {
 pub fn default_prs() -> Vec<Keybinding> {
     vec![
         kb("v", "approve", "Approve"),
-        kb("a", "assign", "Assign (multi, autocomplete)"),
-        kb("ctrl+a", "assign_self", "Assign to me"),
-        kb("A", "unassign", "Unassign"),
+        kb("L", "label", "Label (autocomplete)"),
+        kb("a", "assign", "Assign/Unassign (multiselect)"),
         kb("c", "comment", "Comment"),
         kb("d", "view_diff", "View diff"),
         kb("C", "checkout", "Checkout branch"),
@@ -305,15 +317,25 @@ pub fn default_prs() -> Vec<Keybinding> {
 pub(crate) fn default_issues() -> Vec<Keybinding> {
     vec![
         kb("L", "label", "Label (autocomplete)"),
-        kb("a", "assign", "Assign (multi, autocomplete)"),
-        kb("ctrl+a", "assign_self", "Assign to me"),
-        kb("A", "unassign", "Unassign"),
+        kb("a", "assign", "Assign/Unassign (multiselect)"),
         kb("c", "comment", "Comment"),
         kb("x", "close", "Close issue"),
         kb("X", "reopen", "Reopen issue"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("S", "toggle_scope", "Toggle repo scope"),
+    ]
+}
+
+/// Default Actions view keybindings.
+pub(crate) fn default_actions() -> Vec<Keybinding> {
+    vec![
+        kb("w", "toggle_workflow_nav", "Toggle workflow navigator"),
+        kb("n", "switch_view", "Switch view"),
+        kb("N", "switch_view_back", "Switch view back"),
+        kb("e", "rerun_failed", "Re-run failed jobs"),
+        kb("E", "rerun_all", "Re-run all jobs"),
+        kb("ctrl+x", "cancel_run", "Cancel run"),
     ]
 }
 
@@ -332,7 +354,10 @@ pub(crate) fn default_notifications() -> Vec<Keybinding> {
 /// Default Branch view keybindings.
 pub(crate) fn default_branches() -> Vec<Keybinding> {
     vec![
+        kb("enter", "checkout", "Checkout branch"),
+        kb("space", "checkout", "Checkout branch"),
         kb("delete", "delete_branch", "Delete branch"),
+        kb("D", "delete_branch", "Delete branch"),
         kb("+", "new_branch", "Create new branch"),
         kb("p", "create_pr_from_branch", "Create PR from branch"),
         kb("v", "view_prs_for_branch", "View PRs for branch"),
@@ -354,6 +379,7 @@ pub struct MergedBindings {
     pub universal: Vec<Keybinding>,
     pub prs: Vec<Keybinding>,
     pub issues: Vec<Keybinding>,
+    pub actions: Vec<Keybinding>,
     pub notifications: Vec<Keybinding>,
     pub branches: Vec<Keybinding>,
 }
@@ -368,6 +394,7 @@ impl MergedBindings {
             universal: merge_lists(&default_universal(), &config.universal),
             prs: merge_lists(&default_prs(), &config.prs),
             issues: merge_lists(&default_issues(), &config.issues),
+            actions: merge_lists(&default_actions(), &config.actions),
             notifications: merge_lists(&default_notifications(), &[]),
             branches: merge_lists(&default_branches(), &config.branches),
         }
@@ -379,6 +406,7 @@ impl MergedBindings {
         let context_bindings = match context {
             ViewContext::Prs => &self.prs,
             ViewContext::Issues => &self.issues,
+            ViewContext::Actions => &self.actions,
             ViewContext::Notifications => &self.notifications,
             ViewContext::Branches => &self.branches,
         };
@@ -395,6 +423,7 @@ impl MergedBindings {
         let context_bindings = match context {
             ViewContext::Prs => ("PR", self.prs.as_slice()),
             ViewContext::Issues => ("Issue", self.issues.as_slice()),
+            ViewContext::Actions => ("Actions", self.actions.as_slice()),
             ViewContext::Notifications => ("Notification", self.notifications.as_slice()),
             ViewContext::Branches => ("Branch", self.branches.as_slice()),
         };
@@ -408,6 +437,7 @@ impl MergedBindings {
 pub enum ViewContext {
     Prs,
     Issues,
+    Actions,
     Notifications,
     Branches,
 }
@@ -488,7 +518,6 @@ pub fn expand_template(template: &str, vars: &TemplateVars) -> String {
 
 /// Execute a shell command (after template expansion) and return its combined
 /// stdout/stderr output.
-#[allow(dead_code)]
 pub(crate) fn execute_shell_command(command: &str) -> Result<String> {
     let output = std::process::Command::new("sh")
         .arg("-c")
@@ -699,7 +728,6 @@ mod tests {
         assert!(has("j"));
         assert!(has("k"));
         assert!(has("q"));
-        assert!(has("ctrl+c"));
         assert!(has("?"));
         assert!(has("/"));
     }

@@ -4,9 +4,11 @@ use anyhow::{Context, Result};
 use octocrab::Octocrab;
 use octocrab::models::NotificationId;
 
+use crate::github::client::extract_rest_rate_limit;
 use crate::github::types::{
     Notification, NotificationReason, NotificationStatus, RepoRef, SubjectType,
 };
+use crate::types::RateLimitInfo;
 
 // ---------------------------------------------------------------------------
 // Notification filter parameters (T052)
@@ -167,18 +169,23 @@ fn into_domain(n: octocrab::models::activity::Notification) -> Notification {
 pub async fn fetch_notifications(
     octocrab: &Arc<Octocrab>,
     filter: &NotificationQueryParams,
-) -> Result<Vec<Notification>> {
-    let page = octocrab
-        .activity()
-        .notifications()
-        .list()
-        .all(filter.all)
-        .per_page(filter.per_page)
-        .send()
-        .await
-        .context("fetching notifications")?;
+) -> Result<(Vec<Notification>, Option<RateLimitInfo>)> {
+    // GitHub REST API accepts "true"/"false" — Rust's bool Display matches.
+    let url = format!(
+        "/notifications?all={}&per_page={}",
+        filter.all, filter.per_page
+    );
+    let response = octocrab._get(url).await.context("fetching notifications")?;
 
-    let mut notifications: Vec<Notification> = page.items.into_iter().map(into_domain).collect();
+    let rate_limit = extract_rest_rate_limit(response.headers());
+    let body = octocrab
+        .body_to_string(response)
+        .await
+        .context("reading notifications body")?;
+    let raw: Vec<octocrab::models::activity::Notification> =
+        serde_json::from_str(&body).context("deserializing notifications")?;
+
+    let mut notifications: Vec<Notification> = raw.into_iter().map(into_domain).collect();
 
     // Client-side filters.
     if let Some(ref repo_filter) = filter.repo {
@@ -201,7 +208,7 @@ pub async fn fetch_notifications(
         }
     }
 
-    Ok(notifications)
+    Ok((notifications, rate_limit))
 }
 
 /// Mark a single notification as read.

@@ -105,6 +105,21 @@ filters = "is:open"
 limit = 50
 
 # ==============================================================================
+# ACTIONS FILTERS
+# ==============================================================================
+
+# Use "@current" to follow the git repo you launched gh-board from.
+# The tab is empty when no repo is detected (e.g. outside a git repo).
+[[actions_filters]]
+title = "CI"
+repo  = "@current"
+
+# [[actions_filters]]
+# title  = "Org CI"
+# repo   = "myorg/infra"
+# status = "failure"
+
+# ==============================================================================
 # NOTIFICATION FILTERS
 # ==============================================================================
 
@@ -539,9 +554,6 @@ key = "q"
 builtin = "quit"
 name = "Quit"
 
-[[keybindings.universal]]
-key = "ctrl+c"
-builtin = "quit"
 
 # ------------------------------------------------------------------------------
 # PR view keybindings

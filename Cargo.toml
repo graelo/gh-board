@@ -26,6 +26,7 @@ iocraft = "0.7"
 moka = { version = "0.12", features = ["future"] }
 #
 # GitHub API
+http = "1"
 octocrab = "0.49"
 #
 # Markdown

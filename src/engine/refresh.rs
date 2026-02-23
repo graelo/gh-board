@@ -1,7 +1,7 @@
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime};
 
-use crate::config::types::{IssueFilter, NotificationFilter, PrFilter};
+use crate::config::types::{ActionsFilter, IssueFilter, NotificationFilter, PrFilter};
 
 use super::interface::Event;
 
@@ -10,6 +10,7 @@ use super::interface::Event;
 pub enum ViewKind {
     Prs,
     Issues,
+    Actions,
     Notifications,
 }
 
@@ -18,6 +19,7 @@ pub enum ViewKind {
 pub enum FilterConfig {
     Pr(PrFilter),
     Issue(IssueFilter),
+    Action(ActionsFilter),
     Notification(NotificationFilter),
 }
 
@@ -26,6 +28,7 @@ impl FilterConfig {
         match self {
             Self::Pr(_) => ViewKind::Prs,
             Self::Issue(_) => ViewKind::Issues,
+            Self::Action(_) => ViewKind::Actions,
             Self::Notification(_) => ViewKind::Notifications,
         }
     }

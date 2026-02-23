@@ -12,7 +12,10 @@ use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
 use crate::components::text_input::{RenderedTextInput, TextInput};
-use crate::config::keybindings::{MergedBindings, ViewContext};
+use crate::config::keybindings::{
+    BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
+    execute_shell_command, expand_template, key_event_to_string,
+};
 use crate::config::types::NotificationFilter;
 use crate::engine::{EngineHandle, Event, Request};
 use crate::filter::{self, apply_scope};
@@ -136,19 +139,12 @@ fn notification_to_row(
     row
 }
 
-/// Destructive or bulk actions that require confirmation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum PendingAction {
-    MarkAllRead,
-    Unsubscribe,
-}
-
 /// Input modes for the notifications view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum InputMode {
     Normal,
     /// Confirmation prompt for a destructive/bulk action (y/n).
-    Confirm(PendingAction),
+    Confirm(BuiltinAction),
     Search,
 }
 
@@ -365,8 +361,6 @@ pub fn NotificationsView<'a>(
     // Poll engine events and update local state.
     {
         let rx_for_poll = event_rx_arc.clone();
-        let engine_for_poll = engine.clone();
-        let event_tx_for_poll = event_tx.clone();
         let current_filter_for_poll = current_filter_idx;
         let theme_for_poll = theme.clone();
         let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
@@ -386,6 +380,7 @@ pub fn NotificationsView<'a>(
                         Event::NotificationsFetched {
                             filter_idx,
                             notifications,
+                            rate_limit,
                         } => {
                             let rows: Vec<Row> = notifications
                                 .iter()
@@ -419,11 +414,8 @@ pub fn NotificationsView<'a>(
                                 ifl[filter_idx] = false;
                             }
                             filter_in_flight.set(ifl);
-                            // Piggyback a rate-limit check — REST API provides none.
-                            if let Some(ref eng) = engine_for_poll {
-                                eng.send(Request::FetchRateLimit {
-                                    reply_tx: event_tx_for_poll.clone(),
-                                });
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
                             }
                         }
                         Event::FetchError {
@@ -502,6 +494,7 @@ pub fn NotificationsView<'a>(
     let visible_rows = props.height.saturating_sub(5) as usize;
 
     // Keyboard handling.
+    let keybindings = props.keybindings.cloned();
     hooks.use_terminal_events({
         let engine_for_keys = engine.clone();
         move |event| match event {
@@ -530,7 +523,7 @@ pub fn NotificationsView<'a>(
                         KeyCode::Char('y' | 'Y') => {
                             if let Some(ref eng) = engine_for_keys {
                                 match pending {
-                                    PendingAction::Unsubscribe => {
+                                    BuiltinAction::Unsubscribe => {
                                         let notif = get_current_notification(
                                             &notif_state,
                                             current_filter_idx,
@@ -554,7 +547,7 @@ pub fn NotificationsView<'a>(
                                             );
                                         }
                                     }
-                                    PendingAction::MarkAllRead => {
+                                    BuiltinAction::MarkAllRead => {
                                         eng.send(Request::MarkAllNotificationsRead {
                                             reply_tx: event_tx.clone(),
                                         });
@@ -562,6 +555,7 @@ pub fn NotificationsView<'a>(
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
+                                    _ => {}
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -596,238 +590,212 @@ pub fn NotificationsView<'a>(
                         }
                         _ => {}
                     },
-                    InputMode::Normal => match code {
-                        // Quit
-                        KeyCode::Char('q') => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if let Some(mut exit) = should_exit {
-                                exit.set(true);
-                            }
-                        }
-                        // Switch view
-                        KeyCode::Char('n') => {
-                            if let Some(mut sv) = switch_view {
-                                sv.set(true);
-                            }
-                        }
-                        // Switch view back
-                        KeyCode::Char('N') => {
-                            if let Some(mut sv) = switch_view_back {
-                                sv.set(true);
-                            }
-                        }
-                        // Toggle repo scope
-                        KeyCode::Char('S') => {
-                            if let Some(mut st) = scope_toggle {
-                                st.set(true);
-                            }
-                        }
-                        // Clipboard & Browser (T091, T092)
-                        KeyCode::Char('y') => {
+                    InputMode::Normal => {
+                        if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
                             let notif = get_current_notification(
                                 &notif_state,
                                 current_filter_idx,
                                 cursor.get(),
                             );
-                            if let Some(n) = notif {
-                                let _ = clipboard::copy_to_clipboard(&n.subject_title);
-                            }
-                        }
-                        KeyCode::Char('Y') => {
-                            let notif = get_current_notification(
-                                &notif_state,
-                                current_filter_idx,
-                                cursor.get(),
-                            );
-                            if let Some(n) = notif
-                                && !n.url.is_empty()
+                            let vars = TemplateVars {
+                                url: notif.as_ref().map_or_else(String::new, |n| n.url.clone()),
+                                number: String::new(),
+                                repo_name: notif
+                                    .as_ref()
+                                    .and_then(|n| n.repository.as_ref())
+                                    .map_or_else(
+                                        String::new,
+                                        crate::github::types::RepoRef::full_name,
+                                    ),
+                                ..Default::default()
+                            };
+                            match keybindings
+                                .as_ref()
+                                .and_then(|kb| kb.resolve(&key_str, ViewContext::Notifications))
                             {
-                                let _ = clipboard::copy_to_clipboard(&n.url);
-                            }
-                        }
-                        KeyCode::Char('o') => {
-                            let notif = get_current_notification(
-                                &notif_state,
-                                current_filter_idx,
-                                cursor.get(),
-                            );
-                            if let Some(n) = notif
-                                && !n.url.is_empty()
-                            {
-                                let _ = clipboard::open_in_browser(&n.url);
-                            }
-                        }
-                        // Retry / refresh
-                        KeyCode::Char('r') => {
-                            let idx = active_filter.get();
-                            let mut state = notif_state.read().clone();
-                            if idx < state.filters.len() {
-                                state.filters[idx] = FilterData::default();
-                            }
-                            notif_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            if idx < times.len() {
-                                times[idx] = None;
-                            }
-                            filter_fetch_times.set(times);
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                        }
-                        // Refresh all filters
-                        KeyCode::Char('R') => {
-                            let mut state = notif_state.read().clone();
-                            for filter in &mut state.filters {
-                                *filter = FilterData::default();
-                            }
-                            notif_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            times.fill(None);
-                            filter_fetch_times.set(times);
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                            // Signal the render body to eagerly fetch all filters.
-                            refresh_all.set(true);
-                        }
-                        // Search (T087)
-                        KeyCode::Char('/') => {
-                            input_mode.set(InputMode::Search);
-                            search_query.set(String::new());
-                        }
-
-                        // -------------------------------------------------------
-                        // Notification actions
-                        // -------------------------------------------------------
-
-                        // Mark as read (m) — immediate, no confirm
-                        KeyCode::Char('m') => {
-                            if let Some(ref eng) = engine_for_keys {
-                                let notif = get_current_notification(
-                                    &notif_state,
-                                    current_filter_idx,
-                                    cursor.get(),
-                                );
-                                if let Some(n) = notif {
-                                    let id = n.id.clone();
-                                    eng.send(Request::MarkNotificationRead {
-                                        id,
-                                        reply_tx: event_tx.clone(),
-                                    });
-                                    remove_notification(
-                                        notif_state,
-                                        current_filter_idx,
-                                        cursor.get(),
-                                    );
-                                    clamp_cursor(
-                                        cursor,
-                                        scroll_offset,
-                                        total_rows.saturating_sub(1),
-                                    );
+                                Some(ResolvedBinding::Builtin(action)) => match action {
+                                    BuiltinAction::Quit => {
+                                        if let Some(mut exit) = should_exit {
+                                            exit.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SwitchView => {
+                                        if let Some(mut sv) = switch_view {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SwitchViewBack => {
+                                        if let Some(mut sv) = switch_view_back {
+                                            sv.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleScope => {
+                                        if let Some(mut st) = scope_toggle {
+                                            st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::CopyNumber => {
+                                        if let Some(n) = &notif {
+                                            let _ = clipboard::copy_to_clipboard(&n.subject_title);
+                                        }
+                                    }
+                                    BuiltinAction::CopyUrl => {
+                                        if let Some(n) = &notif
+                                            && !n.url.is_empty()
+                                        {
+                                            let _ = clipboard::copy_to_clipboard(&n.url);
+                                        }
+                                    }
+                                    BuiltinAction::OpenBrowser => {
+                                        if let Some(n) = &notif
+                                            && !n.url.is_empty()
+                                        {
+                                            let _ = clipboard::open_in_browser(&n.url);
+                                        }
+                                    }
+                                    BuiltinAction::Refresh => {
+                                        let idx = active_filter.get();
+                                        let mut state = notif_state.read().clone();
+                                        if idx < state.filters.len() {
+                                            state.filters[idx] = FilterData::default();
+                                        }
+                                        notif_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        if idx < times.len() {
+                                            times[idx] = None;
+                                        }
+                                        filter_fetch_times.set(times);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::RefreshAll => {
+                                        let mut state = notif_state.read().clone();
+                                        for filter in &mut state.filters {
+                                            *filter = FilterData::default();
+                                        }
+                                        notif_state.set(state);
+                                        let mut times = filter_fetch_times.read().clone();
+                                        times.fill(None);
+                                        filter_fetch_times.set(times);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        refresh_all.set(true);
+                                    }
+                                    BuiltinAction::Search => {
+                                        input_mode.set(InputMode::Search);
+                                        search_query.set(String::new());
+                                    }
+                                    BuiltinAction::MarkRead => {
+                                        if let Some(ref eng) = engine_for_keys
+                                            && let Some(n) = notif
+                                        {
+                                            let id = n.id.clone();
+                                            eng.send(Request::MarkNotificationRead {
+                                                id,
+                                                reply_tx: event_tx.clone(),
+                                            });
+                                            remove_notification(
+                                                notif_state,
+                                                current_filter_idx,
+                                                cursor.get(),
+                                            );
+                                            clamp_cursor(
+                                                cursor,
+                                                scroll_offset,
+                                                total_rows.saturating_sub(1),
+                                            );
+                                        }
+                                    }
+                                    BuiltinAction::MarkAllRead => {
+                                        input_mode
+                                            .set(InputMode::Confirm(BuiltinAction::MarkAllRead));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::Unsubscribe => {
+                                        input_mode
+                                            .set(InputMode::Confirm(BuiltinAction::Unsubscribe));
+                                        action_status.set(None);
+                                    }
+                                    BuiltinAction::MoveDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + 1)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::MoveUp => {
+                                        let new_cursor = cursor.get().saturating_sub(1);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
+                                    }
+                                    BuiltinAction::First => {
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                    }
+                                    BuiltinAction::Last => {
+                                        if total_rows > 0 {
+                                            cursor.set(total_rows.saturating_sub(1));
+                                            scroll_offset
+                                                .set(total_rows.saturating_sub(visible_rows));
+                                        }
+                                    }
+                                    BuiltinAction::PageDown => {
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + visible_rows)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(
+                                                    visible_rows.saturating_sub(1),
+                                                ));
+                                        }
+                                    }
+                                    BuiltinAction::PageUp => {
+                                        let new_cursor = cursor.get().saturating_sub(visible_rows);
+                                        cursor.set(new_cursor);
+                                        scroll_offset
+                                            .set(scroll_offset.get().saturating_sub(visible_rows));
+                                    }
+                                    BuiltinAction::PrevFilter => {
+                                        if filter_count > 0 {
+                                            let current = active_filter.get();
+                                            active_filter.set(if current == 0 {
+                                                filter_count.saturating_sub(1)
+                                            } else {
+                                                current - 1
+                                            });
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::NextFilter => {
+                                        if filter_count > 0 {
+                                            active_filter
+                                                .set((active_filter.get() + 1) % filter_count);
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::ToggleHelp => {
+                                        help_visible.set(true);
+                                    }
+                                    _ => {}
+                                },
+                                Some(ResolvedBinding::ShellCommand(cmd)) => {
+                                    let expanded = expand_template(&cmd, &vars);
+                                    let _ = execute_shell_command(&expanded);
                                 }
+                                None => {}
                             }
                         }
-                        // Mark all as read (M) — confirm first
-                        KeyCode::Char('M') => {
-                            input_mode.set(InputMode::Confirm(PendingAction::MarkAllRead));
-                            action_status.set(None);
-                        }
-                        // Unsubscribe (u, plain — not Ctrl+u) — confirm first
-                        KeyCode::Char('u') if !modifiers.contains(KeyModifiers::CONTROL) => {
-                            input_mode.set(InputMode::Confirm(PendingAction::Unsubscribe));
-                            action_status.set(None);
-                        }
-
-                        // -------------------------------------------------------
-                        // Cursor movement
-                        // -------------------------------------------------------
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            if total_rows > 0 {
-                                let new_cursor =
-                                    (cursor.get() + 1).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                if new_cursor >= scroll_offset.get() + visible_rows {
-                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                                }
-                            }
-                        }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let new_cursor = cursor.get().saturating_sub(1);
-                            cursor.set(new_cursor);
-                            if new_cursor < scroll_offset.get() {
-                                scroll_offset.set(new_cursor);
-                            }
-                        }
-                        KeyCode::Char('g') => {
-                            cursor.set(0);
-                            scroll_offset.set(0);
-                        }
-                        KeyCode::Char('G') => {
-                            if total_rows > 0 {
-                                cursor.set(total_rows.saturating_sub(1));
-                                scroll_offset.set(total_rows.saturating_sub(visible_rows));
-                            }
-                        }
-                        KeyCode::PageDown => {
-                            if total_rows > 0 {
-                                let new_cursor =
-                                    (cursor.get() + visible_rows).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                scroll_offset
-                                    .set(new_cursor.saturating_sub(visible_rows.saturating_sub(1)));
-                            }
-                        }
-                        KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            if total_rows > 0 {
-                                let half = visible_rows / 2;
-                                let new_cursor =
-                                    (cursor.get() + half).min(total_rows.saturating_sub(1));
-                                cursor.set(new_cursor);
-                                if new_cursor >= scroll_offset.get() + visible_rows {
-                                    scroll_offset.set(new_cursor.saturating_sub(visible_rows) + 1);
-                                }
-                            }
-                        }
-                        KeyCode::PageUp => {
-                            let new_cursor = cursor.get().saturating_sub(visible_rows);
-                            cursor.set(new_cursor);
-                            scroll_offset.set(scroll_offset.get().saturating_sub(visible_rows));
-                        }
-                        KeyCode::Char('u') if modifiers.contains(KeyModifiers::CONTROL) => {
-                            let half = visible_rows / 2;
-                            let new_cursor = cursor.get().saturating_sub(half);
-                            cursor.set(new_cursor);
-                            if new_cursor < scroll_offset.get() {
-                                scroll_offset.set(new_cursor);
-                            }
-                        }
-                        // Section switching
-                        KeyCode::Char('h') | KeyCode::Left => {
-                            if filter_count > 0 {
-                                let current = active_filter.get();
-                                active_filter.set(if current == 0 {
-                                    filter_count.saturating_sub(1)
-                                } else {
-                                    current - 1
-                                });
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                            }
-                        }
-                        KeyCode::Char('l') | KeyCode::Right => {
-                            if filter_count > 0 {
-                                active_filter.set((active_filter.get() + 1) % filter_count);
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                            }
-                        }
-                        KeyCode::Char('?') => {
-                            help_visible.set(true);
-                        }
-                        _ => {}
-                    },
+                    }
                 }
             }
             _ => {}
@@ -902,10 +870,11 @@ pub fn NotificationsView<'a>(
     let rendered_text_input = match &current_mode {
         InputMode::Confirm(action) => {
             let prompt = match action {
-                PendingAction::MarkAllRead => "Mark ALL notifications as read? (y/n)",
-                PendingAction::Unsubscribe => {
+                BuiltinAction::MarkAllRead => "Mark ALL notifications as read? (y/n)",
+                BuiltinAction::Unsubscribe => {
                     "Unsubscribe from this thread? This is irreversible. (y/n)"
                 }
+                _ => "(y/n)",
             };
             Some(RenderedTextInput::build(
                 prompt,
@@ -965,6 +934,7 @@ pub fn NotificationsView<'a>(
         [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
+            Some(theme.footer_actions),
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],

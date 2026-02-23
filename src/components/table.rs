@@ -445,8 +445,8 @@ fn truncate_spans(spans: Vec<RenderedSpan>, max_cols: usize) -> Vec<RenderedSpan
     if total <= max_cols {
         return spans;
     }
-    // Reserve 1 column for the ellipsis character.
-    let budget = max_cols.saturating_sub(1);
+    // Reserve 3 columns: 1 for the ellipsis + 2 gap before the next column.
+    let budget = max_cols.saturating_sub(3);
     let mut used = 0usize;
     let mut result = Vec::new();
     for span in spans {

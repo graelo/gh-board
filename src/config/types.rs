@@ -240,6 +240,7 @@ fn merge_colors(base: &ColorsTheme, overlay: &ColorsTheme) -> ColorsTheme {
             success: overlay.text.success.or(base.text.success),
             error: overlay.text.error.or(base.text.error),
             actor: overlay.text.actor.or(base.text.actor),
+            role: overlay.text.role.or(base.text.role),
         },
         background: BgColors {
             selected: overlay.background.selected.or(base.background.selected),
@@ -266,7 +267,6 @@ fn merge_colors(base: &ColorsTheme, overlay: &ColorsTheme) -> ColorsTheme {
             branch: overlay.pill.branch.or(base.pill.branch),
             author: overlay.pill.author.or(base.pill.author),
             age: overlay.pill.age.or(base.pill.age),
-            role: overlay.pill.role.or(base.pill.role),
             separator: overlay.pill.separator.or(base.pill.separator),
         },
         markdown: merge_markdown(&base.markdown, &overlay.markdown),
@@ -467,6 +467,8 @@ pub struct TextColors {
     pub error: Option<Color>,
     #[serde(default, deserialize_with = "color_de::deserialize")]
     pub actor: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub role: Option<Color>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -523,8 +525,6 @@ pub struct PillColors {
     pub author: Option<Color>,
     #[serde(default, deserialize_with = "color_de::deserialize")]
     pub age: Option<Color>,
-    #[serde(default, deserialize_with = "color_de::deserialize")]
-    pub role: Option<Color>,
     #[serde(default, deserialize_with = "color_de::deserialize")]
     pub separator: Option<Color>,
 }

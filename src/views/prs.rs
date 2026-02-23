@@ -2517,6 +2517,11 @@ fn build_sidebar_meta(
         }
     };
 
+    let author_login = pr
+        .author
+        .as_ref()
+        .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
+
     SidebarMeta {
         pill_icon,
         pill_text,
@@ -2526,11 +2531,13 @@ fn build_sidebar_meta(
         pill_right: icons.pill_right.clone(),
         branch_text,
         branch_fg: theme.pill_branch.to_crossterm_color(depth),
-        role_icon,
-        role_text,
-        role_fg: theme.pill_role.to_crossterm_color(depth),
         update_text,
         update_fg: update_fg_app.to_crossterm_color(depth),
+        author_login,
+        role_icon,
+        role_text,
+        role_fg: theme.text_role.to_crossterm_color(depth),
+        label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
     }

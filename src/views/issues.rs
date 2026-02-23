@@ -1853,11 +1853,11 @@ fn build_issue_sidebar_meta(
         ),
     };
 
-    // Branch text: author login (issues have no branch)
-    let branch_text = issue
+    // Author login (issues have no branch — use empty branch_text)
+    let author_login = issue
         .author
         .as_ref()
-        .map_or_else(|| "unknown".to_owned(), |a| format!("@{}", a.login));
+        .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
 
     // Participants: assignee logins
     let participants: Vec<String> = issue
@@ -1873,13 +1873,15 @@ fn build_issue_sidebar_meta(
         pill_fg: theme.pill_fg.to_crossterm_color(depth),
         pill_left: icons.pill_left.clone(),
         pill_right: icons.pill_right.clone(),
-        branch_text,
+        branch_text: String::new(),
         branch_fg: theme.pill_branch.to_crossterm_color(depth),
-        role_icon: String::new(),
-        role_text: String::new(),
-        role_fg: theme.pill_role.to_crossterm_color(depth),
         update_text: None,
         update_fg: theme.text_faint.to_crossterm_color(depth),
+        author_login,
+        role_icon: String::new(),
+        role_text: String::new(),
+        role_fg: theme.text_role.to_crossterm_color(depth),
+        label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
     }

@@ -91,6 +91,12 @@ document maps each configuration field to the exact UI elements it affects.
 | Sidebar           | Author name, assignee names, commit author names |
 | Sidebar Activity  | Actor names in timeline events                   |
 
+### `role`
+
+| View / Component | Element                                                       |
+| ---------------- | ------------------------------------------------------------- |
+| Sidebar          | Author role label (`owner`, `member`, `collaborator`, etc.)   |
+
 ### `inverted`
 
 | View / Component | Element                                                       |
@@ -165,7 +171,7 @@ Reduces row height for denser display.
 ## Pill Colors — `[theme.colors.pill]`
 
 These control the sidebar header that appears on the Overview tab: the colored
-state pill, branch info, and the `by @author · age · role` line.
+state pill and branch info line.
 
 ### Pill Background
 
@@ -184,7 +190,6 @@ state pill, branch info, and the `by @author · age · role` line.
 | `branch`    | `text.primary`   | Branch text (`main ← feature`)          |
 | `author`    | `text.actor`     | Author text (`by @graelo`)              |
 | `age`       | `text.faint`     | Age text (`1w`)                         |
-| `role`      | `text.secondary` | Role label (`owner`, `member`, etc.)    |
 | `separator` | `text.faint`     | Middle-dot separators (`·`) on the line |
 
 ---

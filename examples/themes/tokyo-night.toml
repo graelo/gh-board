@@ -14,6 +14,7 @@ warning = "#e0af68"
 success = "#9ece6a"
 error = "#f7768e"
 actor = "#7aa2f7"
+role = "#565f89"
 
 [theme.colors.background]
 selected = "#292e42"
@@ -40,7 +41,6 @@ fg        = "#1a1b26"
 branch    = "#c0caf5"
 author    = "#7aa2f7"
 age       = "#414868"
-role      = "#565f89"
 separator = "#414868"
 
 [theme.colors.footer]

@@ -666,6 +666,7 @@ pub fn ActionsView<'a>(
                 })
             };
             if let Some((filter_idx, run_pos)) = found {
+                pinned_run.set(None);
                 active_filter.set(filter_idx);
                 cursor.set(run_pos);
                 scroll_offset.set(run_pos.saturating_sub(5));
@@ -681,8 +682,8 @@ pub fn ActionsView<'a>(
                 }
             } else {
                 // Check if any filter is still loading.
-                let any_loading = actions_state.read().filters.iter().any(|f| f.loading);
-                if !any_loading {
+                let any_in_flight = filter_in_flight.read().iter().any(|&f| f);
+                if !any_in_flight {
                     // All filters loaded but run not found — fetch by ID.
                     if let Some(NavigationTarget::ActionsRun {
                         ref owner,

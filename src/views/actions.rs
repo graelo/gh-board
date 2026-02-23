@@ -781,7 +781,7 @@ pub fn ActionsView<'a>(
     }
 
     let total_rows = filtered_rows.len();
-    let visible_rows = props.height.saturating_sub(5) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 2).max(1) as usize;
 
     // Clone for keyboard handler capture.
     let filtered_run_indices_for_kb = filtered_run_indices.clone();

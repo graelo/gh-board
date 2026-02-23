@@ -653,7 +653,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             .map_or(0, |s| filter::filter_rows(&s.rows, &search_q).len())
     };
 
-    let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 3).max(1) as usize;
 
     // Engine and event_tx clones for the keyboard handler closure.
     let engine = engine_for_keyboard;

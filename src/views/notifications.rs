@@ -491,7 +491,7 @@ pub fn NotificationsView<'a>(
     };
 
     // Reserve space for tab bar (2 lines), footer (2 lines), header (1 line).
-    let visible_rows = props.height.saturating_sub(5) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 2).max(1) as usize;
 
     // Keyboard handling.
     let keybindings = props.keybindings.cloned();

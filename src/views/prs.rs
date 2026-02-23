@@ -939,7 +939,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     // Reserve space for tab bar (2 lines), footer (2 lines), header (1 line).
     // Each PR row occupies 2 terminal lines (info + subtitle).
-    let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 3).max(1) as usize;
 
     let repo_paths = props.repo_paths.cloned().unwrap_or_default();
     let filter_host_for_kb = filters_cfg

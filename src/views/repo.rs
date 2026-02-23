@@ -369,7 +369,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     let branches = branches_state.read();
     let total_rows = branches.len();
-    let visible_rows = props.height.saturating_sub(5) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 2).max(1) as usize;
 
     // Keyboard handling.
     let repo_path_owned = props.repo_path.map(std::borrow::ToOwned::to_owned);

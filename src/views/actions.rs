@@ -273,8 +273,7 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
         for step in &job.steps {
             let (step_icon, step_color) =
                 run_status_icon_color(step.status, step.conclusion, theme);
-            let step_dur =
-                crate::util::format_duration(step.started_at, step.completed_at);
+            let step_dur = crate::util::format_duration(step.started_at, step.completed_at);
             let mut spans = vec![
                 StyledSpan::text("   ", theme.text_faint),
                 StyledSpan::text(step_icon, step_color),

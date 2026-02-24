@@ -227,6 +227,30 @@ pub async fn fetch_run_jobs(
     Ok((jobs, rate_limit))
 }
 
+/// Fetch a single workflow run by ID.
+pub async fn fetch_run_by_id(
+    octocrab: &Arc<Octocrab>,
+    owner: &str,
+    repo: &str,
+    run_id: u64,
+) -> Result<(WorkflowRun, Option<RateLimitInfo>)> {
+    let url = format!("/repos/{owner}/{repo}/actions/runs/{run_id}");
+    let response = octocrab
+        ._get(url)
+        .await
+        .context("fetching single workflow run")?;
+
+    let rate_limit = extract_rest_rate_limit(response.headers());
+    let body = octocrab
+        .body_to_string(response)
+        .await
+        .context("reading single workflow run body")?;
+    let raw: RawWorkflowRun =
+        serde_json::from_str(&body).context("deserializing single workflow run")?;
+
+    Ok((into_domain(raw), rate_limit))
+}
+
 /// Re-run a workflow run (all jobs or failed jobs only).
 pub async fn rerun_workflow_run(
     octocrab: &Arc<Octocrab>,

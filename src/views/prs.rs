@@ -3,10 +3,13 @@ use std::collections::{HashMap, HashSet};
 use iocraft::prelude::*;
 
 use crate::actions::clipboard;
-use crate::app::ViewKind;
+use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::footer::{self, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
+use crate::components::selection_overlay::{
+    RenderedSelectionOverlay, SelectionOverlay, SelectionOverlayBuildConfig, SelectionOverlayItem,
+};
 use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
 use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
@@ -254,8 +257,14 @@ fn pr_to_row(
         Cell::colored(created, theme.text_faint),
     );
 
-    // Update status (refined from detail if available, coarse from PR otherwise)
-    let update = if let Some(d) = detail {
+    // Update status (refined from detail if available, coarse from PR otherwise).
+    // Skip for closed/merged PRs — branch status is irrelevant once the PR is done.
+    let update = if matches!(
+        pr.state,
+        crate::github::types::PrState::Closed | crate::github::types::PrState::Merged
+    ) {
+        Cell::colored("-".to_owned(), theme.text_faint)
+    } else if let Some(d) = detail {
         update_cell_from_detail(d, theme)
     } else {
         update_cell(branch_update_status(pr), theme)
@@ -483,6 +492,8 @@ pub struct PrsViewProps<'a> {
     pub refetch_interval_minutes: u32,
     /// Number of PR details to prefetch after list load. 0 = on-demand only.
     pub prefetch_pr_details: u32,
+    /// Navigation target state — set by `JumpToRun` to trigger cross-view navigation.
+    pub nav_target: Option<State<Option<NavigationTarget>>>,
 }
 
 #[component]
@@ -541,6 +552,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let mut label_selected = hooks.use_state(Vec::<String>::new);
 
     let mut help_visible = hooks.use_state(|| false);
+
+    // State: run selector overlay for JumpToRun disambiguation.
+    let mut run_selector_items =
+        hooks.use_state(|| Option::<Vec<(NavigationTarget, String)>>::None);
+    let mut run_selector_cursor = hooks.use_state(|| 0usize);
+    let nav_target = props.nav_target;
 
     // State: rate limit from last GraphQL response.
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
@@ -820,10 +837,19 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 rate_limit_state.set(rate_limit);
                             }
                             // Update the "update" cell in the table row.
-                            let update = update_cell_from_detail(&detail, &theme_for_poll);
+                            // Skip for closed/merged PRs — branch status is irrelevant.
                             let mut state = prs_state.read().clone();
                             'update: for fd in &mut state.filters {
                                 if let Some(idx) = fd.prs.iter().position(|p| p.number == number) {
+                                    let update = if matches!(
+                                        fd.prs[idx].state,
+                                        crate::github::types::PrState::Closed
+                                            | crate::github::types::PrState::Merged
+                                    ) {
+                                        Cell::colored("-".to_owned(), theme_for_poll.text_faint)
+                                    } else {
+                                        update_cell_from_detail(&detail, &theme_for_poll)
+                                    };
                                     fd.rows[idx].insert("update".to_owned(), update);
                                     break 'update;
                                 }
@@ -928,9 +954,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     // Reserve space for tab bar (2 lines), footer (2 lines), header (1 line).
     // Each PR row occupies 2 terminal lines (info + subtitle).
-    let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 3).max(1) as usize;
 
     let repo_paths = props.repo_paths.cloned().unwrap_or_default();
+    let filter_host_for_kb = filters_cfg
+        .get(current_filter_idx)
+        .and_then(|f| f.host.clone());
     // Engine handle for the keyboard handler closure.
     let engine = engine_for_keyboard;
 
@@ -952,6 +981,42 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 if help_visible.get() {
                     if matches!(code, KeyCode::Char('?') | KeyCode::Esc) {
                         help_visible.set(false);
+                    }
+                    return;
+                }
+
+                // Run selector overlay: intercept keys when showing.
+                if run_selector_items.read().is_some() {
+                    match code {
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            let len = run_selector_items.read().as_ref().map_or(0, Vec::len);
+                            run_selector_cursor
+                                .set((run_selector_cursor.get() + 1).min(len.saturating_sub(1)));
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            run_selector_cursor.set(run_selector_cursor.get().saturating_sub(1));
+                        }
+                        KeyCode::Enter => {
+                            let selected = {
+                                let items = run_selector_items.read();
+                                items
+                                    .as_ref()
+                                    .and_then(|v| v.get(run_selector_cursor.get()))
+                                    .map(|(nav, _)| nav.clone())
+                            };
+                            run_selector_items.set(None);
+                            run_selector_cursor.set(0);
+                            if let Some(target) = selected
+                                && let Some(mut nt) = nav_target
+                            {
+                                nt.set(Some(target));
+                            }
+                        }
+                        KeyCode::Esc => {
+                            run_selector_items.set(None);
+                            run_selector_cursor.set(0);
+                        }
+                        _ => {}
                     }
                     return;
                 }
@@ -1494,6 +1559,36 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             .set(scroll_offset.get().saturating_sub(visible_rows));
                                         preview_scroll.set(0);
                                     }
+                                    BuiltinAction::HalfPageDown => {
+                                        let half = visible_rows / 2;
+                                        if preview_open.get() {
+                                            preview_scroll.set(preview_scroll.get() + half);
+                                        } else if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + half)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::HalfPageUp => {
+                                        let half = visible_rows / 2;
+                                        if preview_open.get() {
+                                            preview_scroll
+                                                .set(preview_scroll.get().saturating_sub(half));
+                                        } else {
+                                            let new_cursor = cursor.get().saturating_sub(half);
+                                            cursor.set(new_cursor);
+                                            if new_cursor < scroll_offset.get() {
+                                                scroll_offset.set(new_cursor);
+                                            }
+                                            preview_scroll.set(0);
+                                        }
+                                    }
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);
                                     }
@@ -1517,6 +1612,65 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                             preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::JumpToRun => {
+                                        // Collect distinct workflow runs from current PR's checks.
+                                        let entries = {
+                                            let state = prs_state.read();
+                                            let pr = state
+                                                .filters
+                                                .get(current_filter_idx)
+                                                .and_then(|f| f.prs.get(cursor.get()));
+                                            let repo_ref = pr.and_then(|p| p.repo.as_ref());
+                                            if let Some(pr) = pr
+                                                && let Some(rr) = repo_ref
+                                            {
+                                                let mut seen = HashSet::new();
+                                                pr.check_runs
+                                                    .iter()
+                                                    .filter_map(|cr| {
+                                                        let rid = cr.workflow_run_id?;
+                                                        if !seen.insert(rid) {
+                                                            return None;
+                                                        }
+                                                        let label = cr
+                                                            .workflow_name
+                                                            .as_deref()
+                                                            .unwrap_or(&cr.name);
+                                                        Some((
+                                                            NavigationTarget::ActionsRun {
+                                                                owner: rr.owner.clone(),
+                                                                repo: rr.name.clone(),
+                                                                run_id: rid,
+                                                                host: filter_host_for_kb.clone(),
+                                                            },
+                                                            label.to_owned(),
+                                                        ))
+                                                    })
+                                                    .collect()
+                                            } else {
+                                                Vec::new()
+                                            }
+                                        };
+                                        match entries.len() {
+                                            0 => {
+                                                action_status.set(Some(
+                                                    "No Actions run linked to this PR's checks"
+                                                        .to_owned(),
+                                                ));
+                                            }
+                                            1 => {
+                                                if let (Some(mut nt), Some((target, _))) =
+                                                    (nav_target, entries.into_iter().next())
+                                                {
+                                                    nt.set(Some(target));
+                                                }
+                                            }
+                                            _ => {
+                                                run_selector_cursor.set(0);
+                                                run_selector_items.set(Some(entries));
+                                            }
                                         }
                                     }
                                     _ => {}
@@ -1952,6 +2106,30 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         None
     };
 
+    let rendered_run_selector = {
+        let items_opt = run_selector_items.read();
+        items_opt.as_ref().map(|items| {
+            let overlay_items: Vec<SelectionOverlayItem> = items
+                .iter()
+                .map(|(_, label)| SelectionOverlayItem {
+                    label: label.clone(),
+                })
+                .collect();
+            RenderedSelectionOverlay::build(SelectionOverlayBuildConfig {
+                title: "Select workflow run".to_owned(),
+                items: overlay_items,
+                cursor: run_selector_cursor.get(),
+                depth,
+                title_color: Some(theme.text_primary),
+                item_color: Some(theme.text_secondary),
+                cursor_color: Some(theme.text_primary),
+                selected_bg: Some(theme.bg_selected),
+                border_color: Some(theme.border_primary),
+                hint_color: Some(theme.text_faint),
+            })
+        })
+    };
+
     let width = u32::from(props.width);
     let height = u32::from(props.height);
 
@@ -1969,6 +2147,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             TextInput(input: rendered_text_input)
             Footer(footer: rendered_footer)
             HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
+            SelectionOverlay(overlay: rendered_run_selector, width: props.width, height: props.height)
         }
     }
     .into_any()
@@ -2289,6 +2468,57 @@ fn get_current_pr_assignees(
     pr.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
+/// Compute update-status text and color for the sidebar.
+///
+/// Returns `(None, text_faint)` for closed/merged PRs or when no data is available.
+fn sidebar_update_status(
+    pr: &PullRequest,
+    detail: Option<&PrDetail>,
+    theme: &ResolvedTheme,
+) -> (Option<String>, AppColor) {
+    let icons = &theme.icons;
+
+    if matches!(
+        pr.state,
+        crate::github::types::PrState::Closed | crate::github::types::PrState::Merged
+    ) {
+        return (None, theme.text_faint);
+    }
+
+    if let Some(d) = detail {
+        match effective_update_status(d) {
+            Some(MergeStateStatus::Behind) => {
+                let suffix = d.behind_by.map_or(String::new(), |b| format!(" by {b}"));
+                (
+                    Some(format!("{} Behind{suffix}", icons.update_needed)),
+                    theme.text_warning,
+                )
+            }
+            Some(MergeStateStatus::Dirty) => (
+                Some(format!("{} Conflicts", icons.update_conflict)),
+                theme.text_error,
+            ),
+            Some(_) => (
+                Some(format!("{} Up to date", icons.update_ok)),
+                theme.text_success,
+            ),
+            None => (None, theme.text_faint),
+        }
+    } else {
+        match branch_update_status(pr) {
+            BranchUpdateStatus::NeedsUpdate => (
+                Some(format!("{} Behind", icons.update_needed)),
+                theme.text_warning,
+            ),
+            BranchUpdateStatus::HasConflicts => (
+                Some(format!("{} Conflicts", icons.update_conflict)),
+                theme.text_error,
+            ),
+            BranchUpdateStatus::Unknown => (None, theme.text_faint),
+        }
+    }
+}
+
 /// Build the `SidebarMeta` header from a pull request.
 fn build_sidebar_meta(
     pr: &PullRequest,
@@ -2349,39 +2579,12 @@ fn build_sidebar_meta(
     // commenters, reviewers, label editors, etc.)
     let participants: Vec<String> = pr.participants.iter().map(|l| format!("@{l}")).collect();
 
-    // Update status: prefer confirmed detail info; fall back to coarse status from search.
-    let (update_text, update_fg_app) = if let Some(d) = detail {
-        match effective_update_status(d) {
-            Some(MergeStateStatus::Behind) => {
-                let suffix = d.behind_by.map_or(String::new(), |b| format!(" by {b}"));
-                (
-                    Some(format!("{} Behind{suffix}", icons.update_needed)),
-                    theme.text_warning,
-                )
-            }
-            Some(MergeStateStatus::Dirty) => (
-                Some(format!("{} Conflicts", icons.update_conflict)),
-                theme.text_error,
-            ),
-            Some(_) => (
-                Some(format!("{} Up to date", icons.update_ok)),
-                theme.text_success,
-            ),
-            None => (None, theme.text_faint),
-        }
-    } else {
-        match branch_update_status(pr) {
-            BranchUpdateStatus::NeedsUpdate => (
-                Some(format!("{} Behind", icons.update_needed)),
-                theme.text_warning,
-            ),
-            BranchUpdateStatus::HasConflicts => (
-                Some(format!("{} Conflicts", icons.update_conflict)),
-                theme.text_error,
-            ),
-            BranchUpdateStatus::Unknown => (None, theme.text_faint),
-        }
-    };
+    let (update_text, update_fg_app) = sidebar_update_status(pr, detail, theme);
+
+    let author_login = pr
+        .author
+        .as_ref()
+        .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
 
     SidebarMeta {
         pill_icon,
@@ -2392,11 +2595,13 @@ fn build_sidebar_meta(
         pill_right: icons.pill_right.clone(),
         branch_text,
         branch_fg: theme.pill_branch.to_crossterm_color(depth),
-        role_icon,
-        role_text,
-        role_fg: theme.pill_role.to_crossterm_color(depth),
         update_text,
         update_fg: update_fg_app.to_crossterm_color(depth),
+        author_login,
+        role_icon,
+        role_text,
+        role_fg: theme.text_role.to_crossterm_color(depth),
+        label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
     }

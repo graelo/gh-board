@@ -270,6 +270,17 @@ pub enum Request {
     },
 
     // -----------------------------------------------------------------------
+    // Fetch single run by ID (deep-link navigation)
+    // -----------------------------------------------------------------------
+    FetchRunById {
+        owner: String,
+        repo: String,
+        run_id: u64,
+        host: Option<String>,
+        reply_tx: Sender<Event>,
+    },
+
+    // -----------------------------------------------------------------------
     // Control
     // -----------------------------------------------------------------------
     Shutdown,
@@ -322,6 +333,12 @@ pub enum Event {
         logins: Vec<String>,
         rate_limit: Option<RateLimitInfo>,
     },
+    SingleRunFetched {
+        run_id: u64,
+        run: Option<WorkflowRun>,
+        rate_limit: Option<RateLimitInfo>,
+    },
+
     /// Unified error event for all fetch or mutation failures.
     FetchError {
         context: String,

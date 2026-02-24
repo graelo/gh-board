@@ -86,13 +86,16 @@ pub struct SidebarMeta {
     // Branch (same line, after pill)
     pub branch_text: String,
     pub branch_fg: Color,
-    // Role (appended to line 1 after branch)
+    // Update status (on pill line, after branch)
+    pub update_text: Option<String>,
+    pub update_fg: Color,
+    // Author metadata line
+    pub author_login: String,
     pub role_icon: String,
     pub role_text: String,
     pub role_fg: Color,
-    // Update status (between branch and role)
-    pub update_text: Option<String>,
-    pub update_fg: Color,
+    // Metadata label color (matches Labels:/Lines: style)
+    pub label_fg: Color,
     // Participants line
     pub participants: Vec<String>,
     pub participants_fg: Color,
@@ -296,21 +299,28 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                     MixedText(contents: tab_contents, wrap: TextWrap::NoWrap)
             }
 
-            // Meta section (pill badge + role + participants, Overview tab only)
+            // Meta section (pill badge + author + participants, Overview tab only)
             #(meta.map(|m| {
                 let pill_label = format!(" {} {} ", m.pill_icon, m.pill_text);
                 let branch_label = format!(" {}", m.branch_text);
-                let role_label = format!(" {} {}", m.role_icon, m.role_text);
                 let has_caps = !m.pill_left.is_empty();
-                let has_participants = !m.participants.is_empty();
+                let show_participants = m.participants.len() > 1;
                 let participants_text = m.participants.join(", ");
                 let participants_fg = m.participants_fg;
+                let label_fg = m.label_fg;
                 let has_update = m.update_text.is_some();
                 let update_label = m.update_text.map(|t| format!(" {t}")).unwrap_or_default();
                 let update_fg = m.update_fg;
+                let author_text = format!("@{}", m.author_login);
+                let role_suffix = if m.role_text.is_empty() {
+                    String::new()
+                } else {
+                    format!("  {} {}", m.role_icon, m.role_text)
+                };
+                let role_fg = m.role_fg;
                 element! {
                     View(margin_top: 1, flex_direction: FlexDirection::Column) {
-                        // Line 1: pill + branch + update status + role
+                        // Line 1: pill + branch + update status
                         View(flex_direction: FlexDirection::Row) {
                             // Left cap (Powerline glyph, fg = pill color, no bg)
                             #(if has_caps {
@@ -356,16 +366,30 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                             } else {
                                 None
                             })
-                            Text(content: role_label, color: m.role_fg, wrap: TextWrap::NoWrap)
                         }
-                        // Line 2: Participants
-                        #(if has_participants {
+                        // Line 2: Author + role badge
+                        View(margin_top: 1) {
+                            MixedText(
+                                contents: vec![
+                                    MixedTextContent::new("Author:  ")
+                                        .color(label_fg)
+                                        .weight(Weight::Bold),
+                                    MixedTextContent::new(author_text)
+                                        .color(participants_fg),
+                                    MixedTextContent::new(role_suffix)
+                                        .color(role_fg),
+                                ],
+                                wrap: TextWrap::NoWrap,
+                            )
+                        }
+                        // Line 3: Participants (only if > 1)
+                        #(if show_participants {
                             Some(element! {
-                                View(margin_top: 1) {
+                                View(margin_top: 0) {
                                     MixedText(
                                         contents: vec![
                                             MixedTextContent::new("Participants: ")
-                                                .color(participants_fg)
+                                                .color(label_fg)
                                                 .weight(Weight::Bold),
                                             MixedTextContent::new(participants_text)
                                                 .color(participants_fg),

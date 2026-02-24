@@ -1055,6 +1055,38 @@ async fn handle_request(
             }
         }
 
+        // --- Fetch single run by ID (deep-link navigation) ---
+        Request::FetchRunById {
+            owner,
+            repo,
+            run_id,
+            host,
+            reply_tx,
+        } => {
+            let host = host.as_deref().unwrap_or("github.com");
+            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunById") else {
+                return;
+            };
+            match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
+                Ok((run, rate_limit)) => {
+                    tracing::debug!("engine: sending SingleRunFetched run_id={run_id}");
+                    let _ = reply_tx.send(Event::SingleRunFetched {
+                        run_id,
+                        run: Some(run),
+                        rate_limit,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("engine: FetchRunById run_id={run_id} error: {e}");
+                    let _ = reply_tx.send(Event::SingleRunFetched {
+                        run_id,
+                        run: None,
+                        rate_limit: None,
+                    });
+                }
+            }
+        }
+
         Request::Shutdown => unreachable!("handled at run_loop level"),
     }
 }

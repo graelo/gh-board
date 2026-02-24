@@ -491,7 +491,7 @@ pub fn NotificationsView<'a>(
     };
 
     // Reserve space for tab bar (2 lines), footer (2 lines), header (1 line).
-    let visible_rows = props.height.saturating_sub(5) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 2).max(1) as usize;
 
     // Keyboard handling.
     let keybindings = props.keybindings.cloned();
@@ -762,6 +762,27 @@ pub fn NotificationsView<'a>(
                                         cursor.set(new_cursor);
                                         scroll_offset
                                             .set(scroll_offset.get().saturating_sub(visible_rows));
+                                    }
+                                    BuiltinAction::HalfPageDown => {
+                                        let half = visible_rows / 2;
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + half)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::HalfPageUp => {
+                                        let half = visible_rows / 2;
+                                        let new_cursor = cursor.get().saturating_sub(half);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
                                     }
                                     BuiltinAction::PrevFilter => {
                                         if filter_count > 0 {

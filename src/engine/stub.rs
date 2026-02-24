@@ -76,6 +76,17 @@ impl StubEngine {
                     });
                 }
 
+                // Single run by ID — return None (not found)
+                Request::FetchRunById {
+                    run_id, reply_tx, ..
+                } => {
+                    let _ = reply_tx.send(Event::SingleRunFetched {
+                        run_id,
+                        run: None,
+                        rate_limit: None,
+                    });
+                }
+
                 Request::FetchNotifications {
                     filter_idx,
                     reply_tx,

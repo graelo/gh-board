@@ -369,7 +369,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     let branches = branches_state.read();
     let total_rows = branches.len();
-    let visible_rows = props.height.saturating_sub(5) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 2).max(1) as usize;
 
     // Keyboard handling.
     let repo_path_owned = props.repo_path.map(std::borrow::ToOwned::to_owned);
@@ -579,6 +579,27 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         cursor.set(new_cursor);
                                         scroll_offset
                                             .set(scroll_offset.get().saturating_sub(visible_rows));
+                                    }
+                                    BuiltinAction::HalfPageDown => {
+                                        let half = visible_rows / 2;
+                                        if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + half)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::HalfPageUp => {
+                                        let half = visible_rows / 2;
+                                        let new_cursor = cursor.get().saturating_sub(half);
+                                        cursor.set(new_cursor);
+                                        if new_cursor < scroll_offset.get() {
+                                            scroll_offset.set(new_cursor);
+                                        }
                                     }
                                     BuiltinAction::Refresh | BuiltinAction::RefreshAll => {
                                         loaded.set(false);

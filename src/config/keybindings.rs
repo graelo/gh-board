@@ -36,6 +36,8 @@ pub enum BuiltinAction {
     Last,
     PageDown,
     PageUp,
+    HalfPageDown,
+    HalfPageUp,
     PrevFilter,
     NextFilter,
     TogglePreview,
@@ -80,6 +82,9 @@ pub enum BuiltinAction {
     RerunFailed,
     RerunAll,
     CancelRun,
+    // Cross-view navigation
+    JumpToRun,
+    GoBack,
 }
 
 impl BuiltinAction {
@@ -92,6 +97,8 @@ impl BuiltinAction {
             "last" => Self::Last,
             "page_down" => Self::PageDown,
             "page_up" => Self::PageUp,
+            "half_page_down" => Self::HalfPageDown,
+            "half_page_up" => Self::HalfPageUp,
             "prev_filter" => Self::PrevFilter,
             "next_filter" => Self::NextFilter,
             "toggle_preview" => Self::TogglePreview,
@@ -129,6 +136,8 @@ impl BuiltinAction {
             "rerun_failed" => Self::RerunFailed,
             "rerun_all" => Self::RerunAll,
             "cancel_run" => Self::CancelRun,
+            "jump_to_run" => Self::JumpToRun,
+            "go_back" => Self::GoBack,
             _ => return None,
         })
     }
@@ -142,6 +151,8 @@ impl BuiltinAction {
             Self::Last => "Jump to last item",
             Self::PageDown => "Page down",
             Self::PageUp => "Page up",
+            Self::HalfPageDown => "Half page down / scroll sidebar",
+            Self::HalfPageUp => "Half page up / scroll sidebar",
             Self::PrevFilter => "Previous filter",
             Self::NextFilter => "Next filter",
             Self::TogglePreview => "Toggle preview pane",
@@ -178,6 +189,8 @@ impl BuiltinAction {
             Self::RerunFailed => "Re-run failed jobs",
             Self::RerunAll => "Re-run all jobs",
             Self::CancelRun => "Cancel run",
+            Self::JumpToRun => "Jump to Actions run",
+            Self::GoBack => "Go back to previous view",
         }
     }
 }
@@ -213,7 +226,16 @@ pub fn key_event_to_string(
         KeyCode::Char(c) => {
             // For ctrl+<char>, use lowercase in the key string.
             if modifiers.contains(KeyModifiers::CONTROL) {
-                Some(c.to_ascii_lowercase().to_string())
+                // Crossterm's legacy parser maps ctrl+\/]/^/_ (bytes 0x1C-0x1F)
+                // to ctrl+4/5/6/7. Normalize back to the actual keys.
+                let normalized = match c {
+                    '4' => '\\',
+                    '5' => ']',
+                    '6' => '^',
+                    '7' => '_',
+                    other => other,
+                };
+                Some(normalized.to_ascii_lowercase().to_string())
             } else {
                 Some(c.to_string())
             }
@@ -272,9 +294,13 @@ pub fn default_universal() -> Vec<Keybinding> {
         kb("home", "first", "Jump to first item"),
         kb("G", "last", "Jump to last item"),
         kb("end", "last", "Jump to last item"),
-        kb("ctrl+d", "page_down", "Page down"),
+        kb(
+            "ctrl+d",
+            "half_page_down",
+            "Half page down / scroll sidebar",
+        ),
         kb("pagedown", "page_down", "Page down"),
-        kb("ctrl+u", "page_up", "Page up"),
+        kb("ctrl+u", "half_page_up", "Half page up / scroll sidebar"),
         kb("pageup", "page_up", "Page up"),
         kb("h", "prev_filter", "Previous filter"),
         kb("left", "prev_filter", "Previous filter"),
@@ -307,6 +333,7 @@ pub fn default_prs() -> Vec<Keybinding> {
         kb("W", "mark_ready", "Mark ready for review"),
         kb("m", "merge", "Merge PR"),
         kb("u", "update_from_base", "Update from base"),
+        kb("ctrl+]", "jump_to_run", "Jump to Actions run"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("S", "toggle_scope", "Toggle repo scope"),
@@ -331,6 +358,7 @@ pub(crate) fn default_issues() -> Vec<Keybinding> {
 pub(crate) fn default_actions() -> Vec<Keybinding> {
     vec![
         kb("w", "toggle_workflow_nav", "Toggle workflow navigator"),
+        kb("ctrl+t", "go_back", "Go back to previous view"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("e", "rerun_failed", "Re-run failed jobs"),
@@ -571,6 +599,28 @@ mod tests {
             KeyEventKind::Press,
         );
         assert_eq!(s, Some("ctrl+d".to_owned()));
+    }
+
+    #[test]
+    fn key_event_to_string_ctrl_bracket_normalized() {
+        // Crossterm legacy parser sends ctrl+] as Char('5') + CONTROL.
+        let s = key_event_to_string(
+            KeyCode::Char('5'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Press,
+        );
+        assert_eq!(s, Some("ctrl+]".to_owned()));
+    }
+
+    #[test]
+    fn key_event_to_string_ctrl_backslash_normalized() {
+        // Crossterm legacy parser sends ctrl+\ as Char('4') + CONTROL.
+        let s = key_event_to_string(
+            KeyCode::Char('4'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Press,
+        );
+        assert_eq!(s, Some("ctrl+\\".to_owned()));
     }
 
     #[test]

@@ -81,7 +81,7 @@ pub struct ResolvedTheme {
     pub pill_branch: Color,
     pub pill_author: Color,
     pub pill_age: Color,
-    pub pill_role: Color,
+    pub text_role: Color,
     pub pill_separator: Color,
     // Footer
     pub footer_prs: Color,
@@ -157,7 +157,7 @@ impl ResolvedTheme {
             pill_branch: pill.branch.unwrap_or(text_primary),
             pill_author: pill.author.unwrap_or(text_actor),
             pill_age: pill.age.unwrap_or(text_faint),
-            pill_role: pill.role.unwrap_or(text_secondary),
+            text_role: theme.colors.text.role.unwrap_or(text_secondary),
             pill_separator: pill.separator.unwrap_or(text_faint),
             // Footer
             footer_prs: theme.colors.footer.prs.unwrap_or(d.footer_prs),

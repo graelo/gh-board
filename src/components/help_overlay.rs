@@ -26,13 +26,13 @@ pub struct RenderedHelpOverlay {
     pub key_fg: Color,
     pub desc_fg: Color,
     pub border_fg: Color,
-    /// Width of the widest key string (for column alignment).
-    pub key_col_width: u32,
 }
 
 pub struct RenderedHelpGroup {
     pub title: String,
     pub rows: Vec<RenderedHelpRow>,
+    /// Width of the widest key string in this group (for column alignment).
+    pub key_col_width: u32,
 }
 
 pub struct RenderedHelpRow {
@@ -69,27 +69,30 @@ impl RenderedHelpOverlay {
             .border_color
             .map_or(Color::DarkGrey, |c| c.to_crossterm_color(cfg.depth));
 
-        // Compute max key width for column alignment.
-        #[allow(clippy::cast_possible_truncation)]
-        let key_col_width = groups
-            .iter()
-            .flat_map(|g| g.rows.iter())
-            .map(|r| r.key.chars().count())
-            .max()
-            .unwrap_or(10) as u32;
-
         let rendered_groups = groups
             .into_iter()
-            .map(|g| RenderedHelpGroup {
-                title: g.title,
-                rows: g
+            .map(|g| {
+                // Compute max key width per group for independent column alignment.
+                #[allow(clippy::cast_possible_truncation)]
+                let key_col_width = g
                     .rows
-                    .into_iter()
-                    .map(|r| RenderedHelpRow {
-                        key: r.key,
-                        description: r.description,
-                    })
-                    .collect(),
+                    .iter()
+                    .map(|r| r.key.chars().count())
+                    .max()
+                    .unwrap_or(10) as u32;
+
+                RenderedHelpGroup {
+                    title: g.title,
+                    key_col_width,
+                    rows: g
+                        .rows
+                        .into_iter()
+                        .map(|r| RenderedHelpRow {
+                            key: r.key,
+                            description: r.description,
+                        })
+                        .collect(),
+                }
             })
             .collect();
 
@@ -99,7 +102,6 @@ impl RenderedHelpOverlay {
             key_fg,
             desc_fg,
             border_fg,
-            key_col_width,
         }
     }
 }
@@ -201,25 +203,11 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
     let width = u32::from(props.width);
     let height = u32::from(props.height);
 
-    // Overlay dimensions: centered, ~60% width, up to 80% height.
-    let overlay_width = (width * 3 / 5).max(40).min(width.saturating_sub(4));
+    // Overlay dimensions: centered, ~80% width for two-column layout, up to 80% height.
+    let overlay_width = (width * 4 / 5).max(60).min(width.saturating_sub(4));
     let overlay_height = (height * 4 / 5).max(10).min(height.saturating_sub(2));
     let pad_left = (width.saturating_sub(overlay_width)) / 2;
     let pad_top = (height.saturating_sub(overlay_height)) / 2;
-
-    // Key column width + right padding.
-    let key_width = overlay.key_col_width + 2;
-
-    // Pre-count total content lines to know if we need truncation.
-    let total_lines: usize = overlay
-        .groups
-        .iter()
-        .map(|g| 1 + g.rows.len() + 1) // title + rows + blank
-        .sum::<usize>()
-        + 1; // hint line
-
-    let max_lines = overlay_height.saturating_sub(4) as usize; // border + title + padding
-    let mut lines_remaining = max_lines.min(total_lines);
 
     element! {
         View(
@@ -260,36 +248,25 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                     )
                 }
 
-                // Scrollable content area
+                // Two-column content area: each group is a column
                 View(
                     flex_grow: 1.0,
-                    flex_direction: FlexDirection::Column,
+                    flex_direction: FlexDirection::Row,
                     padding_left: 1,
                     padding_right: 1,
                     overflow: Overflow::Hidden,
                 ) {
                     #(overlay.groups.into_iter().enumerate().map(|(gi, group)| {
-                        if lines_remaining == 0 {
-                            return element! { View }.into_any();
-                        }
-
-                        // Group header
-                        lines_remaining = lines_remaining.saturating_sub(1);
                         let group_title = group.title.clone();
                         let title_color = overlay.title_fg;
                         let key_color = overlay.key_fg;
                         let desc_color = overlay.desc_fg;
-
-                        // Determine how many rows we can show.
-                        let rows_to_show = group.rows.len().min(lines_remaining);
-                        lines_remaining = lines_remaining.saturating_sub(rows_to_show + 1); // rows + blank
-
-                        let visible_rows: Vec<_> = group.rows.into_iter().take(rows_to_show).collect();
+                        let key_width = group.key_col_width + 2;
 
                         element! {
-                            View(key: gi, flex_direction: FlexDirection::Column) {
-                                // Group title (bold, like tab bar labels)
-                                View(margin_top: u32::from(gi != 0)) {
+                            View(key: gi, flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                                // Group title (bold, underlined)
+                                View(margin_top: 0u32) {
                                     Text(
                                         content: group_title,
                                         color: title_color,
@@ -299,8 +276,8 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                                     )
                                 }
 
-                                // Key-description rows: two-column layout
-                                #(visible_rows.into_iter().enumerate().map(|(ri, row)| {
+                                // Key-description rows
+                                #(group.rows.into_iter().enumerate().map(|(ri, row)| {
                                     element! {
                                         View(key: ri) {
                                             // Key column: right-aligned, fixed width

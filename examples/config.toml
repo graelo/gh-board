@@ -188,6 +188,9 @@ error = "#f38ba8"  # Catppuccin red
 # Actor/author name color
 actor = "#89b4fa"  # Catppuccin blue
 
+# Author role label color (shown in sidebar Author line)
+role = "#a6adc8"  # Catppuccin subtext0
+
 # ------------------------------------------------------------------------------
 # Colors: Background
 # ------------------------------------------------------------------------------
@@ -223,7 +226,7 @@ owner = "#fab387"           # Peach
 unknownrole = "#6c7086"     # Gray
 
 # ------------------------------------------------------------------------------
-# Colors: Pill (sidebar state badge + author meta line)
+# Colors: Pill (sidebar state badge + branch line)
 # ------------------------------------------------------------------------------
 
 [theme.colors.pill]
@@ -238,7 +241,6 @@ fg        = "#1e1e2e"  # Catppuccin base (dark text on colored pill)
 branch    = "#cdd6f4"  # Catppuccin text
 author    = "#89b4fa"  # Catppuccin blue
 age       = "#6c7086"  # Catppuccin overlay0
-role      = "#a6adc8"  # Catppuccin subtext0
 separator = "#6c7086"  # Catppuccin overlay0
 
 # ------------------------------------------------------------------------------

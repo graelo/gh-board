@@ -40,6 +40,7 @@ warning = "3"        # yellow
 success = "2"        # green
 error = "1"          # red
 actor = "4"          # blue
+role = "14"          # base1
 
 [theme.colors.background]
 selected = "7"       # base2 – highlight bar
@@ -66,7 +67,6 @@ fg        = "15"       # base3  – light text on colored pill
 branch    = "11"       # base00 – body text
 author    = "4"        # blue
 age       = "14"       # base1  – de-emphasized
-role      = "14"       # base1
 separator = "14"       # base1
 
 [theme.colors.footer]

@@ -653,7 +653,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             .map_or(0, |s| filter::filter_rows(&s.rows, &search_q).len())
     };
 
-    let visible_rows = (props.height.saturating_sub(5) / 2) as usize;
+    let visible_rows = (props.height.saturating_sub(5) / 3).max(1) as usize;
 
     // Engine and event_tx clones for the keyboard handler closure.
     let engine = engine_for_keyboard;
@@ -1030,6 +1030,36 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         scroll_offset
                                             .set(scroll_offset.get().saturating_sub(visible_rows));
                                         preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::HalfPageDown => {
+                                        let half = visible_rows / 2;
+                                        if preview_open.get() {
+                                            preview_scroll.set(preview_scroll.get() + half);
+                                        } else if total_rows > 0 {
+                                            let new_cursor = (cursor.get() + half)
+                                                .min(total_rows.saturating_sub(1));
+                                            cursor.set(new_cursor);
+                                            if new_cursor >= scroll_offset.get() + visible_rows {
+                                                scroll_offset.set(
+                                                    new_cursor.saturating_sub(visible_rows) + 1,
+                                                );
+                                            }
+                                            preview_scroll.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::HalfPageUp => {
+                                        let half = visible_rows / 2;
+                                        if preview_open.get() {
+                                            preview_scroll
+                                                .set(preview_scroll.get().saturating_sub(half));
+                                        } else {
+                                            let new_cursor = cursor.get().saturating_sub(half);
+                                            cursor.set(new_cursor);
+                                            if new_cursor < scroll_offset.get() {
+                                                scroll_offset.set(new_cursor);
+                                            }
+                                            preview_scroll.set(0);
+                                        }
                                     }
                                     BuiltinAction::PrevFilter => {
                                         if filter_count > 0 {
@@ -1853,11 +1883,11 @@ fn build_issue_sidebar_meta(
         ),
     };
 
-    // Branch text: author login (issues have no branch)
-    let branch_text = issue
+    // Author login (issues have no branch — use empty branch_text)
+    let author_login = issue
         .author
         .as_ref()
-        .map_or_else(|| "unknown".to_owned(), |a| format!("@{}", a.login));
+        .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
 
     // Participants: assignee logins
     let participants: Vec<String> = issue
@@ -1873,13 +1903,15 @@ fn build_issue_sidebar_meta(
         pill_fg: theme.pill_fg.to_crossterm_color(depth),
         pill_left: icons.pill_left.clone(),
         pill_right: icons.pill_right.clone(),
-        branch_text,
+        branch_text: String::new(),
         branch_fg: theme.pill_branch.to_crossterm_color(depth),
-        role_icon: String::new(),
-        role_text: String::new(),
-        role_fg: theme.pill_role.to_crossterm_color(depth),
         update_text: None,
         update_fg: theme.text_faint.to_crossterm_color(depth),
+        author_login,
+        role_icon: String::new(),
+        role_text: String::new(),
+        role_fg: theme.text_role.to_crossterm_color(depth),
+        label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
     }

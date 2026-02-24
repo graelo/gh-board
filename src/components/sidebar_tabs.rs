@@ -45,6 +45,37 @@ pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<
         ]));
     }
 
+    // Dates: local time (age)
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let created_age = crate::util::format_date(&pr.created_at, "relative");
+    let updated_age = crate::util::format_date(&pr.updated_at, "relative");
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::bold("Created:", theme.text_secondary),
+        StyledSpan::text(
+            format!(
+                " {}",
+                pr.created_at.with_timezone(&chrono::Local).format(fmt)
+            ),
+            theme.text_faint,
+        ),
+        StyledSpan::text(" (", theme.text_faint),
+        StyledSpan::text(created_age, theme.text_secondary),
+        StyledSpan::text(")", theme.text_faint),
+    ]));
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::bold("Updated:", theme.text_secondary),
+        StyledSpan::text(
+            format!(
+                " {}",
+                pr.updated_at.with_timezone(&chrono::Local).format(fmt)
+            ),
+            theme.text_faint,
+        ),
+        StyledSpan::text(" (", theme.text_faint),
+        StyledSpan::text(updated_age, theme.text_secondary),
+        StyledSpan::text(")", theme.text_faint),
+    ]));
+
     // Changes
     lines.push(StyledLine::from_spans(vec![
         StyledSpan::bold("Lines:  ", theme.text_secondary),
@@ -407,6 +438,37 @@ pub fn render_issue_overview_metadata(issue: &Issue, theme: &ResolvedTheme) -> V
             StyledSpan::text(assignee_text, theme.text_actor),
         ]));
     }
+
+    // Dates: local time (age)
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let created_age = crate::util::format_date(&issue.created_at, "relative");
+    let updated_age = crate::util::format_date(&issue.updated_at, "relative");
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::bold("Created:", theme.text_secondary),
+        StyledSpan::text(
+            format!(
+                " {}",
+                issue.created_at.with_timezone(&chrono::Local).format(fmt)
+            ),
+            theme.text_faint,
+        ),
+        StyledSpan::text(" (", theme.text_faint),
+        StyledSpan::text(created_age, theme.text_secondary),
+        StyledSpan::text(")", theme.text_faint),
+    ]));
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::bold("Updated:", theme.text_secondary),
+        StyledSpan::text(
+            format!(
+                " {}",
+                issue.updated_at.with_timezone(&chrono::Local).format(fmt)
+            ),
+            theme.text_faint,
+        ),
+        StyledSpan::text(" (", theme.text_faint),
+        StyledSpan::text(updated_age, theme.text_secondary),
+        StyledSpan::text(")", theme.text_faint),
+    ]));
 
     // Blank line between metadata and reactions
     lines.push(StyledLine::blank());

@@ -11,6 +11,7 @@ use crate::color::{Color as AppColor, ColorDepth};
 pub struct Tab {
     pub title: String,
     pub count: Option<usize>,
+    pub is_ephemeral: bool,
 }
 
 /// Pre-rendered tab data (all owned, no lifetime issues).
@@ -52,14 +53,15 @@ impl RenderedTabBar {
             .iter()
             .enumerate()
             .map(|(i, tab)| {
+                let ephemeral_prefix = if tab.is_ephemeral { "\u{25cc} " } else { "" };
                 let label = if show_count {
                     if let Some(count) = tab.count {
-                        format!(" {icon_prefix}{} ({}) ", tab.title, count)
+                        format!(" {ephemeral_prefix}{icon_prefix}{} ({}) ", tab.title, count)
                     } else {
-                        format!(" {icon_prefix}{} ", tab.title)
+                        format!(" {ephemeral_prefix}{icon_prefix}{} ", tab.title)
                     }
                 } else {
-                    format!(" {icon_prefix}{} ", tab.title)
+                    format!(" {ephemeral_prefix}{icon_prefix}{} ", tab.title)
                 };
                 RenderedTab {
                     label,

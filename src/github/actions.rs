@@ -141,6 +141,10 @@ struct RawStep {
     #[serde(default)]
     conclusion: Option<String>,
     number: u32,
+    #[serde(default)]
+    started_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    completed_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -220,6 +224,8 @@ pub async fn fetch_run_jobs(
                     status: s.status.as_deref().map_or(RunStatus::Unknown, parse_status),
                     conclusion: s.conclusion.as_deref().map(parse_conclusion),
                     number: s.number,
+                    started_at: s.started_at,
+                    completed_at: s.completed_at,
                 })
                 .collect(),
         })

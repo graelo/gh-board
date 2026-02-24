@@ -2,9 +2,10 @@ use crate::color::{Color as AppColor, ColorDepth};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::{
-    CheckConclusion, CheckStatus, CommitCheckState, FileChangeType, Issue, IssueDetail, PrDetail,
-    PullRequest, ReviewState, TimelineEvent,
+    CheckConclusion, CheckRun, CheckStatus, CommitCheckState, FileChangeType, Issue, IssueDetail,
+    PrDetail, PullRequest, ReviewState, TimelineEvent,
 };
+use unicode_width::UnicodeWidthStr;
 
 // ---------------------------------------------------------------------------
 // T073: Overview tab
@@ -303,7 +304,7 @@ pub fn render_commits(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLin
 // T076: Checks tab
 // ---------------------------------------------------------------------------
 
-/// Render the Checks tab: list of check runs with status icons.
+/// Render the Checks tab: check runs grouped by workflow, with duration column.
 pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine> {
     let mut lines = Vec::new();
 
@@ -315,15 +316,69 @@ pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine>
         return lines;
     }
 
-    for check in &pr.check_runs {
-        let (icon, icon_color) = check_status_icon(check.status, check.conclusion, theme);
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::text(format!("{icon} "), icon_color),
-            StyledSpan::text(&check.name, theme.text_primary),
-        ]));
+    // Group checks by workflow_name, preserving insertion order via IndexMap-like Vec.
+    let groups = group_checks_by_workflow(&pr.check_runs);
+
+    // Global max name width across ALL checks for uniform duration column.
+    let max_name_w = pr
+        .check_runs
+        .iter()
+        .map(|c| UnicodeWidthStr::width(c.name.as_str()))
+        .max()
+        .unwrap_or(0);
+
+    for (i, (wf_name, checks)) in groups.iter().enumerate() {
+        if i > 0 {
+            lines.push(StyledLine::blank());
+        }
+        // Header line
+        let header = wf_name.as_deref().unwrap_or("(other)");
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            header,
+            theme.text_faint,
+        )));
+
+        for check in checks {
+            let (icon, icon_color) = check_status_icon(check.status, check.conclusion, theme);
+            let dur = crate::util::format_duration(check.started_at, check.completed_at);
+            let mut spans = vec![
+                StyledSpan::text("  ", theme.text_primary),
+                StyledSpan::text(format!("{icon} "), icon_color),
+                StyledSpan::text(&check.name, theme.text_primary),
+            ];
+            if !dur.is_empty() {
+                let name_w = UnicodeWidthStr::width(check.name.as_str());
+                let pad = max_name_w - name_w + 2;
+                spans.push(StyledSpan::text(
+                    format!("{:pad$}{dur}", "", pad = pad),
+                    theme.text_faint,
+                ));
+            }
+            lines.push(StyledLine::from_spans(spans));
+        }
     }
 
     lines
+}
+
+/// Group check runs by `workflow_name`, keeping insertion order.
+/// The `None`-keyed group (non-Actions checks) is placed last.
+fn group_checks_by_workflow(checks: &[CheckRun]) -> Vec<(Option<String>, Vec<&CheckRun>)> {
+    let mut groups: Vec<(Option<String>, Vec<&CheckRun>)> = Vec::new();
+    for check in checks {
+        let key = &check.workflow_name;
+        if let Some(pos) = groups.iter().position(|(k, _)| k == key) {
+            groups[pos].1.push(check);
+        } else {
+            groups.push((key.clone(), vec![check]));
+        }
+    }
+    // Move the None-keyed group to the end.
+    if let Some(pos) = groups.iter().position(|(k, _)| k.is_none()) {
+        let none_group = groups.remove(pos);
+        groups.push(none_group);
+    }
+    groups
 }
 
 fn commit_check_state_icon(state: CommitCheckState, theme: &ResolvedTheme) -> (String, AppColor) {

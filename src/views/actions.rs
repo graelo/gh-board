@@ -22,6 +22,7 @@ use crate::engine::{EngineHandle, Event, Request};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::{RateLimitInfo, RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
+use unicode_width::UnicodeWidthStr;
 
 // ---------------------------------------------------------------------------
 // Column definitions
@@ -234,23 +235,6 @@ fn owner_repo_for_run(
     })
 }
 
-fn format_job_duration(
-    started_at: Option<chrono::DateTime<chrono::Utc>>,
-    completed_at: Option<chrono::DateTime<chrono::Utc>>,
-) -> String {
-    let (Some(start), Some(end)) = (started_at, completed_at) else {
-        return String::new();
-    };
-    let secs = (end - start).num_seconds().max(0).cast_unsigned();
-    if secs < 60 {
-        format!("{secs}s")
-    } else {
-        let m = secs / 60;
-        let s = secs % 60;
-        format!("{m}m {s}s")
-    }
-}
-
 fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) -> Vec<StyledLine> {
     let mut lines = Vec::new();
     if loading {
@@ -269,7 +253,7 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
     }
     for job in jobs {
         let (icon, color) = run_status_icon_color(job.status, job.conclusion, theme);
-        let duration = format_job_duration(job.started_at, job.completed_at);
+        let duration = crate::util::format_duration(job.started_at, job.completed_at);
         let dur_text = if duration.is_empty() {
             String::new()
         } else {
@@ -280,14 +264,30 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
             StyledSpan::text(format!("  {}", job.name), theme.text_primary),
             StyledSpan::text(dur_text, theme.text_faint),
         ]));
+        let max_step_name_width = job
+            .steps
+            .iter()
+            .map(|s| UnicodeWidthStr::width(s.name.as_str()))
+            .max()
+            .unwrap_or(0);
         for step in &job.steps {
             let (step_icon, step_color) =
                 run_status_icon_color(step.status, step.conclusion, theme);
-            lines.push(StyledLine::from_spans(vec![
+            let step_dur = crate::util::format_duration(step.started_at, step.completed_at);
+            let mut spans = vec![
                 StyledSpan::text("   ", theme.text_faint),
                 StyledSpan::text(step_icon, step_color),
                 StyledSpan::text(format!("  {}", step.name), theme.text_secondary),
-            ]));
+            ];
+            if !step_dur.is_empty() {
+                let name_w = UnicodeWidthStr::width(step.name.as_str());
+                let pad = max_step_name_width - name_w + 2;
+                spans.push(StyledSpan::text(
+                    format!("{:pad$}{step_dur}", "", pad = pad),
+                    theme.text_faint,
+                ));
+            }
+            lines.push(StyledLine::from_spans(spans));
         }
     }
     lines

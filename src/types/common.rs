@@ -131,6 +131,10 @@ pub struct CheckRun {
     /// Workflow display name (e.g., "Essentials"); `None` for non-Actions checks.
     #[serde(default)]
     pub workflow_name: Option<String>,
+    #[serde(default)]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub completed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

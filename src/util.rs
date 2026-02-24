@@ -13,6 +13,27 @@ pub(crate) fn format_date(dt: &DateTime<Utc>, date_format: &str) -> String {
     }
 }
 
+/// Format the elapsed duration between two optional timestamps.
+///
+/// Returns e.g. `"12s"`, `"2m 05s"`, or an empty string when either timestamp
+/// is `None`.
+pub(crate) fn format_duration(
+    started_at: Option<DateTime<Utc>>,
+    completed_at: Option<DateTime<Utc>>,
+) -> String {
+    let (Some(start), Some(end)) = (started_at, completed_at) else {
+        return String::new();
+    };
+    let secs = (end - start).num_seconds().max(0).cast_unsigned();
+    if secs < 60 {
+        format!("{secs}s")
+    } else {
+        let m = secs / 60;
+        let s = secs % 60;
+        format!("{m}m {s:02}s")
+    }
+}
+
 /// Format a datetime as relative time (e.g., `"2h"`, `"3d"`, `"1w"`).
 fn format_relative_time(dt: &DateTime<Utc>) -> String {
     let now = Utc::now();

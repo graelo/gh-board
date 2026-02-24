@@ -54,6 +54,8 @@ fn test_pr() -> PullRequest {
                 url: None,
                 workflow_run_id: None,
                 workflow_name: None,
+                started_at: None,
+                completed_at: None,
             },
             CheckRun {
                 name: "Lint".to_owned(),
@@ -62,6 +64,8 @@ fn test_pr() -> PullRequest {
                 url: None,
                 workflow_run_id: None,
                 workflow_name: None,
+                started_at: None,
+                completed_at: None,
             },
         ],
         updated_at: Utc::now(),
@@ -394,4 +398,134 @@ fn files_empty_shows_placeholder() {
         .map(|s| s.text.as_str())
         .collect();
     assert!(text.contains("no files changed"));
+}
+
+// ---------------------------------------------------------------------------
+// Checks: workflow grouping + duration
+// ---------------------------------------------------------------------------
+
+#[test]
+fn checks_grouped_by_workflow() {
+    use chrono::{Duration, Utc};
+
+    let mut pr = test_pr();
+    let now = Utc::now();
+    pr.check_runs = vec![
+        CheckRun {
+            name: "build".to_owned(),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Success),
+            url: None,
+            workflow_run_id: Some(1),
+            workflow_name: Some("CI".to_owned()),
+            started_at: Some(now - Duration::seconds(90)),
+            completed_at: Some(now),
+        },
+        CheckRun {
+            name: "test".to_owned(),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Success),
+            url: None,
+            workflow_run_id: Some(1),
+            workflow_name: Some("CI".to_owned()),
+            started_at: Some(now - Duration::seconds(45)),
+            completed_at: Some(now),
+        },
+        CheckRun {
+            name: "deploy".to_owned(),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Success),
+            url: None,
+            workflow_run_id: Some(2),
+            workflow_name: Some("Deploy".to_owned()),
+            started_at: Some(now - Duration::seconds(5)),
+            completed_at: Some(now),
+        },
+        CheckRun {
+            name: "external-check".to_owned(),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Success),
+            url: None,
+            workflow_run_id: None,
+            workflow_name: None,
+            started_at: None,
+            completed_at: None,
+        },
+    ];
+
+    let theme = test_theme();
+    let lines = sidebar_tabs::render_checks(&pr, &theme);
+    let text: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.text.as_str())
+        .collect();
+
+    // Group headers appear
+    assert!(text.contains("CI"), "should contain CI workflow header");
+    assert!(
+        text.contains("Deploy"),
+        "should contain Deploy workflow header"
+    );
+    assert!(
+        text.contains("(other)"),
+        "should contain (other) group header for workflow_name=None"
+    );
+
+    // Durations appear for completed checks with timestamps
+    assert!(text.contains("1m 30s"), "build should show 1m 30s");
+    assert!(text.contains("45s"), "test should show 45s");
+    assert!(text.contains("5s"), "deploy should show 5s");
+
+    // Check names appear
+    assert!(text.contains("build"));
+    assert!(text.contains("test"));
+    assert!(text.contains("deploy"));
+    assert!(text.contains("external-check"));
+
+    // Blank lines separate groups (blank = all spans empty or whitespace-only)
+    let blank_count = lines
+        .iter()
+        .filter(|l| l.spans.is_empty() || l.spans.iter().all(|s| s.text.trim().is_empty()))
+        .count();
+    assert!(
+        blank_count >= 2,
+        "expected at least 2 blank lines between 3 groups, got {blank_count}"
+    );
+
+    // Durations are globally aligned: the padding before each duration should
+    // account for the longest name across all groups ("external-check" = 14 chars)
+    // so shorter names get more padding. Verify "build" line has more spaces
+    // before "1m 30s" than "external-check" line would.
+    for line in &lines {
+        let line_text: String = line.spans.iter().map(|s| s.text.as_str()).collect();
+        if line_text.contains("build") && line_text.contains("1m 30s") {
+            // "build" is 5 chars, "external-check" is 14 chars → 9 extra spaces of padding
+            // plus the base 2 = 11 spaces between "build" and "1m 30s"
+            let idx = line_text.find("1m 30s").unwrap();
+            let before_dur = &line_text[..idx];
+            let trailing_spaces = before_dur.len() - before_dur.trim_end().len();
+            assert!(
+                trailing_spaces >= 5,
+                "expected global alignment padding, got {trailing_spaces} spaces before duration"
+            );
+        }
+    }
+}
+
+#[test]
+fn checks_with_no_workflow_all_in_other_group() {
+    let pr = test_pr(); // all check_runs have workflow_name: None
+    let theme = test_theme();
+    let lines = sidebar_tabs::render_checks(&pr, &theme);
+    let text: String = lines
+        .iter()
+        .flat_map(|l| l.spans.iter())
+        .map(|s| s.text.as_str())
+        .collect();
+
+    // Single (other) group header
+    assert!(text.contains("(other)"));
+    assert!(text.contains("CI Build"));
+    assert!(text.contains("Lint"));
 }

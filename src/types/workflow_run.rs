@@ -42,6 +42,10 @@ pub struct JobStep {
     pub status: RunStatus,
     pub conclusion: Option<RunConclusion>,
     pub number: u32,
+    #[serde(default)]
+    pub started_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub completed_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

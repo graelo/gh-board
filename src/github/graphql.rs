@@ -71,7 +71,7 @@ query SearchPullRequests($query: String!, $first: Int!, $after: String) {
                 contexts(first: 50) {
                   nodes {
                     ... on CheckRun {
-                      name status conclusion detailsUrl
+                      name status conclusion detailsUrl startedAt completedAt
                       checkSuite {
                         workflowRun {
                           databaseId
@@ -549,6 +549,10 @@ struct RawCheckContext {
     conclusion: Option<CheckConclusion>,
     #[serde(rename = "detailsUrl")]
     details_url: Option<String>,
+    #[serde(rename = "startedAt")]
+    started_at: Option<DateTime<Utc>>,
+    #[serde(rename = "completedAt")]
+    completed_at: Option<DateTime<Utc>>,
     #[serde(rename = "checkSuite")]
     check_suite: Option<RawCheckSuite>,
     // StatusContext fields
@@ -725,6 +729,8 @@ impl RawPullRequest {
                             url,
                             workflow_run_id,
                             workflow_name,
+                            started_at: ctx.started_at,
+                            completed_at: ctx.completed_at,
                         }
                     })
                     .collect()

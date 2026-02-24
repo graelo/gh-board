@@ -194,6 +194,9 @@ enum InputMode {
 
 const NAV_W: u16 = 28;
 
+/// Maximum number of ephemeral tabs (session-scoped, created by deep-linking).
+const MAX_EPHEMERAL_TABS: usize = 5;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -233,6 +236,16 @@ fn owner_repo_for_run(
                 .map(|(o, r)| (o.to_owned(), r.to_owned()))
         })
     })
+}
+
+/// Build a merged list of (filter, `is_ephemeral`) from config + ephemeral filters.
+fn merged_filters<'a>(
+    config: &'a [ActionsFilter],
+    ephemeral: &'a [(ActionsFilter, Option<u64>)],
+) -> Vec<(&'a ActionsFilter, bool)> {
+    let mut out: Vec<_> = config.iter().map(|f| (f, false)).collect();
+    out.extend(ephemeral.iter().map(|(f, _)| (f, true)));
+    out
 }
 
 fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) -> Vec<StyledLine> {
@@ -357,8 +370,9 @@ pub fn ActionsView<'a>(
     let mut jobs_cache = hooks.use_state(HashMap::<u64, Vec<WorkflowJob>>::new);
     let mut jobs_in_flight = hooks.use_state(HashSet::<u64>::new);
 
-    // State: pinned run fetched by ID when the deep-linked run is not in any filter.
-    let mut pinned_run = hooks.use_state(|| Option::<WorkflowRun>::None);
+    // State: ephemeral tabs created by deep-linking to repos without config tabs.
+    // Each entry is (filter, optional pending run_id to highlight after fetch).
+    let mut ephemeral_filters = hooks.use_state(Vec::<(ActionsFilter, Option<u64>)>::new);
 
     let mut action_status = hooks.use_state(|| Option::<String>::None);
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
@@ -381,7 +395,11 @@ pub fn ActionsView<'a>(
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     let engine: Option<crate::engine::EngineHandle> = props.engine.cloned();
 
-    let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
+    let eph_snapshot = ephemeral_filters.read().clone();
+    let ephemeral_count = eph_snapshot.len();
+    let total_tab_count = filter_count + ephemeral_count;
+    let current_filter_idx = active_filter.get().min(total_tab_count.saturating_sub(1));
+    let all_filters = merged_filters(filters_cfg, &eph_snapshot);
 
     let active_needs_fetch = actions_state
         .read()
@@ -426,17 +444,21 @@ pub fn ActionsView<'a>(
     {
         refresh_all.set(false);
         let mut in_flight = filter_in_flight.read().clone();
-        for (filter_idx, cfg) in filters_cfg.iter().enumerate() {
+        for (filter_idx, (cfg, is_eph)) in all_filters.iter().enumerate() {
             let Some(resolved_repo) = resolve_filter_repo(&cfg.repo, scope_repo.as_deref()) else {
-                tracing::debug!("actions: skipping @current filter[{filter_idx}] — no scope repo");
+                if !is_eph {
+                    tracing::debug!(
+                        "actions: skipping @current filter[{filter_idx}] — no scope repo"
+                    );
+                }
                 continue;
             };
             let filter = if resolved_repo == cfg.repo.as_str() {
-                cfg.clone()
+                (*cfg).clone()
             } else {
                 ActionsFilter {
                     repo: resolved_repo.to_owned(),
-                    ..cfg.clone()
+                    ..(*cfg).clone()
                 }
             };
             if filter_idx < in_flight.len() {
@@ -452,43 +474,41 @@ pub fn ActionsView<'a>(
     } else if active_needs_fetch
         && !active_in_flight
         && is_active
-        && let Some(cfg) = filters_cfg.get(current_filter_idx)
-        && let Some(resolved_repo) = resolve_filter_repo(&cfg.repo, scope_repo.as_deref())
         && let Some(ref eng) = engine
     {
-        let filter = if resolved_repo == cfg.repo.as_str() {
-            cfg.clone()
-        } else {
-            ActionsFilter {
-                repo: resolved_repo.to_owned(),
-                ..cfg.clone()
+        // Look up the active filter from the merged list (config + ephemeral).
+        if let Some((cfg, _is_eph)) = all_filters.get(current_filter_idx) {
+            if let Some(resolved_repo) = resolve_filter_repo(&cfg.repo, scope_repo.as_deref()) {
+                let filter = if resolved_repo == cfg.repo.as_str() {
+                    (*cfg).clone()
+                } else {
+                    ActionsFilter {
+                        repo: resolved_repo.to_owned(),
+                        ..(*cfg).clone()
+                    }
+                };
+                let mut in_flight = filter_in_flight.read().clone();
+                if current_filter_idx < in_flight.len() {
+                    in_flight[current_filter_idx] = true;
+                }
+                filter_in_flight.set(in_flight);
+                eng.send(Request::FetchActions {
+                    filter_idx: current_filter_idx,
+                    filter,
+                    reply_tx: event_tx.clone(),
+                });
+            } else {
+                // `@current` filter with no scope resolved — clear loading to show empty tab.
+                tracing::debug!(
+                    "actions: @current filter[{current_filter_idx}] — no scope, clearing loading state"
+                );
+                let mut state = actions_state.read().clone();
+                if current_filter_idx < state.filters.len() {
+                    state.filters[current_filter_idx].loading = false;
+                }
+                actions_state.set(state);
             }
-        };
-        let mut in_flight = filter_in_flight.read().clone();
-        if current_filter_idx < in_flight.len() {
-            in_flight[current_filter_idx] = true;
         }
-        filter_in_flight.set(in_flight);
-        eng.send(Request::FetchActions {
-            filter_idx: current_filter_idx,
-            filter,
-            reply_tx: event_tx.clone(),
-        });
-    } else if active_needs_fetch
-        && !active_in_flight
-        && is_active
-        && let Some(cfg) = filters_cfg.get(current_filter_idx)
-        && resolve_filter_repo(&cfg.repo, scope_repo.as_deref()).is_none()
-    {
-        // `@current` filter with no scope resolved — clear loading to show empty tab.
-        tracing::debug!(
-            "actions: @current filter[{current_filter_idx}] — no scope, clearing loading state"
-        );
-        let mut state = actions_state.read().clone();
-        if current_filter_idx < state.filters.len() {
-            state.filters[current_filter_idx].loading = false;
-        }
-        actions_state.set(state);
     }
 
     // Poll engine events.
@@ -594,17 +614,39 @@ pub fn ActionsView<'a>(
                             rate_limit,
                         } => {
                             if let Some(fetched) = run {
-                                pinned_run.set(Some(fetched));
-                                // Auto-select the pinned run.
-                                cursor.set(0);
-                                scroll_offset.set(0);
-                                detail_open.set(true);
-                                detail_scroll.set(0);
+                                // Insert the fetched run into the ephemeral tab that
+                                // requested it (matched by pending run_id).
+                                let eph = ephemeral_filters.read().clone();
+                                let eph_idx = eph.iter().position(|(_, pending)| {
+                                    pending.is_some_and(|id| id == run_id)
+                                });
+                                if let Some(ei) = eph_idx {
+                                    let tab_idx = filter_count + ei;
+                                    let mut state = actions_state.read().clone();
+                                    if let Some(fd) = state.filters.get_mut(tab_idx) {
+                                        // Prepend if not already present.
+                                        if !fd.runs.iter().any(|r| r.id == fetched.id) {
+                                            fd.rows
+                                                .insert(0, run_to_row(&fetched, &theme_for_poll));
+                                            fd.runs.insert(0, fetched);
+                                            fd.run_count = fd.runs.len();
+                                        }
+                                    }
+                                    actions_state.set(state);
+                                    // Clear the pending run_id.
+                                    let mut eph_mut = eph;
+                                    eph_mut[ei].1 = None;
+                                    ephemeral_filters.set(eph_mut);
+                                    // Position cursor on the run.
+                                    cursor.set(0);
+                                    scroll_offset.set(0);
+                                    detail_open.set(true);
+                                    detail_scroll.set(0);
+                                }
                             } else {
                                 action_status.set(Some(format!(
                                     "Run #{run_id} not found (deleted or inaccessible)"
                                 )));
-                                pinned_run.set(None);
                             }
                             if let Some(rl) = rate_limit {
                                 rate_limit_state.set(Some(rl));
@@ -651,8 +693,14 @@ pub fn ActionsView<'a>(
 
     if is_active && let Some(ref nt_state) = nav_target_prop {
         let target = nt_state.read().clone();
-        if let Some(NavigationTarget::ActionsRun { run_id, .. }) = target {
-            // Search all loaded filter data for this run.
+        if let Some(NavigationTarget::ActionsRun {
+            ref owner,
+            ref repo,
+            run_id,
+            ref host,
+        }) = target
+        {
+            // 1. Search all loaded filter data (config + ephemeral) for this run.
             let found = {
                 let state = actions_state.read();
                 state.filters.iter().enumerate().find_map(|(fi, fd)| {
@@ -665,42 +713,124 @@ pub fn ActionsView<'a>(
                         .map(|pos| (fi, pos))
                 })
             };
+
             if let Some((filter_idx, run_pos)) = found {
-                pinned_run.set(None);
+                // Run found in an existing tab — switch to it.
                 active_filter.set(filter_idx);
                 cursor.set(run_pos);
                 scroll_offset.set(run_pos.saturating_sub(5));
                 detail_open.set(true);
                 detail_scroll.set(0);
-                // Reset search and workflow nav to avoid stale filtering.
                 search_query.set(String::new());
                 nav_cursor.set(0);
                 nav_focused.set(false);
-                // Clear nav_target to prevent re-processing.
                 if let Some(mut nt) = nav_target_prop {
                     nt.set(None);
                 }
             } else {
-                // Check if any filter is still loading.
+                // 2. Check if any filter is still loading — wait.
                 let any_in_flight = filter_in_flight.read().iter().any(|&f| f);
                 if !any_in_flight {
-                    // All filters loaded but run not found — fetch by ID.
-                    if let Some(NavigationTarget::ActionsRun {
-                        ref owner,
-                        ref repo,
-                        run_id,
-                        ref host,
-                    }) = *nt_state.read()
-                        && let Some(ref eng) = engine
-                    {
-                        eng.send(Request::FetchRunById {
-                            owner: owner.clone(),
-                            repo: repo.clone(),
-                            run_id,
+                    // 3. All loaded, run not found.
+                    let full_repo = format!("{owner}/{repo}");
+
+                    // Check if an ephemeral tab for this repo already exists.
+                    let existing_eph = {
+                        let eph = ephemeral_filters.read();
+                        eph.iter()
+                            .position(|(f, _)| f.repo == full_repo)
+                            .map(|ei| filter_count + ei)
+                    };
+
+                    if let Some(tab_idx) = existing_eph {
+                        // Ephemeral tab exists — switch to it. If the run isn't
+                        // there, fetch it by ID into this tab.
+                        active_filter.set(tab_idx);
+                        cursor.set(0);
+                        scroll_offset.set(0);
+                        search_query.set(String::new());
+                        nav_cursor.set(0);
+                        nav_focused.set(false);
+
+                        let run_in_tab = {
+                            let state = actions_state.read();
+                            state
+                                .filters
+                                .get(tab_idx)
+                                .is_some_and(|fd| fd.runs.iter().any(|r| r.id == run_id))
+                        };
+                        if run_in_tab {
+                            let pos = {
+                                let state = actions_state.read();
+                                state.filters[tab_idx]
+                                    .runs
+                                    .iter()
+                                    .position(|r| r.id == run_id)
+                                    .unwrap_or(0)
+                            };
+                            cursor.set(pos);
+                            scroll_offset.set(pos.saturating_sub(5));
+                            detail_open.set(true);
+                            detail_scroll.set(0);
+                        } else {
+                            // Mark pending run_id on this ephemeral entry.
+                            let ei = tab_idx - filter_count;
+                            let mut eph = ephemeral_filters.read().clone();
+                            eph[ei].1 = Some(run_id);
+                            ephemeral_filters.set(eph);
+                            if let Some(ref eng) = engine {
+                                eng.send(Request::FetchRunById {
+                                    owner: owner.clone(),
+                                    repo: repo.clone(),
+                                    run_id,
+                                    host: host.clone(),
+                                    reply_tx: event_tx.clone(),
+                                });
+                            }
+                        }
+                    } else if ephemeral_filters.read().len() < MAX_EPHEMERAL_TABS {
+                        // Create new ephemeral tab.
+                        let new_filter = ActionsFilter {
+                            title: full_repo.clone(),
+                            repo: full_repo,
                             host: host.clone(),
-                            reply_tx: event_tx.clone(),
-                        });
+                            limit: None,
+                            status: None,
+                            event: None,
+                        };
+                        let mut eph = ephemeral_filters.read().clone();
+                        eph.push((new_filter, Some(run_id)));
+                        let new_tab_idx = filter_count + eph.len() - 1;
+                        ephemeral_filters.set(eph);
+
+                        // Grow state vectors for the new tab.
+                        let mut state = actions_state.read().clone();
+                        state.filters.push(FilterData::default());
+                        actions_state.set(state);
+                        let mut in_flight = filter_in_flight.read().clone();
+                        in_flight.push(false);
+                        filter_in_flight.set(in_flight);
+                        let mut times = filter_fetch_times.read().clone();
+                        times.push(None);
+                        filter_fetch_times.set(times);
+
+                        // Switch to the new tab and trigger fetch.
+                        active_filter.set(new_tab_idx);
+                        cursor.set(0);
+                        scroll_offset.set(0);
+                        search_query.set(String::new());
+                        nav_cursor.set(0);
+                        nav_focused.set(false);
+
+                        // FetchActions will be triggered by the active_needs_fetch
+                        // logic on the next render cycle (the new FilterData has
+                        // loading: true by default).
+                    } else {
+                        action_status.set(Some(
+                            "Too many ephemeral tabs \u{2014} close one first (d)".to_owned(),
+                        ));
                     }
+
                     if let Some(mut nt) = nav_target_prop {
                         nt.set(None);
                     }
@@ -770,38 +900,27 @@ pub fn ActionsView<'a>(
             .collect()
     };
 
-    let mut filtered_rows: Vec<Row> = filtered_run_indices
+    let filtered_rows: Vec<Row> = filtered_run_indices
         .iter()
         .filter_map(|&i| all_rows.get(i))
         .cloned()
         .collect();
-
-    // Prepend pinned run (fetched by ID for out-of-filter deep-link).
-    if let Some(ref run) = *pinned_run.read() {
-        filtered_rows.insert(0, run_to_row(run, &theme));
-    }
 
     let total_rows = filtered_rows.len();
     let visible_rows = (props.height.saturating_sub(5) / 2).max(1) as usize;
 
     // Clone for keyboard handler capture.
     let filtered_run_indices_for_kb = filtered_run_indices.clone();
-    let current_filter_cfg_for_kb = filters_cfg.get(current_filter_idx).cloned();
+    // Resolve current filter from the merged list (config + ephemeral).
+    let current_filter_cfg_for_kb: Option<ActionsFilter> = all_filters
+        .get(current_filter_idx)
+        .map(|(f, _)| (*f).clone());
 
     // Trigger job fetch when detail sidebar is open.
-    // Accounts for pinned run (prepended at index 0) by adjusting cursor.
-    let has_pinned = pinned_run.read().is_some();
-    let pinned_offset: usize = usize::from(has_pinned);
-
-    let cur_run_for_fetch: Option<WorkflowRun> = if has_pinned && cursor.get() == 0 {
-        pinned_run.read().clone()
-    } else {
-        let adjusted = cursor.get().saturating_sub(pinned_offset);
-        filtered_run_indices
-            .get(adjusted)
-            .and_then(|&orig_idx| current_data.and_then(|d| d.runs.get(orig_idx)))
-            .cloned()
-    };
+    let cur_run_for_fetch: Option<WorkflowRun> = filtered_run_indices
+        .get(cursor.get())
+        .and_then(|&orig_idx| current_data.and_then(|d| d.runs.get(orig_idx)))
+        .cloned();
 
     if detail_open.get()
         && is_active
@@ -812,10 +931,10 @@ pub fn ActionsView<'a>(
             && !jobs_cache.read().contains_key(&run_id)
             && let Some(ref eng) = engine
             && let Some((owner, repo)) =
-                owner_repo_for_run(cur_run, filters_cfg.get(current_filter_idx))
+                owner_repo_for_run(cur_run, current_filter_cfg_for_kb.as_ref())
         {
-            let host = filters_cfg
-                .get(current_filter_idx)
+            let host = current_filter_cfg_for_kb
+                .as_ref()
                 .and_then(|f| f.host.clone());
             eng.send(Request::FetchRunJobs {
                 owner,
@@ -1051,7 +1170,6 @@ pub fn ActionsView<'a>(
                                         // a new FetchRunJobs from being sent).
                                         jobs_cache.set(HashMap::new());
                                         jobs_in_flight.set(HashSet::new());
-                                        pinned_run.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -1066,7 +1184,6 @@ pub fn ActionsView<'a>(
                                         filter_fetch_times.set(times);
                                         jobs_cache.set(HashMap::new());
                                         jobs_in_flight.set(HashSet::new());
-                                        pinned_run.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);
@@ -1147,7 +1264,6 @@ pub fn ActionsView<'a>(
                                         }
                                     }
                                     BuiltinAction::GoBack => {
-                                        pinned_run.set(None);
                                         detail_open.set(false);
                                         if let Some(mut gb) = go_back_prop {
                                             gb.set(true);
@@ -1233,25 +1349,64 @@ pub fn ActionsView<'a>(
                                         }
                                     }
                                     BuiltinAction::PrevFilter => {
-                                        if filter_count > 0 {
+                                        if total_tab_count > 0 {
                                             let current = active_filter.get();
                                             active_filter.set(if current == 0 {
-                                                filter_count.saturating_sub(1)
+                                                total_tab_count.saturating_sub(1)
                                             } else {
                                                 current - 1
                                             });
-                                            pinned_run.set(None);
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         }
                                     }
                                     BuiltinAction::NextFilter => {
-                                        if filter_count > 0 {
+                                        if total_tab_count > 0 {
                                             active_filter
-                                                .set((active_filter.get() + 1) % filter_count);
-                                            pinned_run.set(None);
+                                                .set((active_filter.get() + 1) % total_tab_count);
                                             cursor.set(0);
                                             scroll_offset.set(0);
+                                        }
+                                    }
+                                    BuiltinAction::CloseTab => {
+                                        if current_filter_idx >= filter_count {
+                                            // Ephemeral tab — remove it.
+                                            let ei = current_filter_idx - filter_count;
+                                            let mut eph = ephemeral_filters.read().clone();
+                                            debug_assert!(
+                                                ei < eph.len(),
+                                                "ephemeral index out of range"
+                                            );
+                                            eph.remove(ei);
+                                            let new_total = filter_count + eph.len();
+                                            ephemeral_filters.set(eph);
+
+                                            // Remove from state vectors.
+                                            let mut state = actions_state.read().clone();
+                                            if current_filter_idx < state.filters.len() {
+                                                state.filters.remove(current_filter_idx);
+                                            }
+                                            actions_state.set(state);
+                                            let mut in_flight = filter_in_flight.read().clone();
+                                            if current_filter_idx < in_flight.len() {
+                                                in_flight.remove(current_filter_idx);
+                                            }
+                                            filter_in_flight.set(in_flight);
+                                            let mut times = filter_fetch_times.read().clone();
+                                            if current_filter_idx < times.len() {
+                                                times.remove(current_filter_idx);
+                                            }
+                                            filter_fetch_times.set(times);
+
+                                            // Clamp active filter.
+                                            if active_filter.get() >= new_total && new_total > 0 {
+                                                active_filter.set(new_total - 1);
+                                            }
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                        } else {
+                                            action_status
+                                                .set(Some("Cannot close config tabs".to_owned()));
                                         }
                                     }
                                     _ => {}
@@ -1313,12 +1468,13 @@ pub fn ActionsView<'a>(
     // Build rendered components
     // -----------------------------------------------------------------------
 
-    let tabs: Vec<Tab> = filters_cfg
+    let tabs: Vec<Tab> = all_filters
         .iter()
         .enumerate()
-        .map(|(i, s)| Tab {
-            title: s.title.clone(),
+        .map(|(i, (f, is_eph))| Tab {
+            title: f.title.clone(),
             count: state_ref.filters.get(i).map(|d| d.run_count),
+            is_ephemeral: *is_eph,
         })
         .collect();
 
@@ -1406,9 +1562,9 @@ pub fn ActionsView<'a>(
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
     let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
-    let scope_label = filters_cfg
+    let scope_label = all_filters
         .get(current_filter_idx)
-        .map_or_else(String::new, |f| {
+        .map_or_else(String::new, |(f, _)| {
             resolve_filter_repo(&f.repo, scope_repo.as_deref())
                 .unwrap_or("@current")
                 .to_owned()

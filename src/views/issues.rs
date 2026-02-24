@@ -1143,6 +1143,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         .map(|(i, s)| Tab {
             title: s.title.clone(),
             count: state_ref.filters.get(i).map(|d| d.issue_count),
+            is_ephemeral: false,
         })
         .collect();
 

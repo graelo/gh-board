@@ -1735,6 +1735,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .map(|(i, s)| Tab {
             title: s.title.clone(),
             count: state_ref.filters.get(i).map(|d| d.pr_count),
+            is_ephemeral: false,
         })
         .collect();
 

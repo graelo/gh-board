@@ -838,6 +838,7 @@ pub fn NotificationsView<'a>(
         .map(|(i, s)| Tab {
             title: s.title.clone(),
             count: state_ref.filters.get(i).map(|d| d.notification_count),
+            is_ephemeral: false,
         })
         .collect();
 

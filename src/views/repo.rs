@@ -666,6 +666,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let tabs = vec![Tab {
         title: "Branches".to_owned(),
         count: Some(total_rows),
+        is_ephemeral: false,
     }];
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,

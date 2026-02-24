@@ -85,6 +85,7 @@ pub enum BuiltinAction {
     // Cross-view navigation
     JumpToRun,
     GoBack,
+    CloseTab,
 }
 
 impl BuiltinAction {
@@ -138,6 +139,7 @@ impl BuiltinAction {
             "cancel_run" => Self::CancelRun,
             "jump_to_run" => Self::JumpToRun,
             "go_back" => Self::GoBack,
+            "close_tab" => Self::CloseTab,
             _ => return None,
         })
     }
@@ -191,6 +193,7 @@ impl BuiltinAction {
             Self::CancelRun => "Cancel run",
             Self::JumpToRun => "Jump to Actions run",
             Self::GoBack => "Go back to previous view",
+            Self::CloseTab => "Close ephemeral tab",
         }
     }
 }
@@ -359,6 +362,7 @@ pub(crate) fn default_actions() -> Vec<Keybinding> {
     vec![
         kb("w", "toggle_workflow_nav", "Toggle workflow navigator"),
         kb("ctrl+t", "go_back", "Go back to previous view"),
+        kb("d", "close_tab", "Close ephemeral tab"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("e", "rerun_failed", "Re-run failed jobs"),

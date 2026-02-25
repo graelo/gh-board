@@ -107,9 +107,11 @@ fn notification_to_row(
 
     // Title.
     if notification.unread {
-        row.insert("title".to_owned(), Cell::bold(&notification.subject_title));
+        let expanded = crate::util::expand_emoji(&notification.subject_title);
+        row.insert("title".to_owned(), Cell::bold(&expanded));
     } else {
-        row.insert("title".to_owned(), Cell::plain(&notification.subject_title));
+        let expanded = crate::util::expand_emoji(&notification.subject_title);
+        row.insert("title".to_owned(), Cell::plain(&expanded));
     }
 
     // Repo.

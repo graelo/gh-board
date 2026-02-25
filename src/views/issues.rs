@@ -146,7 +146,7 @@ fn issue_to_row(issue: &Issue, theme: &ResolvedTheme, date_format: &str) -> Row 
     // Subtitle: issue title (extracted by subtitle_column)
     row.insert(
         "subtitle".to_owned(),
-        Cell::colored(&issue.title, theme.text_primary),
+        Cell::colored(crate::util::expand_emoji(&issue.title), theme.text_primary),
     );
 
     // Comments

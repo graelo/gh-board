@@ -125,8 +125,14 @@ fn run_to_row(run: &WorkflowRun, theme: &ResolvedTheme) -> Row {
         "run".to_owned(),
         Cell::colored(format!("#{}", run.run_number), theme.text_faint),
     );
-    row.insert("workflow".to_owned(), Cell::plain(&run.name));
-    row.insert("title".to_owned(), Cell::plain(&run.display_title));
+    row.insert(
+        "workflow".to_owned(),
+        Cell::plain(crate::util::expand_emoji(&run.name)),
+    );
+    row.insert(
+        "title".to_owned(),
+        Cell::plain(crate::util::expand_emoji(&run.display_title)),
+    );
     row.insert(
         "event".to_owned(),
         Cell::colored(run.event.clone(), theme.text_secondary),

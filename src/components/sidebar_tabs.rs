@@ -23,7 +23,7 @@ pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<
         let label_text = pr
             .labels
             .iter()
-            .map(|l| l.name.as_str())
+            .map(|l| crate::util::expand_emoji(&l.name))
             .collect::<Vec<_>>()
             .join(", ");
         lines.push(StyledLine::from_spans(vec![
@@ -471,7 +471,7 @@ pub fn render_issue_overview_metadata(issue: &Issue, theme: &ResolvedTheme) -> V
         let label_text = issue
             .labels
             .iter()
-            .map(|l| l.name.as_str())
+            .map(|l| crate::util::expand_emoji(&l.name))
             .collect::<Vec<_>>()
             .join(", ");
         lines.push(StyledLine::from_spans(vec![

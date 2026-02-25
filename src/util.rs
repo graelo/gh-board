@@ -1,4 +1,13 @@
+use std::sync::LazyLock;
+
 use chrono::{DateTime, Utc};
+
+static EMOJI_REPLACER: LazyLock<gh_emoji::Replacer> = LazyLock::new(gh_emoji::Replacer::new);
+
+/// Expand GitHub emoji shortcodes (e.g. `:tada:` → 🎉) in the given text.
+pub fn expand_emoji(text: &str) -> String {
+    EMOJI_REPLACER.replace_all(text).into_owned()
+}
 
 /// Format a datetime according to the configured date format.
 ///

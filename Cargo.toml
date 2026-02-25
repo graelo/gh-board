@@ -15,6 +15,9 @@ anyhow = "1"
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
 #
+# GitHub emoji shortcodes
+gh-emoji = "1"
+#
 # CLI
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"  # pinned by iocraft 0.7

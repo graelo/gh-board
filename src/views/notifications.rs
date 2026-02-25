@@ -106,13 +106,13 @@ fn notification_to_row(
     row.insert("type".to_owned(), Cell::colored(type_icon, type_color));
 
     // Title.
-    if notification.unread {
-        let expanded = crate::util::expand_emoji(&notification.subject_title);
-        row.insert("title".to_owned(), Cell::bold(&expanded));
+    let expanded_title = crate::util::expand_emoji(&notification.subject_title);
+    let title_cell = if notification.unread {
+        Cell::bold(expanded_title)
     } else {
-        let expanded = crate::util::expand_emoji(&notification.subject_title);
-        row.insert("title".to_owned(), Cell::plain(&expanded));
-    }
+        Cell::plain(expanded_title)
+    };
+    row.insert("title".to_owned(), title_cell);
 
     // Repo.
     let repo_name = notification

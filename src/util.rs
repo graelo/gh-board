@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::sync::LazyLock;
 
 use chrono::{DateTime, Utc};
@@ -5,8 +6,10 @@ use chrono::{DateTime, Utc};
 static EMOJI_REPLACER: LazyLock<gh_emoji::Replacer> = LazyLock::new(gh_emoji::Replacer::new);
 
 /// Expand GitHub emoji shortcodes (e.g. `:tada:` → 🎉) in the given text.
-pub fn expand_emoji(text: &str) -> String {
-    EMOJI_REPLACER.replace_all(text).into_owned()
+///
+/// Returns `Cow::Borrowed` when no shortcodes are found, avoiding allocation.
+pub(crate) fn expand_emoji(text: &str) -> Cow<'_, str> {
+    EMOJI_REPLACER.replace_all(text)
 }
 
 /// Format a datetime according to the configured date format.
@@ -73,4 +76,37 @@ fn format_relative_time(dt: &DateTime<Utc>) -> String {
     }
 
     format!("{}y", days / 365)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_shortcode_is_expanded() {
+        assert_eq!(expand_emoji(":tada:").as_ref(), "🎉");
+    }
+
+    #[test]
+    fn unknown_shortcode_is_left_as_is() {
+        assert_eq!(
+            expand_emoji(":not_a_real_emoji:").as_ref(),
+            ":not_a_real_emoji:"
+        );
+    }
+
+    #[test]
+    fn text_without_shortcodes_is_unchanged() {
+        let result = expand_emoji("Hello, world!");
+        assert!(matches!(result, Cow::Borrowed(_)));
+        assert_eq!(result.as_ref(), "Hello, world!");
+    }
+
+    #[test]
+    fn mixed_text_expands_only_known() {
+        assert_eq!(
+            expand_emoji("Hello :tada: :unknown:").as_ref(),
+            "Hello 🎉 :unknown:"
+        );
+    }
 }

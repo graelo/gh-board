@@ -207,7 +207,7 @@ impl RenderedSidebar {
         };
 
         Self {
-            title: crate::util::expand_emoji(title),
+            title: crate::util::expand_emoji(title).into_owned(),
             scroll_indicator,
             markdown,
             width: u32::from(width),

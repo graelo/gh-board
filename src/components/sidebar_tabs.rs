@@ -287,7 +287,10 @@ pub fn render_commits(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLin
             let (icon, color) = commit_check_state_icon(state, theme);
             spans.push(StyledSpan::text(format!("{icon} "), color));
         }
-        spans.push(StyledSpan::text(&commit.message, theme.text_primary));
+        spans.push(StyledSpan::text(
+            crate::util::expand_emoji(&commit.message),
+            theme.text_primary,
+        ));
         lines.push(StyledLine::from_spans(spans));
         if !author.is_empty() || !date.is_empty() {
             lines.push(StyledLine::from_spans(vec![
@@ -319,15 +322,26 @@ pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine>
     // Group checks by workflow_name, preserving insertion order via IndexMap-like Vec.
     let groups = group_checks_by_workflow(&pr.check_runs);
 
-    // Global max name width across ALL checks for uniform duration column.
-    let max_name_w = pr
-        .check_runs
+    // Pre-expand check names so width calculations use the rendered text.
+    let expanded_names: Vec<Vec<std::borrow::Cow<'_, str>>> = groups
         .iter()
-        .map(|c| UnicodeWidthStr::width(c.name.as_str()))
+        .map(|(_, checks)| {
+            checks
+                .iter()
+                .map(|c| crate::util::expand_emoji(&c.name))
+                .collect()
+        })
+        .collect();
+
+    // Global max name width across ALL checks for uniform duration column.
+    let max_name_w = expanded_names
+        .iter()
+        .flat_map(|names| names.iter())
+        .map(|n| UnicodeWidthStr::width(n.as_ref()))
         .max()
         .unwrap_or(0);
 
-    for (i, (wf_name, checks)) in groups.iter().enumerate() {
+    for (i, ((wf_name, checks), names)) in groups.iter().zip(&expanded_names).enumerate() {
         if i > 0 {
             lines.push(StyledLine::blank());
         }
@@ -338,16 +352,16 @@ pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine>
             theme.text_faint,
         )));
 
-        for check in checks {
+        for (check, expanded_name) in checks.iter().zip(names) {
             let (icon, icon_color) = check_status_icon(check.status, check.conclusion, theme);
             let dur = crate::util::format_duration(check.started_at, check.completed_at);
+            let name_w = UnicodeWidthStr::width(expanded_name.as_ref());
             let mut spans = vec![
                 StyledSpan::text("  ", theme.text_primary),
                 StyledSpan::text(format!("{icon} "), icon_color),
-                StyledSpan::text(&check.name, theme.text_primary),
+                StyledSpan::text(expanded_name.clone(), theme.text_primary),
             ];
             if !dur.is_empty() {
-                let name_w = UnicodeWidthStr::width(check.name.as_str());
                 let pad = max_name_w - name_w + 2;
                 spans.push(StyledSpan::text(
                     format!("{:pad$}{dur}", "", pad = pad),

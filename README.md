@@ -412,7 +412,8 @@ cargo build
 ### Test
 
 ```bash
-cargo test
+cargo nextest run
+cargo test --doc
 cargo clippy
 ```
 

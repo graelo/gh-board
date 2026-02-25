@@ -400,6 +400,12 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         update_needed: overlay.update_needed.or(base.update_needed),
         update_conflict: overlay.update_conflict.or(base.update_conflict),
         update_ok: overlay.update_ok.or(base.update_ok),
+        action_success: overlay.action_success.or(base.action_success),
+        action_failure: overlay.action_failure.or(base.action_failure),
+        action_cancelled: overlay.action_cancelled.or(base.action_cancelled),
+        action_skipped: overlay.action_skipped.or(base.action_skipped),
+        action_running: overlay.action_running.or(base.action_running),
+        action_queued: overlay.action_queued.or(base.action_queued),
     }
 }
 
@@ -705,4 +711,11 @@ pub struct IconConfig {
     pub update_needed: Option<String>,
     pub update_conflict: Option<String>,
     pub update_ok: Option<String>,
+    // Actions run status
+    pub action_success: Option<String>,
+    pub action_failure: Option<String>,
+    pub action_cancelled: Option<String>,
+    pub action_skipped: Option<String>,
+    pub action_running: Option<String>,
+    pub action_queued: Option<String>,
 }

@@ -95,20 +95,21 @@ fn run_status_icon_color(
     conclusion: Option<RunConclusion>,
     theme: &ResolvedTheme,
 ) -> (String, AppColor) {
+    let icons = &theme.icons;
     match status {
         RunStatus::Completed => match conclusion {
-            Some(RunConclusion::Success) => ("\u{2714}".to_owned(), theme.text_success),
+            Some(RunConclusion::Success) => (icons.action_success.clone(), theme.text_success),
             Some(RunConclusion::Failure | RunConclusion::TimedOut) => {
-                ("\u{2716}".to_owned(), theme.text_error)
+                (icons.action_failure.clone(), theme.text_error)
             }
-            Some(RunConclusion::Cancelled) => ("\u{2715}".to_owned(), theme.text_faint),
+            Some(RunConclusion::Cancelled) => (icons.action_cancelled.clone(), theme.text_faint),
             Some(RunConclusion::Skipped | RunConclusion::Neutral) => {
-                ("-".to_owned(), theme.text_faint)
+                (icons.action_skipped.clone(), theme.text_faint)
             }
             _ => ("?".to_owned(), theme.text_faint),
         },
-        RunStatus::InProgress => ("\u{21ba}".to_owned(), theme.text_warning),
-        RunStatus::Queued => ("\u{25cb}".to_owned(), theme.text_secondary),
+        RunStatus::InProgress => (icons.action_running.clone(), theme.text_warning),
+        RunStatus::Queued => (icons.action_queued.clone(), theme.text_secondary),
         RunStatus::Unknown => ("?".to_owned(), theme.text_faint),
     }
 }

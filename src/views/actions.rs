@@ -271,7 +271,10 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
         )));
         return lines;
     }
-    for job in jobs {
+    for (i, job) in jobs.iter().enumerate() {
+        if i > 0 {
+            lines.push(StyledLine::from_spans(vec![]));
+        }
         let (icon, color) = run_status_icon_color(job.status, job.conclusion, theme);
         let duration = crate::util::format_duration(job.started_at, job.completed_at);
         let dur_text = if duration.is_empty() {

@@ -168,7 +168,7 @@ fn pr_to_row(
     // Subtitle: PR title (extracted by subtitle_column)
     row.insert(
         "subtitle".to_owned(),
-        Cell::colored(&pr.title, theme.text_primary),
+        Cell::colored(crate::util::expand_emoji(&pr.title), theme.text_primary),
     );
 
     // Comments

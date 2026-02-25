@@ -604,17 +604,20 @@ impl<'t> RenderContext<'t> {
                 Event::Text(text) => {
                     if self.in_code_block.is_some() {
                         self.code_block_content.push_str(&text);
-                    } else if self.in_link {
-                        self.push_span(StyledSpan {
-                            text: text.to_string(),
-                            color: self.theme.md_link_text,
-                            bold: self.bold > 0,
-                            italic: self.italic > 0,
-                            underline: false,
-                            strikethrough: false,
-                        });
                     } else {
-                        self.push_text_with_autolinks(&text);
+                        let text = crate::util::expand_emoji(&text);
+                        if self.in_link {
+                            self.push_span(StyledSpan {
+                                text,
+                                color: self.theme.md_link_text,
+                                bold: self.bold > 0,
+                                italic: self.italic > 0,
+                                underline: false,
+                                strikethrough: false,
+                            });
+                        } else {
+                            self.push_text_with_autolinks(&text);
+                        }
                     }
                 }
                 Event::Code(code) => {

@@ -29,6 +29,18 @@ fi
 
 set -x
 
+# Install cargo-nextest (pre-built binary)
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64)  NEXTEST_PLATFORM="x86_64-unknown-linux-gnu.tar.gz" ;;
+  Linux-aarch64) NEXTEST_PLATFORM="aarch64-unknown-linux-gnu.tar.gz" ;;
+  Darwin-*)      NEXTEST_PLATFORM="universal-apple-darwin.tar.gz" ;;
+  *)             echo "Unsupported platform for cargo-nextest"; exit 1 ;;
+esac
+curl -sSfL "https://get.nexte.st/latest/${NEXTEST_PLATFORM}" | tar zx
+chmod +x cargo-nextest
+mv cargo-nextest ~/.cargo/bin/
+
 # test the default build
 cargo build
-cargo test
+cargo nextest run
+cargo test --doc

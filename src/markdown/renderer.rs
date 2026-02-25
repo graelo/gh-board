@@ -608,7 +608,7 @@ impl<'t> RenderContext<'t> {
                         let text = crate::util::expand_emoji(&text);
                         if self.in_link {
                             self.push_span(StyledSpan {
-                                text,
+                                text: text.into_owned(),
                                 color: self.theme.md_link_text,
                                 bold: self.bold > 0,
                                 italic: self.italic > 0,

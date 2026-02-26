@@ -1799,6 +1799,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         },
         subtitle_column: Some("subtitle"),
         row_separator: true,
+        scrollbar_thumb_color: Some(theme.footer_prs),
     });
 
     // Request detail when sidebar is open and current PR is not cached.

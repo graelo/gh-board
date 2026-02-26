@@ -661,6 +661,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         empty_message: Some("No branches found"),
         subtitle_column: None,
         row_separator: true,
+        scrollbar_thumb_color: Some(theme.footer_repo),
     });
 
     let tabs = vec![Tab {

@@ -165,6 +165,8 @@ pub struct TableBuildConfig<'a> {
     pub subtitle_column: Option<&'a str>,
     /// Show a horizontal line between body rows (not after the last row).
     pub row_separator: bool,
+    /// Optional per-view accent color for the scrollbar thumb.
+    pub scrollbar_thumb_color: Option<AppColor>,
 }
 
 impl RenderedTable {
@@ -339,7 +341,9 @@ impl RenderedTable {
             subtitle_padding,
             scroll_info,
             track_height,
-            scrollbar_thumb_fg: header_fg,
+            scrollbar_thumb_fg: cfg
+                .scrollbar_thumb_color
+                .map_or(header_fg, |c| c.to_crossterm_color(depth)),
         }
     }
 }

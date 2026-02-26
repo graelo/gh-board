@@ -1862,7 +1862,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             }
             SidebarTab::Checks => {
                 if let Some(pr) = current_pr {
-                    sidebar_tabs::render_checks(pr, &theme)
+                    sidebar_tabs::render_checks(pr, &theme, sidebar_width)
                 } else {
                     Vec::new()
                 }

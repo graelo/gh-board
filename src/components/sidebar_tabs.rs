@@ -221,7 +221,11 @@ pub fn render_commits(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLin
 // ---------------------------------------------------------------------------
 
 /// Render the Checks tab: check runs grouped by workflow, with duration column.
-pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine> {
+pub fn render_checks(
+    pr: &PullRequest,
+    theme: &ResolvedTheme,
+    sidebar_width: u16,
+) -> Vec<StyledLine> {
     let mut lines = Vec::new();
 
     if pr.check_runs.is_empty() {
@@ -231,6 +235,9 @@ pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine>
         )));
         return lines;
     }
+
+    // Content width = sidebar minus left border (1) + padding (2) + scrollbar (1).
+    let content_width = usize::from(sidebar_width).saturating_sub(4).max(1);
 
     // Group checks by workflow_name, preserving insertion order via IndexMap-like Vec.
     let groups = group_checks_by_workflow(&pr.check_runs);
@@ -246,15 +253,43 @@ pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine>
         })
         .collect();
 
-    // Global max name width across ALL checks for uniform duration column.
-    let max_name_w = expanded_names
+    // Pre-format durations and find the widest one.
+    let durations: Vec<Vec<String>> = groups
+        .iter()
+        .map(|(_, checks)| {
+            checks
+                .iter()
+                .map(|c| crate::util::format_duration(c.started_at, c.completed_at))
+                .collect()
+        })
+        .collect();
+
+    let max_dur_w = durations
+        .iter()
+        .flat_map(|ds| ds.iter())
+        .map(|d| UnicodeWidthStr::width(d.as_str()))
+        .max()
+        .unwrap_or(0);
+
+    // Fixed overhead per check line: indent (2) + icon + space (2) + min gap (1).
+    let fixed_cols = 2 + 2 + 1 + if max_dur_w > 0 { 1 + max_dur_w } else { 0 };
+    let name_budget = content_width.saturating_sub(fixed_cols);
+
+    // Natural alignment: use the longest name, but cap to the budget.
+    let natural_max = expanded_names
         .iter()
         .flat_map(|names| names.iter())
         .map(|n| UnicodeWidthStr::width(n.as_ref()))
         .max()
         .unwrap_or(0);
+    let name_col_width = natural_max.min(name_budget);
 
-    for (i, ((wf_name, checks), names)) in groups.iter().zip(&expanded_names).enumerate() {
+    for (i, ((wf_name, checks), (names, durs))) in groups
+        .iter()
+        .zip(expanded_names.iter().zip(&durations))
+        .enumerate()
+    {
+        let _ = checks; // used via names/durs iterators
         if i > 0 {
             lines.push(StyledLine::blank());
         }
@@ -265,19 +300,23 @@ pub fn render_checks(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine>
             theme.text_faint,
         )));
 
-        for (check, expanded_name) in checks.iter().zip(names) {
+        for ((check, expanded_name), dur) in checks.iter().zip(names).zip(durs) {
             let (icon, icon_color) = check_status_icon(check.status, check.conclusion, theme);
-            let dur = crate::util::format_duration(check.started_at, check.completed_at);
             let name_w = UnicodeWidthStr::width(expanded_name.as_ref());
+            let (display_name, display_w) = if name_w > name_col_width {
+                truncate_with_ellipsis(expanded_name.as_ref(), name_col_width)
+            } else {
+                (expanded_name.to_string(), name_w)
+            };
             let mut spans = vec![
                 StyledSpan::text("  ", theme.text_primary),
                 StyledSpan::text(format!("{icon} "), icon_color),
-                StyledSpan::text(expanded_name.clone(), theme.text_primary),
+                StyledSpan::text(display_name, theme.text_primary),
             ];
             if !dur.is_empty() {
-                let pad = max_name_w - name_w + 2;
+                let pad = name_col_width.saturating_sub(display_w) + 1;
                 spans.push(StyledSpan::text(
-                    format!("{:pad$}{dur}", "", pad = pad),
+                    format!("{:pad$}{:>width$}", "", dur, pad = pad, width = max_dur_w),
                     theme.text_faint,
                 ));
             }

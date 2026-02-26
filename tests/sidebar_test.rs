@@ -380,7 +380,7 @@ fn commits_empty_shows_placeholder() {
 fn checks_renders_status_icons() {
     let pr = test_pr();
     let theme = test_theme();
-    let lines = sidebar_tabs::render_checks(&pr, &theme);
+    let lines = sidebar_tabs::render_checks(&pr, &theme, 80);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())
@@ -398,7 +398,7 @@ fn checks_empty_shows_placeholder() {
     let mut pr = test_pr();
     pr.check_runs.clear();
     let theme = test_theme();
-    let lines = sidebar_tabs::render_checks(&pr, &theme);
+    let lines = sidebar_tabs::render_checks(&pr, &theme, 80);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())
@@ -504,7 +504,7 @@ fn checks_grouped_by_workflow() {
     ];
 
     let theme = test_theme();
-    let lines = sidebar_tabs::render_checks(&pr, &theme);
+    let lines = sidebar_tabs::render_checks(&pr, &theme, 80);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())
@@ -567,7 +567,7 @@ fn checks_grouped_by_workflow() {
 fn checks_with_no_workflow_all_in_other_group() {
     let pr = test_pr(); // all check_runs have workflow_name: None
     let theme = test_theme();
-    let lines = sidebar_tabs::render_checks(&pr, &theme);
+    let lines = sidebar_tabs::render_checks(&pr, &theme, 80);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())

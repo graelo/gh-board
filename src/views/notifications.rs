@@ -882,7 +882,7 @@ pub fn NotificationsView<'a>(
         },
         subtitle_column: None,
         row_separator: true,
-        scrollbar_thumb_color: Some(theme.footer_notifications),
+        scrollbar_thumb_color: Some(theme.border_primary),
     });
 
     let rendered_tab_bar = RenderedTabBar::build(

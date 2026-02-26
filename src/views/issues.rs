@@ -1202,7 +1202,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         },
         subtitle_column: Some("subtitle"),
         row_separator: true,
-        scrollbar_thumb_color: Some(theme.footer_issues),
+        scrollbar_thumb_color: Some(theme.border_primary),
     });
 
     // Request issue detail when sidebar is open and current issue is not cached.

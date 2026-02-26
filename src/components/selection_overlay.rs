@@ -16,6 +16,7 @@ pub struct RenderedSelectionOverlay {
     pub title: String,
     pub items: Vec<SelectionOverlayItem>,
     pub cursor: usize,
+    pub cursor_marker: String,
     pub title_fg: Color,
     pub item_fg: Color,
     pub cursor_fg: Color,
@@ -36,6 +37,7 @@ pub struct SelectionOverlayBuildConfig {
     pub selected_bg: Option<AppColor>,
     pub border_color: Option<AppColor>,
     pub hint_color: Option<AppColor>,
+    pub cursor_marker: String,
 }
 
 impl RenderedSelectionOverlay {
@@ -45,6 +47,7 @@ impl RenderedSelectionOverlay {
             title: cfg.title,
             items: cfg.items,
             cursor: cfg.cursor,
+            cursor_marker: cfg.cursor_marker,
             title_fg: cfg
                 .title_color
                 .map_or(Color::White, |c| c.to_crossterm_color(cfg.depth)),
@@ -94,6 +97,8 @@ pub fn SelectionOverlay(props: &mut SelectionOverlayProps) -> impl Into<AnyEleme
     let overlay_height = content_height.min(height.saturating_sub(2));
     let pad_left = (width.saturating_sub(overlay_width)) / 2;
     let pad_top = (height.saturating_sub(overlay_height)) / 2;
+
+    let cursor_marker_str = format!("{} ", overlay.cursor_marker);
 
     element! {
         View(
@@ -146,7 +151,7 @@ pub fn SelectionOverlay(props: &mut SelectionOverlayProps) -> impl Into<AnyEleme
                         let is_selected = i == overlay.cursor;
                         let fg = if is_selected { overlay.cursor_fg } else { overlay.item_fg };
                         let bg = if is_selected { overlay.cursor_bg } else { Color::Reset };
-                        let marker = if is_selected { "\u{25b6} " } else { "  " };
+                        let marker = if is_selected { cursor_marker_str.as_str() } else { "  " };
                         element! {
                             View(key: i, background_color: bg) {
                                 Text(

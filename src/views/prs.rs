@@ -889,7 +889,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!("✓ {description}")));
+                            action_status.set(Some(format!(
+                                "{} {description}",
+                                theme_for_poll.icons.feedback_ok
+                            )));
                             // Trigger a refetch of the active filter.
                             let mut state = prs_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -914,7 +917,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!("✗ {description}: {message}")));
+                            action_status.set(Some(format!(
+                                "{} {description}: {message}",
+                                theme_for_poll.icons.feedback_error
+                            )));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -1340,14 +1346,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             .set(InputMode::Confirm(BuiltinAction::MarkReady));
                                         action_status.set(None);
                                     }
-                                    BuiltinAction::ViewDiff => {
-                                        if pr_number > 0 {
-                                            match crate::actions::local::open_diff(
-                                                &pr_owner, &pr_repo, pr_number,
-                                            ) {
-                                                Ok(msg) => action_status.set(Some(msg)),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Diff error: {e}"))),
+                                    BuiltinAction::ViewDiff if pr_number > 0 => {
+                                        match crate::actions::local::open_diff(
+                                            &pr_owner, &pr_repo, pr_number,
+                                        ) {
+                                            Ok(msg) => action_status.set(Some(msg)),
+                                            Err(e) => {
+                                                action_status.set(Some(format!("Diff error: {e}")));
                                             }
                                         }
                                     }
@@ -1437,35 +1442,34 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             });
                                         }
                                     }
-                                    BuiltinAction::CopyNumber => {
-                                        if pr_number > 0 {
-                                            let text = pr_number.to_string();
-                                            match clipboard::copy_to_clipboard(&text) {
-                                                Ok(()) => action_status
-                                                    .set(Some(format!("Copied #{pr_number}"))),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Copy failed: {e}"))),
+                                    BuiltinAction::CopyNumber if pr_number > 0 => {
+                                        let text = pr_number.to_string();
+                                        match clipboard::copy_to_clipboard(&text) {
+                                            Ok(()) => action_status
+                                                .set(Some(format!("Copied #{pr_number}"))),
+                                            Err(e) => {
+                                                action_status
+                                                    .set(Some(format!("Copy failed: {e}")));
                                             }
                                         }
                                     }
-                                    BuiltinAction::CopyUrl => {
-                                        if !pr_url.is_empty() {
-                                            match clipboard::copy_to_clipboard(&pr_url) {
-                                                Ok(()) => action_status.set(Some(format!(
-                                                    "Copied URL for #{pr_number}"
-                                                ))),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Copy failed: {e}"))),
+                                    BuiltinAction::CopyUrl if !pr_url.is_empty() => {
+                                        match clipboard::copy_to_clipboard(&pr_url) {
+                                            Ok(()) => action_status
+                                                .set(Some(format!("Copied URL for #{pr_number}"))),
+                                            Err(e) => {
+                                                action_status
+                                                    .set(Some(format!("Copy failed: {e}")));
                                             }
                                         }
                                     }
-                                    BuiltinAction::OpenBrowser => {
-                                        if !pr_url.is_empty() {
-                                            match clipboard::open_in_browser(&pr_url) {
-                                                Ok(()) => action_status
-                                                    .set(Some(format!("Opened #{pr_number}"))),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Open failed: {e}"))),
+                                    BuiltinAction::OpenBrowser if !pr_url.is_empty() => {
+                                        match clipboard::open_in_browser(&pr_url) {
+                                            Ok(()) => action_status
+                                                .set(Some(format!("Opened #{pr_number}"))),
+                                            Err(e) => {
+                                                action_status
+                                                    .set(Some(format!("Open failed: {e}")));
                                             }
                                         }
                                     }
@@ -1506,18 +1510,15 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         input_mode.set(InputMode::Search);
                                         search_query.set(String::new());
                                     }
-                                    BuiltinAction::MoveDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + 1)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            if new_cursor >= scroll_offset.get() + visible_rows {
-                                                scroll_offset.set(
-                                                    new_cursor.saturating_sub(visible_rows) + 1,
-                                                );
-                                            }
-                                            preview_scroll.set(0);
+                                    BuiltinAction::MoveDown if total_rows > 0 => {
+                                        let new_cursor =
+                                            (cursor.get() + 1).min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        if new_cursor >= scroll_offset.get() + visible_rows {
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(visible_rows) + 1);
                                         }
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::MoveUp => {
                                         let new_cursor = cursor.get().saturating_sub(1);
@@ -1532,25 +1533,20 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         scroll_offset.set(0);
                                         preview_scroll.set(0);
                                     }
-                                    BuiltinAction::Last => {
-                                        if total_rows > 0 {
-                                            cursor.set(total_rows.saturating_sub(1));
-                                            scroll_offset
-                                                .set(total_rows.saturating_sub(visible_rows));
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::Last if total_rows > 0 => {
+                                        cursor.set(total_rows.saturating_sub(1));
+                                        scroll_offset.set(total_rows.saturating_sub(visible_rows));
+                                        preview_scroll.set(0);
                                     }
-                                    BuiltinAction::PageDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + visible_rows)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            scroll_offset
-                                                .set(new_cursor.saturating_sub(
-                                                    visible_rows.saturating_sub(1),
-                                                ));
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::PageDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + visible_rows)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        scroll_offset.set(
+                                            new_cursor
+                                                .saturating_sub(visible_rows.saturating_sub(1)),
+                                        );
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);
@@ -1592,27 +1588,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);
                                     }
-                                    BuiltinAction::PrevFilter => {
-                                        if filter_count > 0 {
-                                            let current = active_filter.get();
-                                            active_filter.set(if current == 0 {
-                                                filter_count.saturating_sub(1)
-                                            } else {
-                                                current - 1
-                                            });
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::PrevFilter if filter_count > 0 => {
+                                        let current = active_filter.get();
+                                        active_filter.set(if current == 0 {
+                                            filter_count.saturating_sub(1)
+                                        } else {
+                                            current - 1
+                                        });
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
                                     }
-                                    BuiltinAction::NextFilter => {
-                                        if filter_count > 0 {
-                                            active_filter
-                                                .set((active_filter.get() + 1) % filter_count);
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::NextFilter if filter_count > 0 => {
+                                        active_filter.set((active_filter.get() + 1) % filter_count);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::JumpToRun => {
                                         // Collect distinct workflow runs from current PR's checks.
@@ -1793,6 +1784,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         },
         subtitle_column: Some("subtitle"),
         row_separator: true,
+        scrollbar_thumb_color: Some(theme.border_primary),
     });
 
     // Request detail when sidebar is open and current PR is not cached.
@@ -1841,18 +1833,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
         let md_lines: Vec<StyledLine> = match current_tab {
             SidebarTab::Overview => {
-                // Metadata + markdown body
                 let body = current_data
                     .and_then(|d| d.bodies.get(cursor_idx))
                     .map_or("", String::as_str);
-                let mut lines = Vec::new();
-                if let Some(pr) = current_pr {
-                    lines.extend(sidebar_tabs::render_overview_metadata(pr, &theme));
+                if body.is_empty() {
+                    Vec::new()
+                } else {
+                    renderer::render_markdown(body, &theme, depth)
                 }
-                if !body.is_empty() {
-                    lines.extend(renderer::render_markdown(body, &theme, depth));
-                }
-                lines
             }
             SidebarTab::Activity => {
                 if let Some(detail) = detail_for_pr {
@@ -1897,9 +1885,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             None
         };
 
-        // Account for tab bar (2 extra lines) + meta (3 lines) in sidebar height.
-        let meta_lines = if sidebar_meta.is_some() { 4 } else { 0 };
-        let sidebar_visible_lines = props.height.saturating_sub(9 + meta_lines) as usize;
+        // Account for tab bar (2 extra lines) + meta in sidebar height.
+        #[allow(clippy::cast_possible_truncation)]
+        let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
+        let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
         Some(RenderedSidebar::build_tabbed(
             title,
@@ -1911,6 +1900,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(theme.text_primary),
             Some(theme.border_faint),
             Some(theme.text_faint),
+            Some(theme.border_primary),
             Some(current_tab),
             Some(&theme.icons),
             sidebar_meta,
@@ -1929,6 +1919,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         Some(theme.footer_prs),
         Some(theme.border_faint),
         &theme.icons.tab_filter,
+        &theme.icons.tab_ephemeral,
     );
 
     // Build footer or input area based on mode.
@@ -2127,6 +2118,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 selected_bg: Some(theme.bg_selected),
                 border_color: Some(theme.border_primary),
                 hint_color: Some(theme.text_faint),
+                cursor_marker: theme.icons.select_cursor.clone(),
             })
         })
     };
@@ -2521,6 +2513,7 @@ fn sidebar_update_status(
 }
 
 /// Build the `SidebarMeta` header from a pull request.
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 fn build_sidebar_meta(
     pr: &PullRequest,
     detail: Option<&PrDetail>,
@@ -2587,6 +2580,48 @@ fn build_sidebar_meta(
         .as_ref()
         .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
 
+    // Overview metadata (pinned in fixed section)
+    let labels_text = if pr.labels.is_empty() {
+        None
+    } else {
+        Some(
+            pr.labels
+                .iter()
+                .map(|l| crate::util::expand_emoji(&l.name))
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let assignees_text = if pr.assignees.is_empty() {
+        None
+    } else {
+        Some(
+            pr.assignees
+                .iter()
+                .map(|a| a.login.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let created_text = pr
+        .created_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let created_age = crate::util::format_date(&pr.created_at, "relative");
+    let updated_text = pr
+        .updated_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let updated_age = crate::util::format_date(&pr.updated_at, "relative");
+
+    let lines_added = Some(format!("+{}", pr.additions));
+    let lines_deleted = Some(format!("-{}", pr.deletions));
+
     SidebarMeta {
         pill_icon,
         pill_text,
@@ -2605,6 +2640,23 @@ fn build_sidebar_meta(
         label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
+        labels_text,
+        assignees_text,
+        created_text,
+        created_age,
+        updated_text,
+        updated_age,
+        lines_added,
+        lines_deleted,
+        reactions_text: None,
+        date_fg: theme.text_faint.to_crossterm_color(depth),
+        date_age_fg: theme.text_secondary.to_crossterm_color(depth),
+        additions_fg: theme.text_success.to_crossterm_color(depth),
+        deletions_fg: theme.text_error.to_crossterm_color(depth),
+        separator_fg: theme.md_horizontal_rule.to_crossterm_color(depth),
+        primary_fg: theme.text_primary.to_crossterm_color(depth),
+        actor_fg: theme.text_actor.to_crossterm_color(depth),
+        reactions_fg: theme.text_primary.to_crossterm_color(depth),
     }
 }
 

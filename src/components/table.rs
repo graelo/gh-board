@@ -4,6 +4,7 @@ use iocraft::prelude::*;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::color::{Color as AppColor, ColorDepth};
+use crate::components::scrollbar::{ScrollInfo, Scrollbar};
 
 // ---------------------------------------------------------------------------
 // Column definition
@@ -109,6 +110,12 @@ pub struct RenderedTable {
     /// Left padding for the subtitle line (width of columns before the
     /// subtitle column).
     pub subtitle_padding: u32,
+    /// Scroll metadata for the scrollbar (None when content fits).
+    pub scroll_info: Option<ScrollInfo>,
+    /// Height of the scrollbar track in rows.
+    pub track_height: u32,
+    /// Scrollbar thumb color (`header_fg`).
+    pub scrollbar_thumb_fg: Color,
 }
 
 pub struct HeaderCell {
@@ -158,6 +165,8 @@ pub struct TableBuildConfig<'a> {
     pub subtitle_column: Option<&'a str>,
     /// Show a horizontal line between body rows (not after the last row).
     pub row_separator: bool,
+    /// Optional per-view accent color for the scrollbar thumb.
+    pub scrollbar_thumb_color: Option<AppColor>,
 }
 
 impl RenderedTable {
@@ -177,14 +186,23 @@ impl RenderedTable {
         let header_color = cfg.header_color;
         let border_color = cfg.border_color;
         let show_separator = cfg.show_separator;
+
+        // Reserve 1 char for the scrollbar when content overflows.
+        let needs_scrollbar = rows.len() > visible_rows;
+        let col_total_width = if needs_scrollbar {
+            total_width.saturating_sub(2)
+        } else {
+            total_width
+        };
+
         // Filter out hidden columns.
         let visible_columns: Vec<&Column> = columns
             .iter()
             .filter(|c| hidden_columns.is_none_or(|h| !h.contains(&c.id)))
             .collect();
 
-        // Compute column widths.
-        let col_widths = compute_column_widths(&visible_columns, width_overrides, total_width);
+        // Compute column widths (narrower when scrollbar is present).
+        let col_widths = compute_column_widths(&visible_columns, width_overrides, col_total_width);
 
         let header_fg = header_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
@@ -252,14 +270,14 @@ impl RenderedTable {
 
                 // Extract subtitle cell if configured.
                 let subtitle_available =
-                    usize::from(total_width).saturating_sub(subtitle_padding as usize);
+                    usize::from(col_total_width).saturating_sub(subtitle_padding as usize);
                 let subtitle = subtitle_column.and_then(|col_id| {
                     row.get(col_id).map(|cell| {
                         let spans =
                             truncate_spans(render_spans(&cell.spans, depth), subtitle_available);
                         RenderedCell {
                             spans,
-                            width: u32::from(total_width),
+                            width: u32::from(col_total_width),
                             align: TextAlign::Left,
                         }
                     })
@@ -280,6 +298,37 @@ impl RenderedTable {
             None
         };
 
+        // Scroll metadata for the scrollbar.
+        let scroll_info = ScrollInfo {
+            scroll_offset,
+            visible_count: visible_rows,
+            total_count: rows.len(),
+        };
+        let scroll_info = if scroll_info.needs_scrollbar() {
+            Some(scroll_info)
+        } else {
+            None
+        };
+
+        // Track height = number of rendered lines in the body area.
+        // Each row is 1 line for cells + 1 optional subtitle + 1 optional separator.
+        #[allow(clippy::cast_possible_truncation)]
+        let track_height: u32 = body_rows
+            .iter()
+            .enumerate()
+            .map(|(ri, row)| {
+                let mut h: u32 = 1; // main cells line
+                if row.subtitle.is_some() {
+                    h += 1;
+                }
+                // Row separator adds 1 line (except the last row).
+                if cfg.row_separator && ri + 1 < body_rows.len() {
+                    h += 1;
+                }
+                h
+            })
+            .sum();
+
         Self {
             header_cells,
             body_rows,
@@ -290,6 +339,11 @@ impl RenderedTable {
             border_fg,
             empty_message,
             subtitle_padding,
+            scroll_info,
+            track_height,
+            scrollbar_thumb_fg: cfg
+                .scrollbar_thumb_color
+                .map_or(header_fg, |c| c.to_crossterm_color(depth)),
         }
     }
 }
@@ -309,6 +363,11 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
     let Some(table) = props.table.take() else {
         return element! { View }.into_any();
     };
+
+    let scroll_info = table.scroll_info;
+    let track_height = table.track_height;
+    let track_color = table.border_fg;
+    let thumb_color = table.scrollbar_thumb_fg;
 
     element! {
         View(flex_direction: FlexDirection::Column, width: table.total_width, padding_left: 1u32) {
@@ -333,75 +392,89 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                 }))
             }
 
-            // Empty-state message or body rows
-            #(table.empty_message.into_iter().map(|msg| {
-                element! {
-                    View(padding_top: 1, padding_left: 2) {
-                        Text(
-                            content: msg,
-                            color: Color::DarkGrey,
-                        )
-                    }
-                }
-            }))
-            #({
-                let row_count = table.body_rows.len();
-                let row_sep = table.row_separator;
-                let sep_color = table.border_fg;
-                let sub_pad = table.subtitle_padding;
-                table.body_rows.into_iter().enumerate().map(move |(ri, row)| {
-                let is_last = ri + 1 >= row_count;
-                let subtitle_elem = row.subtitle.map(|sub| {
-                    let contents: Vec<MixedTextContent> = sub.spans.into_iter().map(|s| {
-                        MixedTextContent::new(s.text).color(s.fg).weight(s.weight)
-                    }).collect();
-                    (contents, sub.width)
-                });
-                element! {
-                    View(
-                        key: row.key,
-                        flex_direction: FlexDirection::Column,
-                        border_style: if row_sep && !is_last { BorderStyle::Single } else { BorderStyle::None },
-                        border_edges: Edges::Bottom,
-                        border_color: sep_color,
-                    ) {
-                        // Row content (background only on this inner View)
-                        View(flex_direction: FlexDirection::Column, background_color: row.bg) {
-                        // Main cells line
-                        View(flex_direction: FlexDirection::Row) {
-                            #(row.cells.into_iter().enumerate().map(|(ci, cell)| {
-                                let contents: Vec<MixedTextContent> = cell.spans.into_iter().map(|s| {
-                                    MixedTextContent::new(s.text)
-                                        .color(s.fg)
-                                        .weight(s.weight)
-                                }).collect();
-                                element! {
-                                    View(key: ci, width: cell.width) {
-                                        MixedText(
-                                            contents,
-                                            wrap: TextWrap::NoWrap,
-                                            align: cell.align,
-                                        )
-                                    }
-                                }
-                            }))
+            // Body area: rows + scrollbar side by side
+            View(flex_direction: FlexDirection::Row) {
+                // Body rows column
+                View(flex_direction: FlexDirection::Column, flex_grow: 1.0) {
+                    // Empty-state message or body rows
+                    #(table.empty_message.into_iter().map(|msg| {
+                        element! {
+                            View(padding_top: 1, padding_left: 2) {
+                                Text(
+                                    content: msg,
+                                    color: Color::DarkGrey,
+                                )
+                            }
                         }
-                        // Subtitle line (if present)
-                        #(subtitle_elem.into_iter().map(|(contents, width)| {
-                            element! {
-                                View(width, padding_left: sub_pad) {
-                                    MixedText(
-                                        contents,
-                                        wrap: TextWrap::NoWrap,
-                                    )
+                    }))
+                    #({
+                        let row_count = table.body_rows.len();
+                        let row_sep = table.row_separator;
+                        let sep_color = table.border_fg;
+                        let sub_pad = table.subtitle_padding;
+                        table.body_rows.into_iter().enumerate().map(move |(ri, row)| {
+                        let is_last = ri + 1 >= row_count;
+                        let subtitle_elem = row.subtitle.map(|sub| {
+                            let contents: Vec<MixedTextContent> = sub.spans.into_iter().map(|s| {
+                                MixedTextContent::new(s.text).color(s.fg).weight(s.weight)
+                            }).collect();
+                            (contents, sub.width)
+                        });
+                        element! {
+                            View(
+                                key: row.key,
+                                flex_direction: FlexDirection::Column,
+                                border_style: if row_sep && !is_last { BorderStyle::Single } else { BorderStyle::None },
+                                border_edges: Edges::Bottom,
+                                border_color: sep_color,
+                            ) {
+                                // Row content (background only on this inner View)
+                                View(flex_direction: FlexDirection::Column, background_color: row.bg) {
+                                // Main cells line
+                                View(flex_direction: FlexDirection::Row) {
+                                    #(row.cells.into_iter().enumerate().map(|(ci, cell)| {
+                                        let contents: Vec<MixedTextContent> = cell.spans.into_iter().map(|s| {
+                                            MixedTextContent::new(s.text)
+                                                .color(s.fg)
+                                                .weight(s.weight)
+                                        }).collect();
+                                        element! {
+                                            View(key: ci, width: cell.width) {
+                                                MixedText(
+                                                    contents,
+                                                    wrap: TextWrap::NoWrap,
+                                                    align: cell.align,
+                                                )
+                                            }
+                                        }
+                                    }))
+                                }
+                                // Subtitle line (if present)
+                                #(subtitle_elem.into_iter().map(|(contents, width)| {
+                                    element! {
+                                        View(width, padding_left: sub_pad) {
+                                            MixedText(
+                                                contents,
+                                                wrap: TextWrap::NoWrap,
+                                            )
+                                        }
+                                    }
+                                }))
                                 }
                             }
-                        }))
                         }
-                    }
+                    })
+                    })
                 }
-            })
-            })
+
+                // Scrollbar (1 char wide, only when content overflows)
+                Scrollbar(
+                    scroll_info: scroll_info,
+                    track_height: track_height,
+                    track_color: track_color,
+                    thumb_color: thumb_color,
+                )
+            }
         }
     }
     .into_any()
@@ -509,7 +582,23 @@ fn compute_column_widths(
         }
     }
 
-    widths.iter().map(|w| w.unwrap_or(1)).collect()
+    // Clamp: independent rounding of unfixed columns may push the total past the budget.
+    let mut result: Vec<u16> = widths.iter().map(|w| w.unwrap_or(1)).collect();
+    let sum: u16 = result.iter().sum();
+    if sum > total {
+        let overshoot = sum - total;
+        // Subtract from the widest unfixed column.
+        if let Some(idx) = columns
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.fixed_width.is_none())
+            .max_by_key(|(i, _)| result[*i])
+            .map(|(i, _)| i)
+        {
+            result[idx] = result[idx].saturating_sub(overshoot);
+        }
+    }
+    result
 }
 
 #[cfg(test)]

@@ -449,7 +449,10 @@ pub fn NotificationsView<'a>(
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!("✓ {description}")));
+                            action_status.set(Some(format!(
+                                "{} {description}",
+                                theme_for_poll.icons.feedback_ok
+                            )));
                             // Trigger refetch of current filter.
                             let mut state = notif_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -466,7 +469,10 @@ pub fn NotificationsView<'a>(
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!("✗ {description}: {message}")));
+                            action_status.set(Some(format!(
+                                "{} {description}: {message}",
+                                theme_for_poll.icons.feedback_error
+                            )));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -718,16 +724,13 @@ pub fn NotificationsView<'a>(
                                             .set(InputMode::Confirm(BuiltinAction::Unsubscribe));
                                         action_status.set(None);
                                     }
-                                    BuiltinAction::MoveDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + 1)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            if new_cursor >= scroll_offset.get() + visible_rows {
-                                                scroll_offset.set(
-                                                    new_cursor.saturating_sub(visible_rows) + 1,
-                                                );
-                                            }
+                                    BuiltinAction::MoveDown if total_rows > 0 => {
+                                        let new_cursor =
+                                            (cursor.get() + 1).min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        if new_cursor >= scroll_offset.get() + visible_rows {
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(visible_rows) + 1);
                                         }
                                     }
                                     BuiltinAction::MoveUp => {
@@ -741,23 +744,18 @@ pub fn NotificationsView<'a>(
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
-                                    BuiltinAction::Last => {
-                                        if total_rows > 0 {
-                                            cursor.set(total_rows.saturating_sub(1));
-                                            scroll_offset
-                                                .set(total_rows.saturating_sub(visible_rows));
-                                        }
+                                    BuiltinAction::Last if total_rows > 0 => {
+                                        cursor.set(total_rows.saturating_sub(1));
+                                        scroll_offset.set(total_rows.saturating_sub(visible_rows));
                                     }
-                                    BuiltinAction::PageDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + visible_rows)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            scroll_offset
-                                                .set(new_cursor.saturating_sub(
-                                                    visible_rows.saturating_sub(1),
-                                                ));
-                                        }
+                                    BuiltinAction::PageDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + visible_rows)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        scroll_offset.set(
+                                            new_cursor
+                                                .saturating_sub(visible_rows.saturating_sub(1)),
+                                        );
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);
@@ -786,25 +784,20 @@ pub fn NotificationsView<'a>(
                                             scroll_offset.set(new_cursor);
                                         }
                                     }
-                                    BuiltinAction::PrevFilter => {
-                                        if filter_count > 0 {
-                                            let current = active_filter.get();
-                                            active_filter.set(if current == 0 {
-                                                filter_count.saturating_sub(1)
-                                            } else {
-                                                current - 1
-                                            });
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                        }
+                                    BuiltinAction::PrevFilter if filter_count > 0 => {
+                                        let current = active_filter.get();
+                                        active_filter.set(if current == 0 {
+                                            filter_count.saturating_sub(1)
+                                        } else {
+                                            current - 1
+                                        });
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
                                     }
-                                    BuiltinAction::NextFilter => {
-                                        if filter_count > 0 {
-                                            active_filter
-                                                .set((active_filter.get() + 1) % filter_count);
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                        }
+                                    BuiltinAction::NextFilter if filter_count > 0 => {
+                                        active_filter.set((active_filter.get() + 1) % filter_count);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
                                     }
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);
@@ -876,6 +869,7 @@ pub fn NotificationsView<'a>(
         },
         subtitle_column: None,
         row_separator: true,
+        scrollbar_thumb_color: Some(theme.border_primary),
     });
 
     let rendered_tab_bar = RenderedTabBar::build(
@@ -887,6 +881,7 @@ pub fn NotificationsView<'a>(
         Some(theme.footer_notifications),
         Some(theme.border_faint),
         &theme.icons.tab_filter,
+        &theme.icons.tab_ephemeral,
     );
 
     let current_mode = input_mode.read().clone();

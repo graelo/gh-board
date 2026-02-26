@@ -591,7 +591,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!("✓ {description}")));
+                            action_status.set(Some(format!(
+                                "{} {description}",
+                                theme_for_poll.icons.feedback_ok
+                            )));
                             // Trigger a refetch of the active filter.
                             let mut state = issues_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -616,7 +619,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!("✗ {description}: {message}")));
+                            action_status.set(Some(format!(
+                                "{} {description}: {message}",
+                                theme_for_poll.icons.feedback_error
+                            )));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -978,18 +984,15 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         input_mode.set(InputMode::Search);
                                         action_status.set(None);
                                     }
-                                    BuiltinAction::MoveDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + 1)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            if new_cursor >= scroll_offset.get() + visible_rows {
-                                                scroll_offset.set(
-                                                    new_cursor.saturating_sub(visible_rows) + 1,
-                                                );
-                                            }
-                                            preview_scroll.set(0);
+                                    BuiltinAction::MoveDown if total_rows > 0 => {
+                                        let new_cursor =
+                                            (cursor.get() + 1).min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        if new_cursor >= scroll_offset.get() + visible_rows {
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(visible_rows) + 1);
                                         }
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::MoveUp => {
                                         let new_cursor = cursor.get().saturating_sub(1);
@@ -1004,25 +1007,20 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         scroll_offset.set(0);
                                         preview_scroll.set(0);
                                     }
-                                    BuiltinAction::Last => {
-                                        if total_rows > 0 {
-                                            cursor.set(total_rows.saturating_sub(1));
-                                            scroll_offset
-                                                .set(total_rows.saturating_sub(visible_rows));
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::Last if total_rows > 0 => {
+                                        cursor.set(total_rows.saturating_sub(1));
+                                        scroll_offset.set(total_rows.saturating_sub(visible_rows));
+                                        preview_scroll.set(0);
                                     }
-                                    BuiltinAction::PageDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + visible_rows)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            scroll_offset
-                                                .set(new_cursor.saturating_sub(
-                                                    visible_rows.saturating_sub(1),
-                                                ));
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::PageDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + visible_rows)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        scroll_offset.set(
+                                            new_cursor
+                                                .saturating_sub(visible_rows.saturating_sub(1)),
+                                        );
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);
@@ -1061,29 +1059,24 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             preview_scroll.set(0);
                                         }
                                     }
-                                    BuiltinAction::PrevFilter => {
-                                        if filter_count > 0 {
-                                            let current = active_filter.get();
-                                            active_filter.set(if current == 0 {
-                                                filter_count.saturating_sub(1)
-                                            } else {
-                                                current - 1
-                                            });
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                            preview_scroll.set(0);
-                                            pending_detail.set(None);
-                                        }
+                                    BuiltinAction::PrevFilter if filter_count > 0 => {
+                                        let current = active_filter.get();
+                                        active_filter.set(if current == 0 {
+                                            filter_count.saturating_sub(1)
+                                        } else {
+                                            current - 1
+                                        });
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
+                                        pending_detail.set(None);
                                     }
-                                    BuiltinAction::NextFilter => {
-                                        if filter_count > 0 {
-                                            active_filter
-                                                .set((active_filter.get() + 1) % filter_count);
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                            preview_scroll.set(0);
-                                            pending_detail.set(None);
-                                        }
+                                    BuiltinAction::NextFilter if filter_count > 0 => {
+                                        active_filter.set((active_filter.get() + 1) % filter_count);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
+                                        pending_detail.set(None);
                                     }
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);
@@ -1196,6 +1189,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         },
         subtitle_column: Some("subtitle"),
         row_separator: true,
+        scrollbar_thumb_color: Some(theme.border_primary),
     });
 
     // Request issue detail when sidebar is open and current issue is not cached.
@@ -1244,14 +1238,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 let body = current_data
                     .and_then(|d| d.bodies.get(cursor_idx))
                     .map_or("", String::as_str);
-                let mut lines = Vec::new();
-                if let Some(issue) = current_issue {
-                    lines.extend(sidebar_tabs::render_issue_overview_metadata(issue, &theme));
+                if body.is_empty() {
+                    Vec::new()
+                } else {
+                    renderer::render_markdown(body, &theme, depth)
                 }
-                if !body.is_empty() {
-                    lines.extend(renderer::render_markdown(body, &theme, depth));
-                }
-                lines
             }
             SidebarTab::Activity => {
                 if let Some(detail) = detail_for_issue {
@@ -1273,9 +1264,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             None
         };
 
-        // Account for tab bar (2 extra lines) + meta (3 lines) in sidebar height.
-        let meta_lines = if sidebar_meta.is_some() { 4 } else { 0 };
-        let sidebar_visible_lines = props.height.saturating_sub(9 + meta_lines) as usize;
+        // Account for tab bar (2 extra lines) + meta in sidebar height.
+        #[allow(clippy::cast_possible_truncation)]
+        let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
+        let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
         Some(RenderedSidebar::build_tabbed(
             title,
@@ -1287,6 +1279,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(theme.text_primary),
             Some(theme.border_faint),
             Some(theme.text_faint),
+            Some(theme.border_primary),
             Some(current_tab),
             Some(&theme.icons),
             sidebar_meta,
@@ -1305,6 +1298,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         Some(theme.footer_issues),
         Some(theme.border_faint),
         &theme.icons.tab_filter,
+        &theme.icons.tab_ephemeral,
     );
 
     // Build text input widget.
@@ -1863,6 +1857,7 @@ fn get_current_issue_assignees(
     issue.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_issue_sidebar_meta(
     issue: &Issue,
     theme: &ResolvedTheme,
@@ -1897,6 +1892,80 @@ fn build_issue_sidebar_meta(
         .map(|a| format!("@{}", a.login))
         .collect();
 
+    // Overview metadata (pinned in fixed section)
+    let labels_text = if issue.labels.is_empty() {
+        None
+    } else {
+        Some(
+            issue
+                .labels
+                .iter()
+                .map(|l| crate::util::expand_emoji(&l.name))
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let assignees_text = if issue.assignees.is_empty() {
+        None
+    } else {
+        Some(
+            issue
+                .assignees
+                .iter()
+                .map(|a| a.login.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let created_text = issue
+        .created_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let created_age = crate::util::format_date(&issue.created_at, "relative");
+    let updated_text = issue
+        .updated_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let updated_age = crate::util::format_date(&issue.updated_at, "relative");
+
+    // Reactions
+    let r = &issue.reactions;
+    let reactions_text = if r.total() > 0 {
+        let mut parts = Vec::new();
+        if r.thumbs_up > 0 {
+            parts.push(format!("\u{1f44d} {}", r.thumbs_up));
+        }
+        if r.thumbs_down > 0 {
+            parts.push(format!("\u{1f44e} {}", r.thumbs_down));
+        }
+        if r.laugh > 0 {
+            parts.push(format!("\u{1f604} {}", r.laugh));
+        }
+        if r.hooray > 0 {
+            parts.push(format!("\u{1f389} {}", r.hooray));
+        }
+        if r.confused > 0 {
+            parts.push(format!("\u{1f615} {}", r.confused));
+        }
+        if r.heart > 0 {
+            parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
+        }
+        if r.rocket > 0 {
+            parts.push(format!("\u{1f680} {}", r.rocket));
+        }
+        if r.eyes > 0 {
+            parts.push(format!("\u{1f440} {}", r.eyes));
+        }
+        Some(parts.join("  "))
+    } else {
+        None
+    };
+
     SidebarMeta {
         pill_icon,
         pill_text,
@@ -1915,6 +1984,23 @@ fn build_issue_sidebar_meta(
         label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
+        labels_text,
+        assignees_text,
+        created_text,
+        created_age,
+        updated_text,
+        updated_age,
+        lines_added: None,
+        lines_deleted: None,
+        reactions_text,
+        date_fg: theme.text_faint.to_crossterm_color(depth),
+        date_age_fg: theme.text_secondary.to_crossterm_color(depth),
+        additions_fg: theme.text_success.to_crossterm_color(depth),
+        deletions_fg: theme.text_error.to_crossterm_color(depth),
+        separator_fg: theme.md_horizontal_rule.to_crossterm_color(depth),
+        primary_fg: theme.text_primary.to_crossterm_color(depth),
+        actor_fg: theme.text_actor.to_crossterm_color(depth),
+        reactions_fg: theme.text_primary.to_crossterm_color(depth),
     }
 }
 

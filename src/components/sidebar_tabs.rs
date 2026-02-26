@@ -2,97 +2,10 @@ use crate::color::{Color as AppColor, ColorDepth};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::{
-    CheckConclusion, CheckRun, CheckStatus, CommitCheckState, FileChangeType, Issue, IssueDetail,
+    CheckConclusion, CheckRun, CheckStatus, CommitCheckState, FileChangeType, IssueDetail,
     PrDetail, PullRequest, ReviewState, TimelineEvent,
 };
 use unicode_width::UnicodeWidthStr;
-
-// ---------------------------------------------------------------------------
-// T073: Overview tab
-// ---------------------------------------------------------------------------
-
-/// Render the Overview tab: metadata + PR body (body rendered elsewhere as markdown).
-///
-/// Author, State, and Branch are now shown in the `SidebarMeta` pill header,
-/// so this function only renders Labels, Assignees, Lines, and a separator.
-pub fn render_overview_metadata(pr: &PullRequest, theme: &ResolvedTheme) -> Vec<StyledLine> {
-    let mut lines = Vec::new();
-
-    // Labels
-    if !pr.labels.is_empty() {
-        let label_text = pr
-            .labels
-            .iter()
-            .map(|l| crate::util::expand_emoji(&l.name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::bold("Labels: ", theme.text_secondary),
-            StyledSpan::text(label_text, theme.text_primary),
-        ]));
-    }
-
-    // Assignees
-    if !pr.assignees.is_empty() {
-        let assignee_text = pr
-            .assignees
-            .iter()
-            .map(|a| a.login.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::bold("Assign: ", theme.text_secondary),
-            StyledSpan::text(assignee_text, theme.text_actor),
-        ]));
-    }
-
-    // Dates: local time (age)
-    let fmt = "%Y-%m-%d %H:%M:%S";
-    let created_age = crate::util::format_date(&pr.created_at, "relative");
-    let updated_age = crate::util::format_date(&pr.updated_at, "relative");
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("Created:", theme.text_secondary),
-        StyledSpan::text(
-            format!(
-                " {}",
-                pr.created_at.with_timezone(&chrono::Local).format(fmt)
-            ),
-            theme.text_faint,
-        ),
-        StyledSpan::text(" (", theme.text_faint),
-        StyledSpan::text(created_age, theme.text_secondary),
-        StyledSpan::text(")", theme.text_faint),
-    ]));
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("Updated:", theme.text_secondary),
-        StyledSpan::text(
-            format!(
-                " {}",
-                pr.updated_at.with_timezone(&chrono::Local).format(fmt)
-            ),
-            theme.text_faint,
-        ),
-        StyledSpan::text(" (", theme.text_faint),
-        StyledSpan::text(updated_age, theme.text_secondary),
-        StyledSpan::text(")", theme.text_faint),
-    ]));
-
-    // Changes
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("Lines:  ", theme.text_secondary),
-        StyledSpan::text(format!("+{}", pr.additions), theme.text_success),
-        StyledSpan::text(" / ", theme.text_faint),
-        StyledSpan::text(format!("-{}", pr.deletions), theme.text_error),
-    ]));
-
-    // Centered horizontal rule before body
-    lines.push(StyledLine::from_span(StyledSpan::text(
-        "─".repeat(20),
-        theme.md_horizontal_rule,
-    )));
-
-    lines
-}
 
 // ---------------------------------------------------------------------------
 // T074: Activity tab
@@ -387,6 +300,9 @@ fn group_checks_by_workflow(checks: &[CheckRun]) -> Vec<(Option<String>, Vec<&Ch
             groups.push((key.clone(), vec![check]));
         }
     }
+    // Sort named groups alphabetically (None < Some, so None goes first).
+    groups.sort_by(|a, b| a.0.cmp(&b.0));
+
     // Move the None-keyed group to the end.
     if let Some(pos) = groups.iter().position(|(k, _)| k.is_none()) {
         let none_group = groups.remove(pos);
@@ -444,6 +360,29 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
         return lines;
     }
 
+    // Cap alignment column to 60% of a reasonable sidebar width (≈ 50 cols).
+    let max_path_width = detail
+        .files
+        .iter()
+        .map(|f| UnicodeWidthStr::width(f.path.as_str()))
+        .max()
+        .unwrap_or(0)
+        .min(40);
+
+    // Pre-compute column widths so both +N and -N are right-aligned.
+    let max_add_width = detail
+        .files
+        .iter()
+        .map(|f| format!("+{}", f.additions).len())
+        .max()
+        .unwrap_or(2);
+    let max_del_width = detail
+        .files
+        .iter()
+        .map(|f| format!("-{}", f.deletions).len())
+        .max()
+        .unwrap_or(2);
+
     for file in &detail.files {
         let change = match file.status {
             Some(FileChangeType::Added) => "A",
@@ -459,129 +398,32 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
             _ => theme.text_warning,
         };
 
+        let path_w = UnicodeWidthStr::width(file.path.as_str()).min(max_path_width);
+        let pad = max_path_width - path_w + 2; // 2 = min gap
+
         lines.push(StyledLine::from_spans(vec![
             StyledSpan::text(format!("{change} "), change_color),
             StyledSpan::text(&file.path, theme.text_primary),
             StyledSpan::text(
-                format!("  +{} -{}", file.additions, file.deletions),
-                theme.text_faint,
+                format!(
+                    "{:pad$}{:>width$}",
+                    "",
+                    format!("+{}", file.additions),
+                    pad = pad,
+                    width = max_add_width
+                ),
+                theme.text_success,
+            ),
+            StyledSpan::text(
+                format!(
+                    " {:>width$}",
+                    format!("-{}", file.deletions),
+                    width = max_del_width
+                ),
+                theme.text_error,
             ),
         ]));
     }
-
-    lines
-}
-
-// ---------------------------------------------------------------------------
-// Issue Overview tab
-// ---------------------------------------------------------------------------
-
-/// Render the Overview tab metadata for an issue: labels, assignees, reactions.
-pub fn render_issue_overview_metadata(issue: &Issue, theme: &ResolvedTheme) -> Vec<StyledLine> {
-    let mut lines = Vec::new();
-
-    // Labels
-    if !issue.labels.is_empty() {
-        let label_text = issue
-            .labels
-            .iter()
-            .map(|l| crate::util::expand_emoji(&l.name))
-            .collect::<Vec<_>>()
-            .join(", ");
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::bold("Labels: ", theme.text_secondary),
-            StyledSpan::text(label_text, theme.text_primary),
-        ]));
-    }
-
-    // Assignees
-    if !issue.assignees.is_empty() {
-        let assignee_text = issue
-            .assignees
-            .iter()
-            .map(|a| a.login.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::bold("Assign: ", theme.text_secondary),
-            StyledSpan::text(assignee_text, theme.text_actor),
-        ]));
-    }
-
-    // Dates: local time (age)
-    let fmt = "%Y-%m-%d %H:%M:%S";
-    let created_age = crate::util::format_date(&issue.created_at, "relative");
-    let updated_age = crate::util::format_date(&issue.updated_at, "relative");
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("Created:", theme.text_secondary),
-        StyledSpan::text(
-            format!(
-                " {}",
-                issue.created_at.with_timezone(&chrono::Local).format(fmt)
-            ),
-            theme.text_faint,
-        ),
-        StyledSpan::text(" (", theme.text_faint),
-        StyledSpan::text(created_age, theme.text_secondary),
-        StyledSpan::text(")", theme.text_faint),
-    ]));
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::bold("Updated:", theme.text_secondary),
-        StyledSpan::text(
-            format!(
-                " {}",
-                issue.updated_at.with_timezone(&chrono::Local).format(fmt)
-            ),
-            theme.text_faint,
-        ),
-        StyledSpan::text(" (", theme.text_faint),
-        StyledSpan::text(updated_age, theme.text_secondary),
-        StyledSpan::text(")", theme.text_faint),
-    ]));
-
-    // Blank line between metadata and reactions
-    lines.push(StyledLine::blank());
-
-    // Reactions
-    let r = &issue.reactions;
-    let total = r.total();
-    if total > 0 {
-        let mut parts = Vec::new();
-        if r.thumbs_up > 0 {
-            parts.push(format!("\u{1f44d} {}", r.thumbs_up));
-        }
-        if r.thumbs_down > 0 {
-            parts.push(format!("\u{1f44e} {}", r.thumbs_down));
-        }
-        if r.laugh > 0 {
-            parts.push(format!("\u{1f604} {}", r.laugh));
-        }
-        if r.hooray > 0 {
-            parts.push(format!("\u{1f389} {}", r.hooray));
-        }
-        if r.confused > 0 {
-            parts.push(format!("\u{1f615} {}", r.confused));
-        }
-        if r.heart > 0 {
-            parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
-        }
-        if r.rocket > 0 {
-            parts.push(format!("\u{1f680} {}", r.rocket));
-        }
-        if r.eyes > 0 {
-            parts.push(format!("\u{1f440} {}", r.eyes));
-        }
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::bold("React:  ", theme.text_secondary),
-            StyledSpan::text(parts.join("  "), theme.text_primary),
-        ]));
-    }
-
-    // Horizontal rule separator before body
-    lines.push(StyledLine::from_span(StyledSpan::text(
-        "\u{2500}".repeat(20),
-        theme.md_horizontal_rule,
-    )));
 
     lines
 }

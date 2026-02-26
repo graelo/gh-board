@@ -2,6 +2,7 @@ use iocraft::prelude::*;
 
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::markdown_view::{MarkdownView, RenderedMarkdown};
+use crate::components::scrollbar::{ScrollInfo, Scrollbar};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::StyledLine;
 
@@ -99,6 +100,56 @@ pub struct SidebarMeta {
     // Participants line
     pub participants: Vec<String>,
     pub participants_fg: Color,
+
+    // Overview metadata (pinned, non-scrollable)
+    pub labels_text: Option<String>,
+    pub assignees_text: Option<String>,
+    pub created_text: String,
+    pub created_age: String,
+    pub updated_text: String,
+    pub updated_age: String,
+    pub lines_added: Option<String>,
+    pub lines_deleted: Option<String>,
+    pub reactions_text: Option<String>,
+    pub date_fg: Color,
+    pub date_age_fg: Color,
+    pub additions_fg: Color,
+    pub deletions_fg: Color,
+    pub separator_fg: Color,
+    pub primary_fg: Color,
+    pub actor_fg: Color,
+    pub reactions_fg: Color,
+}
+
+impl SidebarMeta {
+    /// Number of fixed lines rendered in the meta section.
+    ///
+    /// Base: pill(1) + author(1) = 2, plus optional participants(1).
+    /// Plus overview metadata: created(1) + updated(1) + separator(1) = 3,
+    /// plus optional labels(1), assignees(1), lines(1), reactions(1).
+    /// We also account for `margin_top: 1` on each sub-group.
+    pub fn line_count(&self) -> u32 {
+        // outer margin_top(1) + pill(1) + author margin_top(1) + author(1) = 4
+        let mut count: u32 = 4;
+        if self.participants.len() > 1 {
+            count += 1;
+        }
+        // Overview metadata: created + updated + separator = 3
+        count += 3;
+        if self.labels_text.is_some() {
+            count += 1;
+        }
+        if self.assignees_text.is_some() {
+            count += 1;
+        }
+        if self.lines_added.is_some() {
+            count += 1;
+        }
+        if self.reactions_text.is_some() {
+            count += 1;
+        }
+        count
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +172,14 @@ pub struct RenderedSidebar {
     pub tab_inactive_fg: Color,
     /// Optional meta header (pill badge + author line) for Overview tab.
     pub meta: Option<SidebarMeta>,
+    /// Scroll metadata for the scrollbar (None when content fits).
+    pub scroll_info: Option<ScrollInfo>,
+    /// Height of the scrollbar track in rows.
+    pub track_height: u32,
+    /// Scrollbar track color.
+    pub scrollbar_track_fg: Color,
+    /// Scrollbar thumb color.
+    pub scrollbar_thumb_fg: Color,
 }
 
 impl RenderedSidebar {
@@ -136,6 +195,7 @@ impl RenderedSidebar {
         title_color: Option<AppColor>,
         border_color: Option<AppColor>,
         indicator_color: Option<AppColor>,
+        thumb_color: Option<AppColor>,
     ) -> Self {
         Self::build_tabbed(
             title,
@@ -147,6 +207,7 @@ impl RenderedSidebar {
             title_color,
             border_color,
             indicator_color,
+            thumb_color,
             None,
             None,
             None,
@@ -166,6 +227,7 @@ impl RenderedSidebar {
         title_color: Option<AppColor>,
         border_color: Option<AppColor>,
         indicator_color: Option<AppColor>,
+        thumb_color: Option<AppColor>,
         active_tab: Option<SidebarTab>,
         icons: Option<&ResolvedIcons>,
         meta: Option<SidebarMeta>,
@@ -174,13 +236,28 @@ impl RenderedSidebar {
         let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let indicator_fg = indicator_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let thumb_fg = thumb_color.map_or(border_fg, |c| c.to_crossterm_color(depth));
 
-        let total = lines.len();
-        let scroll_indicator = if total > visible_lines {
-            let pos = if total == 0 {
+        // Estimate visual row count: each logical line may wrap to multiple
+        // terminal rows. Content width = sidebar width minus left border (1) +
+        // padding (2) + scrollbar (1).
+        let content_width = usize::from(width).saturating_sub(4).max(1);
+        let visual_row_count = |line: &StyledLine| -> usize {
+            let w = line.display_width();
+            if w == 0 { 1 } else { w.div_ceil(content_width) }
+        };
+
+        let visual_total: usize = lines.iter().map(&visual_row_count).sum();
+        let visual_offset: usize = lines[..scroll_offset.min(lines.len())]
+            .iter()
+            .map(visual_row_count)
+            .sum();
+
+        let scroll_indicator = if visual_total > visible_lines {
+            let pos = if visual_total == 0 {
                 0
             } else {
-                (scroll_offset * 100) / total.max(1)
+                (visual_offset * 100) / visual_total.max(1)
             };
             format!("{pos}%")
         } else {
@@ -206,6 +283,21 @@ impl RenderedSidebar {
             Vec::new()
         };
 
+        // Scroll metadata for the scrollbar.
+        let scroll_info = ScrollInfo {
+            scroll_offset: visual_offset,
+            visible_count: visible_lines,
+            total_count: visual_total,
+        };
+        let scroll_info = if scroll_info.needs_scrollbar() {
+            Some(scroll_info)
+        } else {
+            None
+        };
+
+        #[allow(clippy::cast_possible_truncation)]
+        let track_height = visible_lines as u32;
+
         Self {
             title: crate::util::expand_emoji(title).into_owned(),
             scroll_indicator,
@@ -218,6 +310,10 @@ impl RenderedSidebar {
             tab_active_fg: title_fg,
             tab_inactive_fg: indicator_fg,
             meta,
+            scroll_info,
+            track_height,
+            scrollbar_track_fg: border_fg,
+            scrollbar_thumb_fg: thumb_fg,
         }
     }
 }
@@ -237,9 +333,13 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
         return element! { View }.into_any();
     };
 
-    let has_indicator = !sb.scroll_indicator.is_empty();
     let has_tabs = !sb.tab_labels.is_empty();
     let meta = sb.meta;
+    let scroll_info = sb.scroll_info;
+    let has_scrollbar = scroll_info.is_some();
+    let track_height = sb.track_height;
+    let track_color = sb.scrollbar_track_fg;
+    let thumb_color = sb.scrollbar_thumb_fg;
 
     // Pre-build tab label contents for MixedText.
     let tab_contents: Vec<MixedTextContent> = sb
@@ -278,16 +378,6 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                         wrap: TextWrap::NoWrap,
                     )
                 }
-                #(if has_indicator {
-                    Some(element! {
-                        Text(
-                            content: sb.scroll_indicator,
-                            color: sb.indicator_fg,
-                        )
-                    })
-                } else {
-                    None
-                })
             }
 
             // Tab labels (with bottom border separator when tabs are present)
@@ -299,7 +389,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                     MixedText(contents: tab_contents, wrap: TextWrap::NoWrap)
             }
 
-            // Meta section (pill badge + author + participants, Overview tab only)
+            // Meta section (pill badge + author + participants + overview metadata, Overview tab only)
             #(meta.map(|m| {
                 let pill_label = format!(" {} {} ", m.pill_icon, m.pill_text);
                 let branch_label = format!(" {}", m.branch_text);
@@ -318,6 +408,31 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                     format!("  {} {}", m.role_icon, m.role_text)
                 };
                 let role_fg = m.role_fg;
+
+                // Overview metadata fields
+                let has_labels = m.labels_text.is_some();
+                let labels_text = m.labels_text.unwrap_or_default();
+                let has_assignees = m.assignees_text.is_some();
+                let assignees_text = m.assignees_text.unwrap_or_default();
+                let created_label = format!(" {} ", m.created_text);
+                let created_age_label = format!("({})", m.created_age);
+                let updated_label = format!(" {} ", m.updated_text);
+                let updated_age_label = format!("({})", m.updated_age);
+                let has_lines = m.lines_added.is_some();
+                let lines_added = m.lines_added.unwrap_or_default();
+                let lines_deleted = m.lines_deleted.unwrap_or_default();
+                let has_reactions = m.reactions_text.is_some();
+                let reactions_text = m.reactions_text.unwrap_or_default();
+                let date_fg = m.date_fg;
+                let date_age_fg = m.date_age_fg;
+                let additions_fg = m.additions_fg;
+                let deletions_fg = m.deletions_fg;
+                let separator_fg = m.separator_fg;
+                let primary_fg = m.primary_fg;
+                let actor_fg = m.actor_fg;
+                let reactions_fg = m.reactions_fg;
+                let separator = "\u{2500}".repeat(20);
+
                 element! {
                     View(margin_top: 1, flex_direction: FlexDirection::Column) {
                         // Line 1: pill + branch + update status
@@ -401,13 +516,137 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                         } else {
                             None
                         })
+
+                        // Labels (optional)
+                        #(if has_labels {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("Labels: ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(labels_text)
+                                                .color(primary_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
+                            })
+                        } else {
+                            None
+                        })
+                        // Assignees (optional)
+                        #(if has_assignees {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("Assign: ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(assignees_text)
+                                                .color(actor_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
+                            })
+                        } else {
+                            None
+                        })
+                        // Created
+                        View {
+                            MixedText(
+                                contents: vec![
+                                    MixedTextContent::new("Created:")
+                                        .color(label_fg)
+                                        .weight(Weight::Bold),
+                                    MixedTextContent::new(created_label)
+                                        .color(date_fg),
+                                    MixedTextContent::new(created_age_label)
+                                        .color(date_age_fg),
+                                ],
+                                wrap: TextWrap::NoWrap,
+                            )
+                        }
+                        // Updated
+                        View {
+                            MixedText(
+                                contents: vec![
+                                    MixedTextContent::new("Updated:")
+                                        .color(label_fg)
+                                        .weight(Weight::Bold),
+                                    MixedTextContent::new(updated_label)
+                                        .color(date_fg),
+                                    MixedTextContent::new(updated_age_label)
+                                        .color(date_age_fg),
+                                ],
+                                wrap: TextWrap::NoWrap,
+                            )
+                        }
+                        // Lines changed (optional, PRs only)
+                        #(if has_lines {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("Lines:  ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(lines_added)
+                                                .color(additions_fg),
+                                            MixedTextContent::new(" / ")
+                                                .color(date_fg),
+                                            MixedTextContent::new(lines_deleted)
+                                                .color(deletions_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
+                            })
+                        } else {
+                            None
+                        })
+                        // Reactions (optional, issues only)
+                        #(if has_reactions {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("React:  ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(reactions_text)
+                                                .color(reactions_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
+                            })
+                        } else {
+                            None
+                        })
+                        // Separator
+                        View {
+                            Text(content: separator, color: separator_fg, wrap: TextWrap::NoWrap)
+                        }
                     }
                 }
             }))
 
-            // Content area
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
-                MarkdownView(markdown: sb.markdown)
+            // Content area with scrollbar
+            View(flex_grow: 1.0, flex_direction: FlexDirection::Row) {
+                View(flex_grow: 1.0, flex_direction: FlexDirection::Column,
+                     margin_right: u32::from(has_scrollbar)) {
+                    MarkdownView(markdown: sb.markdown)
+                }
+                Scrollbar(
+                    scroll_info: scroll_info,
+                    track_height: track_height,
+                    track_color: track_color,
+                    thumb_color: thumb_color,
+                )
             }
         }
     }

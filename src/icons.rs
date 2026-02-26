@@ -74,6 +74,19 @@ pub struct ResolvedIcons {
     pub update_needed: String,
     pub update_conflict: String,
     pub update_ok: String,
+    // Feedback indicators (2)
+    pub feedback_ok: String,
+    pub feedback_error: String,
+    // UI chrome (2)
+    pub tab_ephemeral: String,
+    pub select_cursor: String,
+    // Actions run status (6)
+    pub action_success: String,
+    pub action_failure: String,
+    pub action_cancelled: String,
+    pub action_skipped: String,
+    pub action_running: String,
+    pub action_queued: String,
 }
 
 impl ResolvedIcons {
@@ -150,6 +163,19 @@ impl ResolvedIcons {
             update_needed: "\u{2193}".to_owned(), // ↓
             update_conflict: "!".to_owned(),
             update_ok: "\u{2713}".to_owned(), // ✓
+            // Feedback indicators
+            feedback_ok: "\u{2713}".to_owned(),    // ✓
+            feedback_error: "\u{2717}".to_owned(), // ✗
+            // UI chrome
+            tab_ephemeral: "\u{25cc}".to_owned(), // ◌
+            select_cursor: "\u{25b6}".to_owned(), // ▶
+            // Actions run status
+            action_success: "\u{2714}".to_owned(),   // ✔
+            action_failure: "\u{2716}".to_owned(),   // ✖
+            action_cancelled: "\u{2715}".to_owned(), // ✕
+            action_skipped: "-".to_owned(),
+            action_running: "\u{21ba}".to_owned(), // ↺
+            action_queued: "\u{25cb}".to_owned(),  // ○
         }
     }
 
@@ -218,15 +244,28 @@ impl ResolvedIcons {
             view_repo: "\u{e727}".to_owned(), //  nf-dev-git_branch
             view_actions: "\u{ebc8}".to_owned(), //  nf-cod-run_all
             // Tab filter marker
-            tab_filter: "\u{f02b}".to_owned(), //  nf-fa-tag
+            tab_filter: "\u{f02b}".to_owned(), //  nf-fa-tag
             // Pill caps (Powerline half-circles for rounded edges)
             pill_left: "\u{e0b6}".to_owned(), //  nf-pl-right_half_circle_thick
             pill_right: "\u{e0b4}".to_owned(), //  nf-pl-left_half_circle_thick
             // Branch update status
-            header_update: "\u{f0c7b}".to_owned(), // nf-oct-sync
-            update_needed: "\u{f063}".to_owned(),  // nf-fa-arrow_down
-            update_conflict: "\u{f12a}".to_owned(), // nf-fa-exclamation
-            update_ok: "\u{f00c}".to_owned(),      // nf-fa-check
+            header_update: "\u{f0c7b}".to_owned(), // 󰱻 nf-oct-sync
+            update_needed: "\u{f063}".to_owned(),  //  nf-fa-arrow_down
+            update_conflict: "\u{f12a}".to_owned(), //  nf-fa-exclamation
+            update_ok: "\u{f00c}".to_owned(),      //  nf-fa-check
+            // Feedback indicators
+            feedback_ok: "\u{f00c}".to_owned(),    //  nf-fa-check
+            feedback_error: "\u{f00d}".to_owned(), //  nf-fa-times
+            // UI chrome
+            tab_ephemeral: "\u{f4c3}".to_owned(), //  nf-oct-dot
+            select_cursor: "\u{ea9c}".to_owned(), //  nf-cod-triangle_right
+            // Actions run status
+            action_success: "\u{f058}".to_owned(), //  nf-fa-check_circle
+            action_failure: "\u{f0159}".to_owned(), // 󰅙 nf-md-close_circle
+            action_cancelled: "\u{eabd}".to_owned(), //  nf-cod-circle_slash
+            action_skipped: "-".to_owned(),
+            action_running: "\u{ea77}".to_owned(), //  nf-cod-sync
+            action_queued: "\u{e641}".to_owned(),  //  nf-seti-clock
         }
     }
 
@@ -303,11 +342,25 @@ impl ResolvedIcons {
             update_needed: "v".to_owned(),
             update_conflict: "!".to_owned(),
             update_ok: "ok".to_owned(),
+            // Feedback indicators
+            feedback_ok: "ok".to_owned(),
+            feedback_error: "ERR".to_owned(),
+            // UI chrome
+            tab_ephemeral: "*".to_owned(),
+            select_cursor: ">".to_owned(),
+            // Actions run status
+            action_success: "v".to_owned(),
+            action_failure: "x".to_owned(),
+            action_cancelled: "/".to_owned(),
+            action_skipped: "-".to_owned(),
+            action_running: "~".to_owned(),
+            action_queued: "o".to_owned(),
         }
     }
 
     /// Build a resolved icon set from user config: pick a preset, then apply
     /// per-icon overrides.
+    #[allow(clippy::too_many_lines)]
     pub fn resolve(config: &IconConfig) -> Self {
         let base = match config.preset.as_deref() {
             Some("nerdfont") => Self::nerdfont(),
@@ -407,6 +460,19 @@ impl ResolvedIcons {
                 .clone()
                 .unwrap_or(base.update_conflict),
             update_ok: config.update_ok.clone().unwrap_or(base.update_ok),
+            feedback_ok: config.feedback_ok.clone().unwrap_or(base.feedback_ok),
+            feedback_error: config.feedback_error.clone().unwrap_or(base.feedback_error),
+            tab_ephemeral: config.tab_ephemeral.clone().unwrap_or(base.tab_ephemeral),
+            select_cursor: config.select_cursor.clone().unwrap_or(base.select_cursor),
+            action_success: config.action_success.clone().unwrap_or(base.action_success),
+            action_failure: config.action_failure.clone().unwrap_or(base.action_failure),
+            action_cancelled: config
+                .action_cancelled
+                .clone()
+                .unwrap_or(base.action_cancelled),
+            action_skipped: config.action_skipped.clone().unwrap_or(base.action_skipped),
+            action_running: config.action_running.clone().unwrap_or(base.action_running),
+            action_queued: config.action_queued.clone().unwrap_or(base.action_queued),
         }
     }
 }
@@ -454,6 +520,60 @@ mod tests {
         assert_eq!(icons.pr_open, "X");
         // Others stay at unicode defaults.
         assert_eq!(icons.pr_closed, "\u{2716}");
+    }
+
+    #[test]
+    fn action_icons_unicode_preset() {
+        let config = IconConfig::default();
+        let icons = ResolvedIcons::resolve(&config);
+        assert_eq!(icons.action_success, "\u{2714}");
+        assert_eq!(icons.action_failure, "\u{2716}");
+        assert_eq!(icons.action_cancelled, "\u{2715}");
+        assert_eq!(icons.action_skipped, "-");
+        assert_eq!(icons.action_running, "\u{21ba}");
+        assert_eq!(icons.action_queued, "\u{25cb}");
+    }
+
+    #[test]
+    fn action_icons_nerdfont_preset() {
+        let config = IconConfig {
+            preset: Some("nerdfont".to_owned()),
+            ..Default::default()
+        };
+        let icons = ResolvedIcons::resolve(&config);
+        assert_eq!(icons.action_success, "\u{f058}");
+        assert_eq!(icons.action_failure, "\u{f0159}");
+        assert_eq!(icons.action_cancelled, "\u{eabd}");
+        assert_eq!(icons.action_skipped, "-");
+        assert_eq!(icons.action_running, "\u{ea77}");
+        assert_eq!(icons.action_queued, "\u{e641}");
+    }
+
+    #[test]
+    fn action_icons_ascii_preset() {
+        let config = IconConfig {
+            preset: Some("ascii".to_owned()),
+            ..Default::default()
+        };
+        let icons = ResolvedIcons::resolve(&config);
+        assert_eq!(icons.action_success, "v");
+        assert_eq!(icons.action_failure, "x");
+        assert_eq!(icons.action_cancelled, "/");
+        assert_eq!(icons.action_skipped, "-");
+        assert_eq!(icons.action_running, "~");
+        assert_eq!(icons.action_queued, "o");
+    }
+
+    #[test]
+    fn action_icon_override() {
+        let config = IconConfig {
+            action_success: Some("OK".to_owned()),
+            ..Default::default()
+        };
+        let icons = ResolvedIcons::resolve(&config);
+        assert_eq!(icons.action_success, "OK");
+        // Others stay at unicode defaults.
+        assert_eq!(icons.action_failure, "\u{2716}");
     }
 
     #[test]

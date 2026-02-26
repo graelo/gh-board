@@ -95,20 +95,21 @@ fn run_status_icon_color(
     conclusion: Option<RunConclusion>,
     theme: &ResolvedTheme,
 ) -> (String, AppColor) {
+    let icons = &theme.icons;
     match status {
         RunStatus::Completed => match conclusion {
-            Some(RunConclusion::Success) => ("\u{2714}".to_owned(), theme.text_success),
+            Some(RunConclusion::Success) => (icons.action_success.clone(), theme.text_success),
             Some(RunConclusion::Failure | RunConclusion::TimedOut) => {
-                ("\u{2716}".to_owned(), theme.text_error)
+                (icons.action_failure.clone(), theme.text_error)
             }
-            Some(RunConclusion::Cancelled) => ("\u{2715}".to_owned(), theme.text_faint),
+            Some(RunConclusion::Cancelled) => (icons.action_cancelled.clone(), theme.text_faint),
             Some(RunConclusion::Skipped | RunConclusion::Neutral) => {
-                ("-".to_owned(), theme.text_faint)
+                (icons.action_skipped.clone(), theme.text_faint)
             }
             _ => ("?".to_owned(), theme.text_faint),
         },
-        RunStatus::InProgress => ("\u{21ba}".to_owned(), theme.text_warning),
-        RunStatus::Queued => ("\u{25cb}".to_owned(), theme.text_secondary),
+        RunStatus::InProgress => (icons.action_running.clone(), theme.text_warning),
+        RunStatus::Queued => (icons.action_queued.clone(), theme.text_secondary),
         RunStatus::Unknown => ("?".to_owned(), theme.text_faint),
     }
 }
@@ -270,7 +271,13 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
         )));
         return lines;
     }
-    for job in jobs {
+    let mut sorted_jobs: Vec<&WorkflowJob> = jobs.iter().collect();
+    sorted_jobs.sort_by(|a, b| a.name.cmp(&b.name));
+
+    for (i, job) in sorted_jobs.iter().enumerate() {
+        if i > 0 {
+            lines.push(StyledLine::from_spans(vec![]));
+        }
         let (icon, color) = run_status_icon_color(job.status, job.conclusion, theme);
         let duration = crate::util::format_duration(job.started_at, job.completed_at);
         let dur_text = if duration.is_empty() {
@@ -592,7 +599,10 @@ pub fn ActionsView<'a>(
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!("\u{2713} {description}")));
+                            action_status.set(Some(format!(
+                                "{} {description}",
+                                theme_for_poll.icons.feedback_ok
+                            )));
                             // Refetch current filter.
                             let mut state = actions_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -609,7 +619,10 @@ pub fn ActionsView<'a>(
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!("\u{2717} {description}: {message}")));
+                            action_status.set(Some(format!(
+                                "{} {description}: {message}",
+                                theme_for_poll.icons.feedback_error
+                            )));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -1279,16 +1292,13 @@ pub fn ActionsView<'a>(
                                         input_mode.set(InputMode::Search);
                                         search_query.set(String::new());
                                     }
-                                    BuiltinAction::MoveDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + 1)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            if new_cursor >= scroll_offset.get() + visible_rows {
-                                                scroll_offset.set(
-                                                    new_cursor.saturating_sub(visible_rows) + 1,
-                                                );
-                                            }
+                                    BuiltinAction::MoveDown if total_rows > 0 => {
+                                        let new_cursor =
+                                            (cursor.get() + 1).min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        if new_cursor >= scroll_offset.get() + visible_rows {
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(visible_rows) + 1);
                                         }
                                     }
                                     BuiltinAction::MoveUp => {
@@ -1302,23 +1312,18 @@ pub fn ActionsView<'a>(
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
-                                    BuiltinAction::Last => {
-                                        if total_rows > 0 {
-                                            cursor.set(total_rows.saturating_sub(1));
-                                            scroll_offset
-                                                .set(total_rows.saturating_sub(visible_rows));
-                                        }
+                                    BuiltinAction::Last if total_rows > 0 => {
+                                        cursor.set(total_rows.saturating_sub(1));
+                                        scroll_offset.set(total_rows.saturating_sub(visible_rows));
                                     }
-                                    BuiltinAction::PageDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + visible_rows)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            scroll_offset
-                                                .set(new_cursor.saturating_sub(
-                                                    visible_rows.saturating_sub(1),
-                                                ));
-                                        }
+                                    BuiltinAction::PageDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + visible_rows)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        scroll_offset.set(
+                                            new_cursor
+                                                .saturating_sub(visible_rows.saturating_sub(1)),
+                                        );
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);
@@ -1354,25 +1359,21 @@ pub fn ActionsView<'a>(
                                             }
                                         }
                                     }
-                                    BuiltinAction::PrevFilter => {
-                                        if total_tab_count > 0 {
-                                            let current = active_filter.get();
-                                            active_filter.set(if current == 0 {
-                                                total_tab_count.saturating_sub(1)
-                                            } else {
-                                                current - 1
-                                            });
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                        }
+                                    BuiltinAction::PrevFilter if total_tab_count > 0 => {
+                                        let current = active_filter.get();
+                                        active_filter.set(if current == 0 {
+                                            total_tab_count.saturating_sub(1)
+                                        } else {
+                                            current - 1
+                                        });
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
                                     }
-                                    BuiltinAction::NextFilter => {
-                                        if total_tab_count > 0 {
-                                            active_filter
-                                                .set((active_filter.get() + 1) % total_tab_count);
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                        }
+                                    BuiltinAction::NextFilter if total_tab_count > 0 => {
+                                        active_filter
+                                            .set((active_filter.get() + 1) % total_tab_count);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
                                     }
                                     BuiltinAction::CloseTab => {
                                         if current_filter_idx >= filter_count {
@@ -1506,6 +1507,7 @@ pub fn ActionsView<'a>(
         },
         subtitle_column: None,
         row_separator: true,
+        scrollbar_thumb_color: Some(theme.border_primary),
     });
 
     let rendered_tab_bar = RenderedTabBar::build(
@@ -1517,6 +1519,7 @@ pub fn ActionsView<'a>(
         Some(theme.footer_actions),
         Some(theme.border_faint),
         &theme.icons.tab_filter,
+        &theme.icons.tab_ephemeral,
     );
 
     let current_mode = input_mode.read().clone();
@@ -1636,6 +1639,7 @@ pub fn ActionsView<'a>(
             Some(theme.text_primary),
             Some(theme.border_faint),
             Some(theme.text_faint),
+            Some(theme.border_primary),
         ))
     } else {
         None
@@ -1726,7 +1730,7 @@ pub fn ActionsView<'a>(
                 }))
 
                 // Main table
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column, overflow: Overflow::Hidden) {
+                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
 

@@ -86,6 +86,14 @@ impl StyledLine {
     pub fn blank() -> Self {
         Self::new()
     }
+
+    /// Display width of all spans combined (unicode-aware).
+    pub fn display_width(&self) -> usize {
+        self.spans
+            .iter()
+            .map(|s| UnicodeWidthStr::width(s.text.as_str()))
+            .sum()
+    }
 }
 
 // ---------------------------------------------------------------------------

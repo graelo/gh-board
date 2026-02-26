@@ -1,9 +1,9 @@
 [package]
 name = "gh-board"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2024"
 rust-version = "1.88.0"
-description = "A blazingly fast terminal dashboard for GitHub pull requests, issues, and notifications"
+description = "A fast terminal dashboard for GitHub pull requests, issues, and notifications"
 repository = "https://github.com/graelo/gh-board"
 license = "MIT"
 keywords = ["cli", "dashboard", "github", "tui"]
@@ -15,12 +15,12 @@ anyhow = "1"
 # Date/time
 chrono = { version = "0.4", features = ["serde"] }
 #
-# GitHub emoji shortcodes
-gh-emoji = "1"
-#
 # CLI
 clap = { version = "4", features = ["derive"] }
 crossterm = "0.28"  # pinned by iocraft 0.7
+#
+# GitHub emoji shortcodes
+gh-emoji = "1"
 #
 # GitHub API
 http = "1"

@@ -271,7 +271,10 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
         )));
         return lines;
     }
-    for (i, job) in jobs.iter().enumerate() {
+    let mut sorted_jobs: Vec<&WorkflowJob> = jobs.iter().collect();
+    sorted_jobs.sort_by(|a, b| a.name.cmp(&b.name));
+
+    for (i, job) in sorted_jobs.iter().enumerate() {
         if i > 0 {
             lines.push(StyledLine::from_spans(vec![]));
         }

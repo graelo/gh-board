@@ -300,6 +300,9 @@ fn group_checks_by_workflow(checks: &[CheckRun]) -> Vec<(Option<String>, Vec<&Ch
             groups.push((key.clone(), vec![check]));
         }
     }
+    // Sort named groups alphabetically (None < Some, so None goes first).
+    groups.sort_by(|a, b| a.0.cmp(&b.0));
+
     // Move the None-keyed group to the end.
     if let Some(pos) = groups.iter().position(|(k, _)| k.is_none()) {
         let none_group = groups.remove(pos);

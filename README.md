@@ -242,33 +242,35 @@ The PR view displays the following columns:
 
 ### Universal (All Views)
 
-| Key                   | Action                             |
-| --------------------- | ---------------------------------- |
-| `j` / `Down`          | Move cursor down                   |
-| `k` / `Up`            | Move cursor up                     |
-| `g` / `Home`          | Jump to first item                 |
-| `G` / `End`           | Jump to last item                  |
-| `Ctrl+d` / `PageDown` | Page down (preview pane)           |
-| `Ctrl+u` / `PageUp`   | Page up (preview pane)             |
-| `h` / `Left`          | Previous filter                    |
-| `l` / `Right`         | Next filter                        |
-| `p`                   | Toggle preview pane                |
-| `o`                   | Open in browser                    |
-| `r`                   | Refresh current filter             |
-| `R`                   | Refresh all filters (clear cache)  |
-| `/`                   | Search / filter                    |
-| `y`                   | Copy number to clipboard           |
-| `Y`                   | Copy URL to clipboard              |
-| `?`                   | Toggle help overlay                |
-| `q` / `Ctrl+c`        | Quit                               |
+| Key              | Action                             |
+| ---------------- | ---------------------------------- |
+| `j` / `Down`     | Move cursor down                   |
+| `k` / `Up`       | Move cursor up                     |
+| `g` / `Home`     | Jump to first item                 |
+| `G` / `End`      | Jump to last item                  |
+| `Ctrl+d`         | Half page down / scroll sidebar    |
+| `Ctrl+u`         | Half page up / scroll sidebar      |
+| `PageDown`       | Page down                          |
+| `PageUp`         | Page up                            |
+| `h` / `Left`     | Previous filter                    |
+| `l` / `Right`    | Next filter                        |
+| `p`              | Toggle preview pane                |
+| `o`              | Open in browser                    |
+| `r`              | Refresh current filter             |
+| `R`              | Refresh all filters (clear cache)  |
+| `/`              | Search / filter                    |
+| `y`              | Copy number to clipboard           |
+| `Y`              | Copy URL to clipboard              |
+| `?`              | Toggle help overlay                |
+| `q`              | Quit                               |
 
 ### PR View
 
 | Key           | Action                     |
 | ------------- | -------------------------- |
 | `v`           | Approve                    |
-| `a`           | Assign                     |
-| `A`           | Unassign                   |
+| `L`           | Label (autocomplete)       |
+| `a`           | Assign/Unassign (multiselect) |
 | `c`           | Comment                    |
 | `d`           | View diff in pager         |
 | `C` / `Space` | Checkout branch ¹          |
@@ -277,6 +279,7 @@ The PR view displays the following columns:
 | `W`           | Mark as ready for review   |
 | `m`           | Merge PR                   |
 | `u`           | Update PR from base branch |
+| `Ctrl+]`      | Jump to Actions run        |
 | `n`           | Switch view                |
 | `N`           | Switch view back           |
 | `S`           | Toggle repo scope          |
@@ -285,54 +288,54 @@ The PR view displays the following columns:
 
 ### Issue View
 
-| Key | Action                    |
-| --- | ------------------------- |
-| `L` | Label (with autocomplete) |
-| `a` | Assign                    |
-| `A` | Unassign                  |
-| `c` | Comment                   |
-| `x` | Close issue               |
-| `X` | Reopen issue              |
-| `n` | Switch view               |
-| `N` | Switch view back          |
-| `S` | Toggle repo scope         |
+| Key | Action                          |
+| --- | ------------------------------- |
+| `L` | Label (with autocomplete)       |
+| `a` | Assign/Unassign (multiselect)   |
+| `c` | Comment                         |
+| `x` | Close issue                     |
+| `X` | Reopen issue                    |
+| `n` | Switch view                     |
+| `N` | Switch view back                |
+| `S` | Toggle repo scope               |
 
 ### Notification View
 
-| Key     | Action                    |
-| ------- | ------------------------- |
-| `Enter` | View notification details |
-| `D`     | Mark as done              |
-| `Alt+d` | Mark all as done          |
-| `m`     | Mark as read              |
-| `M`     | Mark all as read          |
-| `u`     | Unsubscribe               |
-| `n`     | Switch view               |
-| `N`     | Switch view back          |
-| `S`     | Toggle repo scope         |
+| Key | Action           |
+| --- | ---------------- |
+| `m` | Mark as read     |
+| `M` | Mark all as read |
+| `u` | Unsubscribe      |
+| `n` | Switch view      |
+| `N` | Switch view back |
+| `S` | Toggle repo scope |
 
 ### Actions View
 
-| Key        | Action                    |
-| ---------- | ------------------------- |
-| `w`        | Toggle workflow navigator |
-| `e`        | Re-run failed jobs        |
-| `E`        | Re-run all jobs           |
-| `Ctrl+x`   | Cancel run                |
-| `n`        | Switch view               |
-| `N`        | Switch view back          |
+| Key      | Action                    |
+| -------- | ------------------------- |
+| `w`      | Toggle workflow navigator |
+| `Ctrl+t` | Go back to previous view  |
+| `d`      | Close ephemeral tab       |
+| `e`      | Re-run failed jobs        |
+| `E`      | Re-run all jobs           |
+| `Ctrl+x` | Cancel run                |
+| `n`      | Switch view               |
+| `N`      | Switch view back          |
+| `S`      | Toggle repo scope         |
 
 ### Branches View
 
-| Key      | Action                |
-| -------- | --------------------- |
-| `Delete` | Delete branch         |
-| `+`      | Create new branch     |
-| `p`      | Create PR from branch |
-| `v`      | View PRs for branch   |
-| `n`      | Switch view           |
-| `N`      | Switch view back      |
-| `S`      | Toggle repo scope     |
+| Key              | Action                |
+| ---------------- | --------------------- |
+| `Enter` / `Space` | Checkout branch       |
+| `Delete` / `D`   | Delete branch         |
+| `+`              | Create new branch     |
+| `p`              | Create PR from branch |
+| `v`              | View PRs for branch   |
+| `n`              | Switch view           |
+| `N`              | Switch view back      |
+| `S`              | Toggle repo scope     |
 
 All keybindings are customizable via the config.
 

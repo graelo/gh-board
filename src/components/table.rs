@@ -578,7 +578,23 @@ fn compute_column_widths(
         }
     }
 
-    widths.iter().map(|w| w.unwrap_or(1)).collect()
+    // Clamp: independent rounding of unfixed columns may push the total past the budget.
+    let mut result: Vec<u16> = widths.iter().map(|w| w.unwrap_or(1)).collect();
+    let sum: u16 = result.iter().sum();
+    if sum > total {
+        let overshoot = sum - total;
+        // Subtract from the widest unfixed column.
+        if let Some(idx) = columns
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.fixed_width.is_none())
+            .max_by_key(|(i, _)| result[*i])
+            .map(|(i, _)| i)
+        {
+            result[idx] = result[idx].saturating_sub(overshoot);
+        }
+    }
+    result
 }
 
 #[cfg(test)]

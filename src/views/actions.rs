@@ -1737,7 +1737,7 @@ pub fn ActionsView<'a>(
                 }))
 
                 // Main table
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column, overflow: Overflow::Hidden) {
+                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
 

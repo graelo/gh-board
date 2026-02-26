@@ -1869,7 +1869,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             }
             SidebarTab::Files => {
                 if let Some(detail) = detail_for_pr {
-                    sidebar_tabs::render_files(detail, &theme)
+                    sidebar_tabs::render_files(detail, &theme, sidebar_width)
                 } else {
                     vec![StyledLine::from_span(
                         crate::markdown::renderer::StyledSpan::text("Loading...", theme.text_faint),

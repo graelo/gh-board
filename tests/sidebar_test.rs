@@ -415,7 +415,7 @@ fn checks_empty_shows_placeholder() {
 fn files_renders_paths_and_stats() {
     let detail = test_detail();
     let theme = test_theme();
-    let lines = sidebar_tabs::render_files(&detail, &theme);
+    let lines = sidebar_tabs::render_files(&detail, &theme, 80);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())
@@ -441,7 +441,7 @@ fn files_empty_shows_placeholder() {
         behind_by: None,
     };
     let theme = test_theme();
-    let lines = sidebar_tabs::render_files(&detail, &theme);
+    let lines = sidebar_tabs::render_files(&detail, &theme, 80);
     let text: String = lines
         .iter()
         .flat_map(|l| l.spans.iter())

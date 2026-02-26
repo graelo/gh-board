@@ -5,7 +5,7 @@ use crate::types::{
     CheckConclusion, CheckRun, CheckStatus, CommitCheckState, FileChangeType, IssueDetail,
     PrDetail, PullRequest, ReviewState, TimelineEvent,
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 // ---------------------------------------------------------------------------
 // T074: Activity tab
@@ -349,7 +349,15 @@ fn check_status_icon(
 // ---------------------------------------------------------------------------
 
 /// Render the Files Changed tab: list of files with stats.
-pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine> {
+///
+/// `sidebar_width` is the total sidebar width in columns (including border,
+/// padding, and scrollbar). When provided, paths that would push the stats
+/// columns beyond the sidebar edge are truncated with `…`.
+pub fn render_files(
+    detail: &PrDetail,
+    theme: &ResolvedTheme,
+    sidebar_width: u16,
+) -> Vec<StyledLine> {
     let mut lines = Vec::new();
 
     if detail.files.is_empty() {
@@ -360,14 +368,8 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
         return lines;
     }
 
-    // Cap alignment column to 60% of a reasonable sidebar width (≈ 50 cols).
-    let max_path_width = detail
-        .files
-        .iter()
-        .map(|f| UnicodeWidthStr::width(f.path.as_str()))
-        .max()
-        .unwrap_or(0)
-        .min(40);
+    // Content width = sidebar minus left border (1) + padding (2) + scrollbar (1).
+    let content_width = usize::from(sidebar_width).saturating_sub(4).max(1);
 
     // Pre-compute column widths so both +N and -N are right-aligned.
     let max_add_width = detail
@@ -382,6 +384,21 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
         .map(|f| format!("-{}", f.deletions).len())
         .max()
         .unwrap_or(2);
+
+    // Fixed overhead: status letter + space (2), min gap (1), space between
+    // stats (1), plus the two stat columns.
+    let fixed_cols = 2 + 1 + max_add_width + 1 + max_del_width;
+    let path_budget = content_width.saturating_sub(fixed_cols);
+
+    // Natural alignment: use the longest path width, but cap to the budget so
+    // stats columns never overflow the sidebar.
+    let natural_max = detail
+        .files
+        .iter()
+        .map(|f| UnicodeWidthStr::width(f.path.as_str()))
+        .max()
+        .unwrap_or(0);
+    let path_col_width = natural_max.min(path_budget);
 
     for file in &detail.files {
         let change = match file.status {
@@ -398,12 +415,17 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
             _ => theme.text_warning,
         };
 
-        let path_w = UnicodeWidthStr::width(file.path.as_str()).min(max_path_width);
-        let pad = max_path_width - path_w + 2; // 2 = min gap
+        let path_w = UnicodeWidthStr::width(file.path.as_str());
+        let (display_path, display_w) = if path_w > path_col_width {
+            truncate_with_ellipsis(&file.path, path_col_width)
+        } else {
+            (file.path.clone(), path_w)
+        };
+        let pad = path_col_width.saturating_sub(display_w) + 1; // +1 = min gap
 
         lines.push(StyledLine::from_spans(vec![
             StyledSpan::text(format!("{change} "), change_color),
-            StyledSpan::text(&file.path, theme.text_primary),
+            StyledSpan::text(display_path, theme.text_primary),
             StyledSpan::text(
                 format!(
                     "{:pad$}{:>width$}",
@@ -426,6 +448,29 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
     }
 
     lines
+}
+
+/// Truncate a string to fit within `max_width` display columns, appending `…`
+/// if truncation occurs. Returns `(truncated_string, display_width)`.
+fn truncate_with_ellipsis(s: &str, max_width: usize) -> (String, usize) {
+    if max_width == 0 {
+        return (String::new(), 0);
+    }
+    let ellipsis_w = 1; // `…` is 1 column wide
+    let target = max_width.saturating_sub(ellipsis_w);
+    let mut buf = String::new();
+    let mut w = 0;
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if w + cw > target {
+            break;
+        }
+        buf.push(ch);
+        w += cw;
+    }
+    buf.push('…');
+    w += ellipsis_w;
+    (buf, w)
 }
 
 // ---------------------------------------------------------------------------

@@ -134,8 +134,8 @@ impl SidebarMeta {
         if self.participants.len() > 1 {
             count += 1;
         }
-        // Overview metadata sub-group: margin_top(1) + created + updated + separator = 4
-        count += 4;
+        // Overview metadata: created + updated + separator = 3
+        count += 3;
         if self.labels_text.is_some() {
             count += 1;
         }
@@ -512,122 +512,119 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                             None
                         })
 
-                        // Overview metadata (pinned, non-scrollable)
-                        View(margin_top: 1, flex_direction: FlexDirection::Column) {
-                            // Labels (optional)
-                            #(if has_labels {
-                                Some(element! {
-                                    View {
-                                        MixedText(
-                                            contents: vec![
-                                                MixedTextContent::new("Labels: ")
-                                                    .color(label_fg)
-                                                    .weight(Weight::Bold),
-                                                MixedTextContent::new(labels_text)
-                                                    .color(primary_fg),
-                                            ],
-                                            wrap: TextWrap::NoWrap,
-                                        )
-                                    }
-                                })
-                            } else {
-                                None
+                        // Labels (optional)
+                        #(if has_labels {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("Labels: ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(labels_text)
+                                                .color(primary_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
                             })
-                            // Assignees (optional)
-                            #(if has_assignees {
-                                Some(element! {
-                                    View {
-                                        MixedText(
-                                            contents: vec![
-                                                MixedTextContent::new("Assign: ")
-                                                    .color(label_fg)
-                                                    .weight(Weight::Bold),
-                                                MixedTextContent::new(assignees_text)
-                                                    .color(actor_fg),
-                                            ],
-                                            wrap: TextWrap::NoWrap,
-                                        )
-                                    }
-                                })
-                            } else {
-                                None
+                        } else {
+                            None
+                        })
+                        // Assignees (optional)
+                        #(if has_assignees {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("Assign: ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(assignees_text)
+                                                .color(actor_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
                             })
-                            // Created
-                            View {
-                                MixedText(
-                                    contents: vec![
-                                        MixedTextContent::new("Created:")
-                                            .color(label_fg)
-                                            .weight(Weight::Bold),
-                                        MixedTextContent::new(created_label)
-                                            .color(date_fg),
-                                        MixedTextContent::new(created_age_label)
-                                            .color(date_age_fg),
-                                    ],
-                                    wrap: TextWrap::NoWrap,
-                                )
-                            }
-                            // Updated
-                            View {
-                                MixedText(
-                                    contents: vec![
-                                        MixedTextContent::new("Updated:")
-                                            .color(label_fg)
-                                            .weight(Weight::Bold),
-                                        MixedTextContent::new(updated_label)
-                                            .color(date_fg),
-                                        MixedTextContent::new(updated_age_label)
-                                            .color(date_age_fg),
-                                    ],
-                                    wrap: TextWrap::NoWrap,
-                                )
-                            }
-                            // Lines changed (optional, PRs only)
-                            #(if has_lines {
-                                Some(element! {
-                                    View {
-                                        MixedText(
-                                            contents: vec![
-                                                MixedTextContent::new("Lines:  ")
-                                                    .color(label_fg)
-                                                    .weight(Weight::Bold),
-                                                MixedTextContent::new(lines_added)
-                                                    .color(additions_fg),
-                                                MixedTextContent::new(" / ")
-                                                    .color(date_fg),
-                                                MixedTextContent::new(lines_deleted)
-                                                    .color(deletions_fg),
-                                            ],
-                                            wrap: TextWrap::NoWrap,
-                                        )
-                                    }
-                                })
-                            } else {
-                                None
+                        } else {
+                            None
+                        })
+                        // Created
+                        View {
+                            MixedText(
+                                contents: vec![
+                                    MixedTextContent::new("Created:")
+                                        .color(label_fg)
+                                        .weight(Weight::Bold),
+                                    MixedTextContent::new(created_label)
+                                        .color(date_fg),
+                                    MixedTextContent::new(created_age_label)
+                                        .color(date_age_fg),
+                                ],
+                                wrap: TextWrap::NoWrap,
+                            )
+                        }
+                        // Updated
+                        View {
+                            MixedText(
+                                contents: vec![
+                                    MixedTextContent::new("Updated:")
+                                        .color(label_fg)
+                                        .weight(Weight::Bold),
+                                    MixedTextContent::new(updated_label)
+                                        .color(date_fg),
+                                    MixedTextContent::new(updated_age_label)
+                                        .color(date_age_fg),
+                                ],
+                                wrap: TextWrap::NoWrap,
+                            )
+                        }
+                        // Lines changed (optional, PRs only)
+                        #(if has_lines {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("Lines:  ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(lines_added)
+                                                .color(additions_fg),
+                                            MixedTextContent::new(" / ")
+                                                .color(date_fg),
+                                            MixedTextContent::new(lines_deleted)
+                                                .color(deletions_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
                             })
-                            // Reactions (optional, issues only)
-                            #(if has_reactions {
-                                Some(element! {
-                                    View {
-                                        MixedText(
-                                            contents: vec![
-                                                MixedTextContent::new("React:  ")
-                                                    .color(label_fg)
-                                                    .weight(Weight::Bold),
-                                                MixedTextContent::new(reactions_text)
-                                                    .color(reactions_fg),
-                                            ],
-                                            wrap: TextWrap::NoWrap,
-                                        )
-                                    }
-                                })
-                            } else {
-                                None
+                        } else {
+                            None
+                        })
+                        // Reactions (optional, issues only)
+                        #(if has_reactions {
+                            Some(element! {
+                                View {
+                                    MixedText(
+                                        contents: vec![
+                                            MixedTextContent::new("React:  ")
+                                                .color(label_fg)
+                                                .weight(Weight::Bold),
+                                            MixedTextContent::new(reactions_text)
+                                                .color(reactions_fg),
+                                        ],
+                                        wrap: TextWrap::NoWrap,
+                                    )
+                                }
                             })
-                            // Separator
-                            View {
-                                Text(content: separator, color: separator_fg, wrap: TextWrap::NoWrap)
-                            }
+                        } else {
+                            None
+                        })
+                        // Separator
+                        View {
+                            Text(content: separator, color: separator_fg, wrap: TextWrap::NoWrap)
                         }
                     }
                 }

@@ -596,7 +596,10 @@ pub fn ActionsView<'a>(
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!("\u{2713} {description}")));
+                            action_status.set(Some(format!(
+                                "{} {description}",
+                                theme_for_poll.icons.feedback_ok
+                            )));
                             // Refetch current filter.
                             let mut state = actions_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -613,7 +616,10 @@ pub fn ActionsView<'a>(
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!("\u{2717} {description}: {message}")));
+                            action_status.set(Some(format!(
+                                "{} {description}: {message}",
+                                theme_for_poll.icons.feedback_error
+                            )));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -1521,6 +1527,7 @@ pub fn ActionsView<'a>(
         Some(theme.footer_actions),
         Some(theme.border_faint),
         &theme.icons.tab_filter,
+        &theme.icons.tab_ephemeral,
     );
 
     let current_mode = input_mode.read().clone();

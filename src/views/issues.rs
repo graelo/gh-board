@@ -591,7 +591,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!("✓ {description}")));
+                            action_status.set(Some(format!(
+                                "{} {description}",
+                                theme_for_poll.icons.feedback_ok
+                            )));
                             // Trigger a refetch of the active filter.
                             let mut state = issues_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -616,7 +619,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!("✗ {description}: {message}")));
+                            action_status.set(Some(format!(
+                                "{} {description}: {message}",
+                                theme_for_poll.icons.feedback_error
+                            )));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -1305,6 +1311,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         Some(theme.footer_issues),
         Some(theme.border_faint),
         &theme.icons.tab_filter,
+        &theme.icons.tab_ephemeral,
     );
 
     // Build text input widget.

@@ -74,6 +74,12 @@ pub struct ResolvedIcons {
     pub update_needed: String,
     pub update_conflict: String,
     pub update_ok: String,
+    // Feedback indicators (2)
+    pub feedback_ok: String,
+    pub feedback_error: String,
+    // UI chrome (2)
+    pub tab_ephemeral: String,
+    pub select_cursor: String,
     // Actions run status (6)
     pub action_success: String,
     pub action_failure: String,
@@ -157,6 +163,12 @@ impl ResolvedIcons {
             update_needed: "\u{2193}".to_owned(), // ↓
             update_conflict: "!".to_owned(),
             update_ok: "\u{2713}".to_owned(), // ✓
+            // Feedback indicators
+            feedback_ok: "\u{2713}".to_owned(),    // ✓
+            feedback_error: "\u{2717}".to_owned(), // ✗
+            // UI chrome
+            tab_ephemeral: "\u{25cc}".to_owned(), // ◌
+            select_cursor: "\u{25b6}".to_owned(), // ▶
             // Actions run status
             action_success: "\u{2714}".to_owned(),   // ✔
             action_failure: "\u{2716}".to_owned(),   // ✖
@@ -241,6 +253,12 @@ impl ResolvedIcons {
             update_needed: "\u{f063}".to_owned(),  //  nf-fa-arrow_down
             update_conflict: "\u{f12a}".to_owned(), //  nf-fa-exclamation
             update_ok: "\u{f00c}".to_owned(),      //  nf-fa-check
+            // Feedback indicators
+            feedback_ok: "\u{f00c}".to_owned(),    //  nf-fa-check
+            feedback_error: "\u{f00d}".to_owned(), //  nf-fa-times
+            // UI chrome
+            tab_ephemeral: "\u{f4c3}".to_owned(), //  nf-oct-dot
+            select_cursor: "\u{ea9c}".to_owned(), //  nf-cod-triangle_right
             // Actions run status
             action_success: "\u{f058}".to_owned(), //  nf-fa-check_circle
             action_failure: "\u{f0159}".to_owned(), // 󰅙 nf-md-close_circle
@@ -324,6 +342,12 @@ impl ResolvedIcons {
             update_needed: "v".to_owned(),
             update_conflict: "!".to_owned(),
             update_ok: "ok".to_owned(),
+            // Feedback indicators
+            feedback_ok: "ok".to_owned(),
+            feedback_error: "ERR".to_owned(),
+            // UI chrome
+            tab_ephemeral: "*".to_owned(),
+            select_cursor: ">".to_owned(),
             // Actions run status
             action_success: "v".to_owned(),
             action_failure: "x".to_owned(),
@@ -436,6 +460,10 @@ impl ResolvedIcons {
                 .clone()
                 .unwrap_or(base.update_conflict),
             update_ok: config.update_ok.clone().unwrap_or(base.update_ok),
+            feedback_ok: config.feedback_ok.clone().unwrap_or(base.feedback_ok),
+            feedback_error: config.feedback_error.clone().unwrap_or(base.feedback_error),
+            tab_ephemeral: config.tab_ephemeral.clone().unwrap_or(base.tab_ephemeral),
+            select_cursor: config.select_cursor.clone().unwrap_or(base.select_cursor),
             action_success: config.action_success.clone().unwrap_or(base.action_success),
             action_failure: config.action_failure.clone().unwrap_or(base.action_failure),
             action_cancelled: config

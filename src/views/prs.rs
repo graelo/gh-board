@@ -889,7 +889,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!("✓ {description}")));
+                            action_status.set(Some(format!(
+                                "{} {description}",
+                                theme_for_poll.icons.feedback_ok
+                            )));
                             // Trigger a refetch of the active filter.
                             let mut state = prs_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -914,7 +917,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!("✗ {description}: {message}")));
+                            action_status.set(Some(format!(
+                                "{} {description}: {message}",
+                                theme_for_poll.icons.feedback_error
+                            )));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -1929,6 +1935,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         Some(theme.footer_prs),
         Some(theme.border_faint),
         &theme.icons.tab_filter,
+        &theme.icons.tab_ephemeral,
     );
 
     // Build footer or input area based on mode.
@@ -2127,6 +2134,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 selected_bg: Some(theme.bg_selected),
                 border_color: Some(theme.border_primary),
                 hint_color: Some(theme.text_faint),
+                cursor_marker: theme.icons.select_cursor.clone(),
             })
         })
     };

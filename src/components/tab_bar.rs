@@ -38,6 +38,7 @@ impl RenderedTabBar {
         inactive_color: Option<AppColor>,
         border_color: Option<AppColor>,
         icon: &str,
+        ephemeral_icon: &str,
     ) -> Self {
         let active_fg = active_color.map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
         let inactive_fg = inactive_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
@@ -49,19 +50,29 @@ impl RenderedTabBar {
             format!("{icon} ")
         };
 
+        let eph_prefix = if ephemeral_icon.is_empty() {
+            String::new()
+        } else {
+            format!("{ephemeral_icon} ")
+        };
+
         let rendered_tabs: Vec<RenderedTab> = tabs
             .iter()
             .enumerate()
             .map(|(i, tab)| {
-                let ephemeral_prefix = if tab.is_ephemeral { "\u{25cc} " } else { "" };
+                let prefix = if tab.is_ephemeral {
+                    eph_prefix.as_str()
+                } else {
+                    icon_prefix.as_str()
+                };
                 let label = if show_count {
                     if let Some(count) = tab.count {
-                        format!(" {ephemeral_prefix}{icon_prefix}{} ({}) ", tab.title, count)
+                        format!(" {prefix}{} ({}) ", tab.title, count)
                     } else {
-                        format!(" {ephemeral_prefix}{icon_prefix}{} ", tab.title)
+                        format!(" {prefix}{} ", tab.title)
                     }
                 } else {
-                    format!(" {ephemeral_prefix}{icon_prefix}{} ", tab.title)
+                    format!(" {prefix}{} ", tab.title)
                 };
                 RenderedTab {
                     label,

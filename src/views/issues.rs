@@ -1292,6 +1292,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(theme.text_primary),
             Some(theme.border_faint),
             Some(theme.text_faint),
+            Some(theme.border_primary),
             Some(current_tab),
             Some(&theme.icons),
             sidebar_meta,

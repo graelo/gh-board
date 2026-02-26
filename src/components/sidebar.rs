@@ -195,6 +195,7 @@ impl RenderedSidebar {
         title_color: Option<AppColor>,
         border_color: Option<AppColor>,
         indicator_color: Option<AppColor>,
+        thumb_color: Option<AppColor>,
     ) -> Self {
         Self::build_tabbed(
             title,
@@ -206,6 +207,7 @@ impl RenderedSidebar {
             title_color,
             border_color,
             indicator_color,
+            thumb_color,
             None,
             None,
             None,
@@ -225,6 +227,7 @@ impl RenderedSidebar {
         title_color: Option<AppColor>,
         border_color: Option<AppColor>,
         indicator_color: Option<AppColor>,
+        thumb_color: Option<AppColor>,
         active_tab: Option<SidebarTab>,
         icons: Option<&ResolvedIcons>,
         meta: Option<SidebarMeta>,
@@ -233,6 +236,7 @@ impl RenderedSidebar {
         let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let indicator_fg = indicator_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let thumb_fg = thumb_color.map_or(border_fg, |c| c.to_crossterm_color(depth));
 
         // Estimate visual row count: each logical line may wrap to multiple
         // terminal rows. Content width = sidebar width minus left border (1) +
@@ -309,7 +313,7 @@ impl RenderedSidebar {
             scroll_info,
             track_height,
             scrollbar_track_fg: border_fg,
-            scrollbar_thumb_fg: title_fg,
+            scrollbar_thumb_fg: thumb_fg,
         }
     }
 }

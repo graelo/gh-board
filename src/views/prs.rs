@@ -1915,6 +1915,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(theme.text_primary),
             Some(theme.border_faint),
             Some(theme.text_faint),
+            Some(theme.border_primary),
             Some(current_tab),
             Some(&theme.icons),
             sidebar_meta,

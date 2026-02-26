@@ -1648,6 +1648,7 @@ pub fn ActionsView<'a>(
             Some(theme.text_primary),
             Some(theme.border_faint),
             Some(theme.text_faint),
+            Some(theme.border_primary),
         ))
     } else {
         None

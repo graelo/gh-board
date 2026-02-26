@@ -232,9 +232,9 @@ fn sidebar_meta_line_count_with_all_fields() {
         reactions_fg: Color::White,
     };
 
-    // pill(4: margin+pill+author_margin+author) + participants(1) + overview(4: margin+created+updated+sep)
-    // + labels(1) + assignees(1) + lines(1) = 12
-    assert_eq!(meta.line_count(), 12);
+    // pill(4: margin+pill+author_margin+author) + participants(1) + overview(3: created+updated+sep)
+    // + labels(1) + assignees(1) + lines(1) = 11
+    assert_eq!(meta.line_count(), 11);
 }
 
 #[test]
@@ -279,8 +279,8 @@ fn sidebar_meta_line_count_minimal() {
         reactions_fg: Color::White,
     };
 
-    // pill(4: margin+pill+author_margin+author) + overview(4: margin+created+updated+sep) = 8
-    assert_eq!(meta.line_count(), 8);
+    // pill(4: margin+pill+author_margin+author) + overview(3: created+updated+sep) = 7
+    assert_eq!(meta.line_count(), 7);
 }
 
 // ---------------------------------------------------------------------------

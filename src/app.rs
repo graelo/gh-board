@@ -281,6 +281,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     show_filter_count: show_count,
                     show_separator,
                     scope_repo: scope_repo.clone(),
+                    detected_repo: detected_repo.map(RepoRef::full_name),
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,

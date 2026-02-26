@@ -368,6 +368,7 @@ pub(crate) fn default_actions() -> Vec<Keybinding> {
         kb("e", "rerun_failed", "Re-run failed jobs"),
         kb("E", "rerun_all", "Re-run all jobs"),
         kb("ctrl+x", "cancel_run", "Cancel run"),
+        kb("S", "toggle_scope", "Toggle repo scope"),
     ]
 }
 

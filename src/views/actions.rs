@@ -210,9 +210,13 @@ const MAX_EPHEMERAL_TABS: usize = 5;
 
 /// Resolve `@current` to the active scope repo, or return the literal value.
 /// Returns `None` only when the repo is `@current` and no scope is available.
-fn resolve_filter_repo<'a>(repo: &'a str, scope_repo: Option<&'a str>) -> Option<&'a str> {
+fn resolve_filter_repo<'a>(
+    repo: &'a str,
+    scope_repo: Option<&'a str>,
+    detected_repo: Option<&'a str>,
+) -> Option<&'a str> {
     if repo == "@current" {
-        scope_repo
+        scope_repo.or(detected_repo)
     } else {
         Some(repo)
     }
@@ -337,6 +341,7 @@ pub struct ActionsViewProps<'a> {
     pub show_filter_count: bool,
     pub show_separator: bool,
     pub scope_repo: Option<String>,
+    pub detected_repo: Option<String>,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
     pub switch_view_back: Option<State<bool>>,
@@ -365,6 +370,8 @@ pub fn ActionsView<'a>(
     let is_active = props.is_active;
     let preview_pct = props.preview_width_pct;
     let scope_repo = props.scope_repo.clone();
+    let detected_repo = props.detected_repo.clone();
+    let scope_toggle = props.scope_toggle;
 
     let mut active_filter = hooks.use_state(|| 0usize);
     let mut cursor = hooks.use_state(|| 0usize);
@@ -408,6 +415,18 @@ pub fn ActionsView<'a>(
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     let engine: Option<crate::engine::EngineHandle> = props.engine.cloned();
 
+    // Track scope changes: when scope_repo changes, invalidate all filters.
+    let mut last_scope = hooks.use_state(|| scope_repo.clone());
+    if *last_scope.read() != scope_repo {
+        last_scope.set(scope_repo.clone());
+        actions_state.set(ActionsState {
+            filters: vec![FilterData::default(); filter_count],
+        });
+        filter_fetch_times.set(vec![None; filter_count]);
+        filter_in_flight.set(vec![false; filter_count]);
+        refresh_registered.set(false);
+    }
+
     let eph_snapshot = ephemeral_filters.read().clone();
     let ephemeral_count = eph_snapshot.len();
     let total_tab_count = filter_count + ephemeral_count;
@@ -433,7 +452,8 @@ pub fn ActionsView<'a>(
         let resolved_for_refresh: Vec<ActionsFilter> = filters_cfg
             .iter()
             .map(|f| {
-                if let Some(repo) = resolve_filter_repo(&f.repo, scope_repo.as_deref())
+                if let Some(repo) =
+                    resolve_filter_repo(&f.repo, scope_repo.as_deref(), detected_repo.as_deref())
                     && repo != f.repo.as_str()
                 {
                     return ActionsFilter {
@@ -458,7 +478,9 @@ pub fn ActionsView<'a>(
         refresh_all.set(false);
         let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, (cfg, is_eph)) in all_filters.iter().enumerate() {
-            let Some(resolved_repo) = resolve_filter_repo(&cfg.repo, scope_repo.as_deref()) else {
+            let Some(resolved_repo) =
+                resolve_filter_repo(&cfg.repo, scope_repo.as_deref(), detected_repo.as_deref())
+            else {
                 if !is_eph {
                     tracing::debug!(
                         "actions: skipping @current filter[{filter_idx}] — no scope repo"
@@ -491,7 +513,9 @@ pub fn ActionsView<'a>(
     {
         // Look up the active filter from the merged list (config + ephemeral).
         if let Some((cfg, _is_eph)) = all_filters.get(current_filter_idx) {
-            if let Some(resolved_repo) = resolve_filter_repo(&cfg.repo, scope_repo.as_deref()) {
+            if let Some(resolved_repo) =
+                resolve_filter_repo(&cfg.repo, scope_repo.as_deref(), detected_repo.as_deref())
+            {
                 let filter = if resolved_repo == cfg.repo.as_str() {
                     (*cfg).clone()
                 } else {
@@ -1141,6 +1165,11 @@ pub fn ActionsView<'a>(
                                             sv.set(true);
                                         }
                                     }
+                                    BuiltinAction::ToggleScope => {
+                                        if let Some(mut st) = scope_toggle {
+                                            st.set(true);
+                                        }
+                                    }
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);
                                     }
@@ -1571,13 +1600,16 @@ pub fn ActionsView<'a>(
         .flatten();
     let updated_text = footer::format_updated_ago(active_fetch_time);
     let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
-    let scope_label = all_filters
-        .get(current_filter_idx)
-        .map_or_else(String::new, |(f, _)| {
-            resolve_filter_repo(&f.repo, scope_repo.as_deref())
-                .unwrap_or("@current")
-                .to_owned()
-        });
+    let scope_label = match &scope_repo {
+        Some(_) => all_filters
+            .get(current_filter_idx)
+            .map_or_else(String::new, |(f, _)| {
+                resolve_filter_repo(&f.repo, scope_repo.as_deref(), detected_repo.as_deref())
+                    .unwrap_or("all repos")
+                    .to_owned()
+            }),
+        None => "all repos".to_owned(),
+    };
 
     let rendered_footer = RenderedFooter::build(
         ViewKind::Actions,

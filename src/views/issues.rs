@@ -1250,14 +1250,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 let body = current_data
                     .and_then(|d| d.bodies.get(cursor_idx))
                     .map_or("", String::as_str);
-                let mut lines = Vec::new();
-                if let Some(issue) = current_issue {
-                    lines.extend(sidebar_tabs::render_issue_overview_metadata(issue, &theme));
+                if body.is_empty() {
+                    Vec::new()
+                } else {
+                    renderer::render_markdown(body, &theme, depth)
                 }
-                if !body.is_empty() {
-                    lines.extend(renderer::render_markdown(body, &theme, depth));
-                }
-                lines
             }
             SidebarTab::Activity => {
                 if let Some(detail) = detail_for_issue {
@@ -1279,9 +1276,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             None
         };
 
-        // Account for tab bar (2 extra lines) + meta (3 lines) in sidebar height.
-        let meta_lines = if sidebar_meta.is_some() { 4 } else { 0 };
-        let sidebar_visible_lines = props.height.saturating_sub(9 + meta_lines) as usize;
+        // Account for tab bar (2 extra lines) + meta in sidebar height.
+        #[allow(clippy::cast_possible_truncation)]
+        let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
+        let sidebar_visible_lines = props.height.saturating_sub(5 + meta_lines) as usize;
 
         Some(RenderedSidebar::build_tabbed(
             title,
@@ -1870,6 +1868,7 @@ fn get_current_issue_assignees(
     issue.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
+#[allow(clippy::too_many_lines)]
 fn build_issue_sidebar_meta(
     issue: &Issue,
     theme: &ResolvedTheme,
@@ -1904,6 +1903,80 @@ fn build_issue_sidebar_meta(
         .map(|a| format!("@{}", a.login))
         .collect();
 
+    // Overview metadata (pinned in fixed section)
+    let labels_text = if issue.labels.is_empty() {
+        None
+    } else {
+        Some(
+            issue
+                .labels
+                .iter()
+                .map(|l| crate::util::expand_emoji(&l.name))
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let assignees_text = if issue.assignees.is_empty() {
+        None
+    } else {
+        Some(
+            issue
+                .assignees
+                .iter()
+                .map(|a| a.login.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let created_text = issue
+        .created_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let created_age = crate::util::format_date(&issue.created_at, "relative");
+    let updated_text = issue
+        .updated_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let updated_age = crate::util::format_date(&issue.updated_at, "relative");
+
+    // Reactions
+    let r = &issue.reactions;
+    let reactions_text = if r.total() > 0 {
+        let mut parts = Vec::new();
+        if r.thumbs_up > 0 {
+            parts.push(format!("\u{1f44d} {}", r.thumbs_up));
+        }
+        if r.thumbs_down > 0 {
+            parts.push(format!("\u{1f44e} {}", r.thumbs_down));
+        }
+        if r.laugh > 0 {
+            parts.push(format!("\u{1f604} {}", r.laugh));
+        }
+        if r.hooray > 0 {
+            parts.push(format!("\u{1f389} {}", r.hooray));
+        }
+        if r.confused > 0 {
+            parts.push(format!("\u{1f615} {}", r.confused));
+        }
+        if r.heart > 0 {
+            parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
+        }
+        if r.rocket > 0 {
+            parts.push(format!("\u{1f680} {}", r.rocket));
+        }
+        if r.eyes > 0 {
+            parts.push(format!("\u{1f440} {}", r.eyes));
+        }
+        Some(parts.join("  "))
+    } else {
+        None
+    };
+
     SidebarMeta {
         pill_icon,
         pill_text,
@@ -1922,6 +1995,23 @@ fn build_issue_sidebar_meta(
         label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
+        labels_text,
+        assignees_text,
+        created_text,
+        created_age,
+        updated_text,
+        updated_age,
+        lines_added: None,
+        lines_deleted: None,
+        reactions_text,
+        date_fg: theme.text_faint.to_crossterm_color(depth),
+        date_age_fg: theme.text_secondary.to_crossterm_color(depth),
+        additions_fg: theme.text_success.to_crossterm_color(depth),
+        deletions_fg: theme.text_error.to_crossterm_color(depth),
+        separator_fg: theme.md_horizontal_rule.to_crossterm_color(depth),
+        primary_fg: theme.text_primary.to_crossterm_color(depth),
+        actor_fg: theme.text_actor.to_crossterm_color(depth),
+        reactions_fg: theme.text_primary.to_crossterm_color(depth),
     }
 }
 

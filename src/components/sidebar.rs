@@ -100,6 +100,56 @@ pub struct SidebarMeta {
     // Participants line
     pub participants: Vec<String>,
     pub participants_fg: Color,
+
+    // Overview metadata (pinned, non-scrollable)
+    pub labels_text: Option<String>,
+    pub assignees_text: Option<String>,
+    pub created_text: String,
+    pub created_age: String,
+    pub updated_text: String,
+    pub updated_age: String,
+    pub lines_added: Option<String>,
+    pub lines_deleted: Option<String>,
+    pub reactions_text: Option<String>,
+    pub date_fg: Color,
+    pub date_age_fg: Color,
+    pub additions_fg: Color,
+    pub deletions_fg: Color,
+    pub separator_fg: Color,
+    pub primary_fg: Color,
+    pub actor_fg: Color,
+    pub reactions_fg: Color,
+}
+
+impl SidebarMeta {
+    /// Number of fixed lines rendered in the meta section.
+    ///
+    /// Base: pill(1) + author(1) = 2, plus optional participants(1).
+    /// Plus overview metadata: created(1) + updated(1) + separator(1) = 3,
+    /// plus optional labels(1), assignees(1), lines(1), reactions(1).
+    /// We also account for `margin_top: 1` on each sub-group.
+    pub fn line_count(&self) -> u32 {
+        // pill + author = 3 (1 margin_top + pill + author)
+        let mut count: u32 = 3;
+        if self.participants.len() > 1 {
+            count += 1;
+        }
+        // Overview metadata sub-group: margin_top(1) + created + updated + separator = 4
+        count += 4;
+        if self.labels_text.is_some() {
+            count += 1;
+        }
+        if self.assignees_text.is_some() {
+            count += 1;
+        }
+        if self.lines_added.is_some() {
+            count += 1;
+        }
+        if self.reactions_text.is_some() {
+            count += 1;
+        }
+        count
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -320,7 +370,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                     MixedText(contents: tab_contents, wrap: TextWrap::NoWrap)
             }
 
-            // Meta section (pill badge + author + participants, Overview tab only)
+            // Meta section (pill badge + author + participants + overview metadata, Overview tab only)
             #(meta.map(|m| {
                 let pill_label = format!(" {} {} ", m.pill_icon, m.pill_text);
                 let branch_label = format!(" {}", m.branch_text);
@@ -339,6 +389,31 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                     format!("  {} {}", m.role_icon, m.role_text)
                 };
                 let role_fg = m.role_fg;
+
+                // Overview metadata fields
+                let has_labels = m.labels_text.is_some();
+                let labels_text = m.labels_text.unwrap_or_default();
+                let has_assignees = m.assignees_text.is_some();
+                let assignees_text = m.assignees_text.unwrap_or_default();
+                let created_label = format!(" {} ", m.created_text);
+                let created_age_label = format!("({})", m.created_age);
+                let updated_label = format!(" {} ", m.updated_text);
+                let updated_age_label = format!("({})", m.updated_age);
+                let has_lines = m.lines_added.is_some();
+                let lines_added = m.lines_added.unwrap_or_default();
+                let lines_deleted = m.lines_deleted.unwrap_or_default();
+                let has_reactions = m.reactions_text.is_some();
+                let reactions_text = m.reactions_text.unwrap_or_default();
+                let date_fg = m.date_fg;
+                let date_age_fg = m.date_age_fg;
+                let additions_fg = m.additions_fg;
+                let deletions_fg = m.deletions_fg;
+                let separator_fg = m.separator_fg;
+                let primary_fg = m.primary_fg;
+                let actor_fg = m.actor_fg;
+                let reactions_fg = m.reactions_fg;
+                let separator = "\u{2500}".repeat(20);
+
                 element! {
                     View(margin_top: 1, flex_direction: FlexDirection::Column) {
                         // Line 1: pill + branch + update status
@@ -422,6 +497,124 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                         } else {
                             None
                         })
+
+                        // Overview metadata (pinned, non-scrollable)
+                        View(margin_top: 1, flex_direction: FlexDirection::Column) {
+                            // Labels (optional)
+                            #(if has_labels {
+                                Some(element! {
+                                    View {
+                                        MixedText(
+                                            contents: vec![
+                                                MixedTextContent::new("Labels: ")
+                                                    .color(label_fg)
+                                                    .weight(Weight::Bold),
+                                                MixedTextContent::new(labels_text)
+                                                    .color(primary_fg),
+                                            ],
+                                            wrap: TextWrap::NoWrap,
+                                        )
+                                    }
+                                })
+                            } else {
+                                None
+                            })
+                            // Assignees (optional)
+                            #(if has_assignees {
+                                Some(element! {
+                                    View {
+                                        MixedText(
+                                            contents: vec![
+                                                MixedTextContent::new("Assign: ")
+                                                    .color(label_fg)
+                                                    .weight(Weight::Bold),
+                                                MixedTextContent::new(assignees_text)
+                                                    .color(actor_fg),
+                                            ],
+                                            wrap: TextWrap::NoWrap,
+                                        )
+                                    }
+                                })
+                            } else {
+                                None
+                            })
+                            // Created
+                            View {
+                                MixedText(
+                                    contents: vec![
+                                        MixedTextContent::new("Created:")
+                                            .color(label_fg)
+                                            .weight(Weight::Bold),
+                                        MixedTextContent::new(created_label)
+                                            .color(date_fg),
+                                        MixedTextContent::new(created_age_label)
+                                            .color(date_age_fg),
+                                    ],
+                                    wrap: TextWrap::NoWrap,
+                                )
+                            }
+                            // Updated
+                            View {
+                                MixedText(
+                                    contents: vec![
+                                        MixedTextContent::new("Updated:")
+                                            .color(label_fg)
+                                            .weight(Weight::Bold),
+                                        MixedTextContent::new(updated_label)
+                                            .color(date_fg),
+                                        MixedTextContent::new(updated_age_label)
+                                            .color(date_age_fg),
+                                    ],
+                                    wrap: TextWrap::NoWrap,
+                                )
+                            }
+                            // Lines changed (optional, PRs only)
+                            #(if has_lines {
+                                Some(element! {
+                                    View {
+                                        MixedText(
+                                            contents: vec![
+                                                MixedTextContent::new("Lines:  ")
+                                                    .color(label_fg)
+                                                    .weight(Weight::Bold),
+                                                MixedTextContent::new(lines_added)
+                                                    .color(additions_fg),
+                                                MixedTextContent::new(" / ")
+                                                    .color(date_fg),
+                                                MixedTextContent::new(lines_deleted)
+                                                    .color(deletions_fg),
+                                            ],
+                                            wrap: TextWrap::NoWrap,
+                                        )
+                                    }
+                                })
+                            } else {
+                                None
+                            })
+                            // Reactions (optional, issues only)
+                            #(if has_reactions {
+                                Some(element! {
+                                    View {
+                                        MixedText(
+                                            contents: vec![
+                                                MixedTextContent::new("React:  ")
+                                                    .color(label_fg)
+                                                    .weight(Weight::Bold),
+                                                MixedTextContent::new(reactions_text)
+                                                    .color(reactions_fg),
+                                            ],
+                                            wrap: TextWrap::NoWrap,
+                                        )
+                                    }
+                                })
+                            } else {
+                                None
+                            })
+                            // Separator
+                            View {
+                                Text(content: separator, color: separator_fg, wrap: TextWrap::NoWrap)
+                            }
+                        }
                     }
                 }
             }))

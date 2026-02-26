@@ -1847,18 +1847,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
         let md_lines: Vec<StyledLine> = match current_tab {
             SidebarTab::Overview => {
-                // Metadata + markdown body
                 let body = current_data
                     .and_then(|d| d.bodies.get(cursor_idx))
                     .map_or("", String::as_str);
-                let mut lines = Vec::new();
-                if let Some(pr) = current_pr {
-                    lines.extend(sidebar_tabs::render_overview_metadata(pr, &theme));
+                if body.is_empty() {
+                    Vec::new()
+                } else {
+                    renderer::render_markdown(body, &theme, depth)
                 }
-                if !body.is_empty() {
-                    lines.extend(renderer::render_markdown(body, &theme, depth));
-                }
-                lines
             }
             SidebarTab::Activity => {
                 if let Some(detail) = detail_for_pr {
@@ -1903,9 +1899,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             None
         };
 
-        // Account for tab bar (2 extra lines) + meta (3 lines) in sidebar height.
-        let meta_lines = if sidebar_meta.is_some() { 4 } else { 0 };
-        let sidebar_visible_lines = props.height.saturating_sub(9 + meta_lines) as usize;
+        // Account for tab bar (2 extra lines) + meta in sidebar height.
+        #[allow(clippy::cast_possible_truncation)]
+        let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
+        let sidebar_visible_lines = props.height.saturating_sub(5 + meta_lines) as usize;
 
         Some(RenderedSidebar::build_tabbed(
             title,
@@ -2529,6 +2526,7 @@ fn sidebar_update_status(
 }
 
 /// Build the `SidebarMeta` header from a pull request.
+#[allow(clippy::too_many_lines, clippy::similar_names)]
 fn build_sidebar_meta(
     pr: &PullRequest,
     detail: Option<&PrDetail>,
@@ -2595,6 +2593,48 @@ fn build_sidebar_meta(
         .as_ref()
         .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
 
+    // Overview metadata (pinned in fixed section)
+    let labels_text = if pr.labels.is_empty() {
+        None
+    } else {
+        Some(
+            pr.labels
+                .iter()
+                .map(|l| crate::util::expand_emoji(&l.name))
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let assignees_text = if pr.assignees.is_empty() {
+        None
+    } else {
+        Some(
+            pr.assignees
+                .iter()
+                .map(|a| a.login.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
+
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let created_text = pr
+        .created_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let created_age = crate::util::format_date(&pr.created_at, "relative");
+    let updated_text = pr
+        .updated_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let updated_age = crate::util::format_date(&pr.updated_at, "relative");
+
+    let lines_added = Some(format!("+{}", pr.additions));
+    let lines_deleted = Some(format!("-{}", pr.deletions));
+
     SidebarMeta {
         pill_icon,
         pill_text,
@@ -2613,6 +2653,23 @@ fn build_sidebar_meta(
         label_fg: theme.text_secondary.to_crossterm_color(depth),
         participants,
         participants_fg: theme.text_actor.to_crossterm_color(depth),
+        labels_text,
+        assignees_text,
+        created_text,
+        created_age,
+        updated_text,
+        updated_age,
+        lines_added,
+        lines_deleted,
+        reactions_text: None,
+        date_fg: theme.text_faint.to_crossterm_color(depth),
+        date_age_fg: theme.text_secondary.to_crossterm_color(depth),
+        additions_fg: theme.text_success.to_crossterm_color(depth),
+        deletions_fg: theme.text_error.to_crossterm_color(depth),
+        separator_fg: theme.md_horizontal_rule.to_crossterm_color(depth),
+        primary_fg: theme.text_primary.to_crossterm_color(depth),
+        actor_fg: theme.text_actor.to_crossterm_color(depth),
+        reactions_fg: theme.text_primary.to_crossterm_color(depth),
     }
 }
 

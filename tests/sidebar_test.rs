@@ -187,50 +187,100 @@ fn sidebar_tab_all_has_five() {
 }
 
 // ---------------------------------------------------------------------------
-// T073: Overview tab tests
+// T073: Overview metadata in SidebarMeta
 // ---------------------------------------------------------------------------
 
 #[test]
-fn overview_metadata_includes_labels() {
-    let pr = test_pr();
-    let theme = test_theme();
-    let lines = sidebar_tabs::render_overview_metadata(&pr, &theme);
-    let text: String = lines
-        .iter()
-        .flat_map(|l| l.spans.iter())
-        .map(|s| s.text.as_str())
-        .collect();
-    assert!(text.contains("bug"), "should contain label name");
+fn sidebar_meta_line_count_with_all_fields() {
+    use gh_board::components::sidebar::SidebarMeta;
+    use iocraft::Color;
+
+    let meta = SidebarMeta {
+        pill_icon: String::new(),
+        pill_text: "Open".into(),
+        pill_bg: Color::Green,
+        pill_fg: Color::White,
+        pill_left: String::new(),
+        pill_right: String::new(),
+        branch_text: "main <- feat".into(),
+        branch_fg: Color::White,
+        update_text: None,
+        update_fg: Color::White,
+        author_login: "user".into(),
+        role_icon: String::new(),
+        role_text: String::new(),
+        role_fg: Color::White,
+        label_fg: Color::White,
+        participants: vec!["@a".into(), "@b".into()],
+        participants_fg: Color::White,
+        labels_text: Some("bug".into()),
+        assignees_text: Some("assignee1".into()),
+        created_text: "2026-01-01 00:00:00".into(),
+        created_age: "1d".into(),
+        updated_text: "2026-01-02 00:00:00".into(),
+        updated_age: "12h".into(),
+        lines_added: Some("+10".into()),
+        lines_deleted: Some("-5".into()),
+        reactions_text: None,
+        date_fg: Color::White,
+        date_age_fg: Color::White,
+        additions_fg: Color::Green,
+        deletions_fg: Color::Red,
+        separator_fg: Color::DarkGrey,
+        primary_fg: Color::White,
+        actor_fg: Color::White,
+        reactions_fg: Color::White,
+    };
+
+    // pill(3: margin+pill+author) + participants(1) + overview(4: margin+created+updated+sep)
+    // + labels(1) + assignees(1) + lines(1) = 11
+    assert_eq!(meta.line_count(), 11);
 }
 
 #[test]
-fn overview_metadata_includes_lines() {
-    let pr = test_pr();
-    let theme = test_theme();
-    let lines = sidebar_tabs::render_overview_metadata(&pr, &theme);
-    let text: String = lines
-        .iter()
-        .flat_map(|l| l.spans.iter())
-        .map(|s| s.text.as_str())
-        .collect();
-    assert!(text.contains("+10"), "should contain additions");
-    assert!(text.contains("-5"), "should contain deletions");
-}
+fn sidebar_meta_line_count_minimal() {
+    use gh_board::components::sidebar::SidebarMeta;
+    use iocraft::Color;
 
-#[test]
-fn overview_metadata_excludes_author_state_branch() {
-    // Author, State, and Branch are now in SidebarMeta, not in overview metadata.
-    let pr = test_pr();
-    let theme = test_theme();
-    let lines = sidebar_tabs::render_overview_metadata(&pr, &theme);
-    let text: String = lines
-        .iter()
-        .flat_map(|l| l.spans.iter())
-        .map(|s| s.text.as_str())
-        .collect();
-    assert!(!text.contains("Author:"), "Author moved to SidebarMeta");
-    assert!(!text.contains("State:"), "State moved to SidebarMeta");
-    assert!(!text.contains("Branch:"), "Branch moved to SidebarMeta");
+    let meta = SidebarMeta {
+        pill_icon: String::new(),
+        pill_text: "Open".into(),
+        pill_bg: Color::Green,
+        pill_fg: Color::White,
+        pill_left: String::new(),
+        pill_right: String::new(),
+        branch_text: String::new(),
+        branch_fg: Color::White,
+        update_text: None,
+        update_fg: Color::White,
+        author_login: "user".into(),
+        role_icon: String::new(),
+        role_text: String::new(),
+        role_fg: Color::White,
+        label_fg: Color::White,
+        participants: vec![],
+        participants_fg: Color::White,
+        labels_text: None,
+        assignees_text: None,
+        created_text: "2026-01-01 00:00:00".into(),
+        created_age: "1d".into(),
+        updated_text: "2026-01-02 00:00:00".into(),
+        updated_age: "12h".into(),
+        lines_added: None,
+        lines_deleted: None,
+        reactions_text: None,
+        date_fg: Color::White,
+        date_age_fg: Color::White,
+        additions_fg: Color::Green,
+        deletions_fg: Color::Red,
+        separator_fg: Color::DarkGrey,
+        primary_fg: Color::White,
+        actor_fg: Color::White,
+        reactions_fg: Color::White,
+    };
+
+    // pill(3: margin+pill+author) + overview(4: margin+created+updated+sep) = 7
+    assert_eq!(meta.line_count(), 7);
 }
 
 // ---------------------------------------------------------------------------

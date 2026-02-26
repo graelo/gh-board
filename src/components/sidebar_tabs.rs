@@ -357,6 +357,29 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
         return lines;
     }
 
+    // Cap alignment column to 60% of a reasonable sidebar width (≈ 50 cols).
+    let max_path_width = detail
+        .files
+        .iter()
+        .map(|f| UnicodeWidthStr::width(f.path.as_str()))
+        .max()
+        .unwrap_or(0)
+        .min(40);
+
+    // Pre-compute column widths so both +N and -N are right-aligned.
+    let max_add_width = detail
+        .files
+        .iter()
+        .map(|f| format!("+{}", f.additions).len())
+        .max()
+        .unwrap_or(2);
+    let max_del_width = detail
+        .files
+        .iter()
+        .map(|f| format!("-{}", f.deletions).len())
+        .max()
+        .unwrap_or(2);
+
     for file in &detail.files {
         let change = match file.status {
             Some(FileChangeType::Added) => "A",
@@ -372,12 +395,29 @@ pub fn render_files(detail: &PrDetail, theme: &ResolvedTheme) -> Vec<StyledLine>
             _ => theme.text_warning,
         };
 
+        let path_w = UnicodeWidthStr::width(file.path.as_str()).min(max_path_width);
+        let pad = max_path_width - path_w + 2; // 2 = min gap
+
         lines.push(StyledLine::from_spans(vec![
             StyledSpan::text(format!("{change} "), change_color),
             StyledSpan::text(&file.path, theme.text_primary),
             StyledSpan::text(
-                format!("  +{} -{}", file.additions, file.deletions),
-                theme.text_faint,
+                format!(
+                    "{:pad$}{:>width$}",
+                    "",
+                    format!("+{}", file.additions),
+                    pad = pad,
+                    width = max_add_width
+                ),
+                theme.text_success,
+            ),
+            StyledSpan::text(
+                format!(
+                    " {:>width$}",
+                    format!("-{}", file.deletions),
+                    width = max_del_width
+                ),
+                theme.text_error,
             ),
         ]));
     }

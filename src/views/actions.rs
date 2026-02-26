@@ -1661,7 +1661,7 @@ pub fn ActionsView<'a>(
         let jobs_lines = build_jobs_lines(&sidebar_jobs, sidebar_loading, &theme);
         let sidebar_title = current_run_for_detail
             .map_or_else(|| "Jobs".to_owned(), |r| format!("Run #{}", r.run_number));
-        Some(RenderedSidebar::build(
+        let sidebar = RenderedSidebar::build(
             &sidebar_title,
             &jobs_lines,
             detail_scroll.get(),
@@ -1672,7 +1672,11 @@ pub fn ActionsView<'a>(
             Some(theme.border_faint),
             Some(theme.text_faint),
             Some(theme.border_primary),
-        ))
+        );
+        if detail_scroll.get() != sidebar.clamped_scroll {
+            detail_scroll.set(sidebar.clamped_scroll);
+        }
+        Some(sidebar)
     } else {
         None
     };

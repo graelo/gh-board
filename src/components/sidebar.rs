@@ -180,6 +180,8 @@ pub struct RenderedSidebar {
     pub scrollbar_track_fg: Color,
     /// Scrollbar thumb color.
     pub scrollbar_thumb_fg: Color,
+    /// Scroll offset after clamping (views should store this back).
+    pub clamped_scroll: usize,
 }
 
 impl RenderedSidebar {
@@ -238,20 +240,47 @@ impl RenderedSidebar {
         let indicator_fg = indicator_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let thumb_fg = thumb_color.map_or(border_fg, |c| c.to_crossterm_color(depth));
 
-        // Estimate visual row count: each logical line may wrap to multiple
-        // terminal rows. Content width = sidebar width minus left border (1) +
-        // padding (2) + scrollbar (1).
-        let content_width = usize::from(width).saturating_sub(4).max(1);
+        // Visual row estimation: each logical line may wrap to multiple
+        // terminal rows.  Content width = sidebar width minus left border (1)
+        // + padding_left (1) + padding_right (1) + scrollbar (1) +
+        // scrollbar margin (1).
+        let content_width = usize::from(width).saturating_sub(5).max(1);
         let visual_row_count = |line: &StyledLine| -> usize {
             let w = line.display_width();
             if w == 0 { 1 } else { w.div_ceil(content_width) }
         };
 
-        let visual_total: usize = lines.iter().map(&visual_row_count).sum();
-        let visual_offset: usize = lines[..scroll_offset.min(lines.len())]
-            .iter()
-            .map(visual_row_count)
-            .sum();
+        // Single forward pass: accumulate per-line visual rows to compute
+        // visual_total, clamp the scroll offset, and record visual_offset
+        // (for the scrollbar) — all in one iteration.
+        //
+        // Clamping margin: our char-level div_ceil may underestimate iocraft's
+        // word-level TextWrap::Wrap, so we treat the viewport as slightly
+        // shorter (by clamp_margin rows) when computing max_offset.  This
+        // absorbs the estimation error without inflating per-line row counts.
+        let clamp_margin: usize = 2;
+        let effective_visible = visible_lines.saturating_sub(clamp_margin);
+
+        let mut visual_total: usize = 0;
+        let mut prefix_visual = Vec::with_capacity(lines.len() + 1);
+        prefix_visual.push(0usize);
+        for line in lines {
+            visual_total += visual_row_count(line);
+            prefix_visual.push(visual_total);
+        }
+
+        // max_offset: walk backward from the end — find the first offset
+        // where remaining visual rows fit the effective viewport.
+        let mut max_offset = 0;
+        for i in (0..lines.len()).rev() {
+            let remaining_visual = visual_total - prefix_visual[i];
+            if remaining_visual > effective_visible {
+                max_offset = i + 1;
+                break;
+            }
+        }
+        let clamped_scroll = scroll_offset.min(max_offset);
+        let visual_offset = prefix_visual[clamped_scroll];
 
         let scroll_indicator = if visual_total > visible_lines {
             let pos = if visual_total == 0 {
@@ -264,7 +293,10 @@ impl RenderedSidebar {
             String::new()
         };
 
-        let markdown = RenderedMarkdown::build(lines, scroll_offset, visible_lines, depth);
+        // Pass all remaining lines to the MarkdownView; the parent
+        // View(overflow: Hidden) clips anything beyond the viewport.
+        let remaining = lines.len().saturating_sub(clamped_scroll);
+        let markdown = RenderedMarkdown::build(lines, clamped_scroll, remaining, depth);
 
         let tabs_to_show = visible_tabs.unwrap_or(SidebarTab::ALL);
         let tab_labels = if let Some(current) = active_tab {
@@ -314,6 +346,7 @@ impl RenderedSidebar {
             track_height,
             scrollbar_track_fg: border_fg,
             scrollbar_thumb_fg: thumb_fg,
+            clamped_scroll,
         }
     }
 }

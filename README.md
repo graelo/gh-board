@@ -5,6 +5,17 @@ notifications, and repository branches. A Rust reimplementation of
 [gh-dash](https://github.com/dlvhdr/gh-dash) with a uniform ANSI + hex color
 model for perfect terminal theme integration.
 
+## Demo
+
+![gh-board PR view with sidebar preview](demo/hero.png)
+
+<details>
+<summary>Navigation walkthrough (GIF)</summary>
+
+![Navigation walkthrough](demo/nav.gif)
+
+</details>
+
 ## Features
 
 - **Multiple Views**: PRs, Issues, Notifications, and Repo (branches)

@@ -48,6 +48,7 @@ prs           = "#0031a9"
 issues        = "#005e00"
 notifications = "#721045"
 repo          = "#003f5f"
+actions       = "#6f4f00"
 
 [theme.colors.markdown]
 text = "#000000"

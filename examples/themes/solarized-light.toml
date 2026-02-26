@@ -48,6 +48,7 @@ prs           = "4"
 issues        = "2"
 notifications = "5"
 repo          = "13"
+actions       = "9"
 
 [theme.colors.markdown]
 text = "11"

@@ -533,16 +533,14 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         input_buffer.set(String::new());
                                         action_status.set(None);
                                     }
-                                    BuiltinAction::MoveDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + 1)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            if new_cursor >= scroll_offset.get() + visible_rows {
-                                                scroll_offset.set(
-                                                    new_cursor.saturating_sub(visible_rows) + 1,
-                                                );
-                                            }
+                                    BuiltinAction::MoveDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + 1)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        if new_cursor >= scroll_offset.get() + visible_rows {
+                                            scroll_offset.set(
+                                                new_cursor.saturating_sub(visible_rows) + 1,
+                                            );
                                         }
                                     }
                                     BuiltinAction::MoveUp => {
@@ -556,23 +554,19 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
-                                    BuiltinAction::Last => {
-                                        if total_rows > 0 {
-                                            cursor.set(total_rows.saturating_sub(1));
-                                            scroll_offset
-                                                .set(total_rows.saturating_sub(visible_rows));
-                                        }
+                                    BuiltinAction::Last if total_rows > 0 => {
+                                        cursor.set(total_rows.saturating_sub(1));
+                                        scroll_offset
+                                            .set(total_rows.saturating_sub(visible_rows));
                                     }
-                                    BuiltinAction::PageDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + visible_rows)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            scroll_offset
-                                                .set(new_cursor.saturating_sub(
-                                                    visible_rows.saturating_sub(1),
-                                                ));
-                                        }
+                                    BuiltinAction::PageDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + visible_rows)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        scroll_offset
+                                            .set(new_cursor.saturating_sub(
+                                                visible_rows.saturating_sub(1),
+                                            ));
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);

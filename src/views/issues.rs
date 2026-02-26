@@ -984,18 +984,16 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         input_mode.set(InputMode::Search);
                                         action_status.set(None);
                                     }
-                                    BuiltinAction::MoveDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + 1)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            if new_cursor >= scroll_offset.get() + visible_rows {
-                                                scroll_offset.set(
-                                                    new_cursor.saturating_sub(visible_rows) + 1,
-                                                );
-                                            }
-                                            preview_scroll.set(0);
+                                    BuiltinAction::MoveDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + 1)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        if new_cursor >= scroll_offset.get() + visible_rows {
+                                            scroll_offset.set(
+                                                new_cursor.saturating_sub(visible_rows) + 1,
+                                            );
                                         }
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::MoveUp => {
                                         let new_cursor = cursor.get().saturating_sub(1);
@@ -1010,25 +1008,21 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         scroll_offset.set(0);
                                         preview_scroll.set(0);
                                     }
-                                    BuiltinAction::Last => {
-                                        if total_rows > 0 {
-                                            cursor.set(total_rows.saturating_sub(1));
-                                            scroll_offset
-                                                .set(total_rows.saturating_sub(visible_rows));
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::Last if total_rows > 0 => {
+                                        cursor.set(total_rows.saturating_sub(1));
+                                        scroll_offset
+                                            .set(total_rows.saturating_sub(visible_rows));
+                                        preview_scroll.set(0);
                                     }
-                                    BuiltinAction::PageDown => {
-                                        if total_rows > 0 {
-                                            let new_cursor = (cursor.get() + visible_rows)
-                                                .min(total_rows.saturating_sub(1));
-                                            cursor.set(new_cursor);
-                                            scroll_offset
-                                                .set(new_cursor.saturating_sub(
-                                                    visible_rows.saturating_sub(1),
-                                                ));
-                                            preview_scroll.set(0);
-                                        }
+                                    BuiltinAction::PageDown if total_rows > 0 => {
+                                        let new_cursor = (cursor.get() + visible_rows)
+                                            .min(total_rows.saturating_sub(1));
+                                        cursor.set(new_cursor);
+                                        scroll_offset
+                                            .set(new_cursor.saturating_sub(
+                                                visible_rows.saturating_sub(1),
+                                            ));
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);
@@ -1067,29 +1061,25 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             preview_scroll.set(0);
                                         }
                                     }
-                                    BuiltinAction::PrevFilter => {
-                                        if filter_count > 0 {
-                                            let current = active_filter.get();
-                                            active_filter.set(if current == 0 {
-                                                filter_count.saturating_sub(1)
-                                            } else {
-                                                current - 1
-                                            });
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                            preview_scroll.set(0);
-                                            pending_detail.set(None);
-                                        }
+                                    BuiltinAction::PrevFilter if filter_count > 0 => {
+                                        let current = active_filter.get();
+                                        active_filter.set(if current == 0 {
+                                            filter_count.saturating_sub(1)
+                                        } else {
+                                            current - 1
+                                        });
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
+                                        pending_detail.set(None);
                                     }
-                                    BuiltinAction::NextFilter => {
-                                        if filter_count > 0 {
-                                            active_filter
-                                                .set((active_filter.get() + 1) % filter_count);
-                                            cursor.set(0);
-                                            scroll_offset.set(0);
-                                            preview_scroll.set(0);
-                                            pending_detail.set(None);
-                                        }
+                                    BuiltinAction::NextFilter if filter_count > 0 => {
+                                        active_filter
+                                            .set((active_filter.get() + 1) % filter_count);
+                                        cursor.set(0);
+                                        scroll_offset.set(0);
+                                        preview_scroll.set(0);
+                                        pending_detail.set(None);
                                     }
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);

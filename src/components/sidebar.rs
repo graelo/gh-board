@@ -332,6 +332,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
     let has_tabs = !sb.tab_labels.is_empty();
     let meta = sb.meta;
     let scroll_info = sb.scroll_info;
+    let has_scrollbar = scroll_info.is_some();
     let track_height = sb.track_height;
     let track_color = sb.scrollbar_track_fg;
     let thumb_color = sb.scrollbar_thumb_fg;
@@ -632,7 +633,8 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
 
             // Content area with scrollbar
             View(flex_grow: 1.0, flex_direction: FlexDirection::Row) {
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                View(flex_grow: 1.0, flex_direction: FlexDirection::Column,
+                     margin_right: u32::from(has_scrollbar)) {
                     MarkdownView(markdown: sb.markdown)
                 }
                 Scrollbar(

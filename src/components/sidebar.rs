@@ -129,8 +129,8 @@ impl SidebarMeta {
     /// plus optional labels(1), assignees(1), lines(1), reactions(1).
     /// We also account for `margin_top: 1` on each sub-group.
     pub fn line_count(&self) -> u32 {
-        // pill + author = 3 (1 margin_top + pill + author)
-        let mut count: u32 = 3;
+        // outer margin_top(1) + pill(1) + author margin_top(1) + author(1) = 4
+        let mut count: u32 = 4;
         if self.participants.len() > 1 {
             count += 1;
         }

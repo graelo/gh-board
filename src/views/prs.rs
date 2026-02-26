@@ -1902,7 +1902,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         // Account for tab bar (2 extra lines) + meta in sidebar height.
         #[allow(clippy::cast_possible_truncation)]
         let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
-        let sidebar_visible_lines = props.height.saturating_sub(5 + meta_lines) as usize;
+        let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
         Some(RenderedSidebar::build_tabbed(
             title,

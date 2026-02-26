@@ -93,9 +93,9 @@ document maps each configuration field to the exact UI elements it affects.
 
 ### `role`
 
-| View / Component | Element                                                       |
-| ---------------- | ------------------------------------------------------------- |
-| Sidebar          | Author role label (`owner`, `member`, `collaborator`, etc.)   |
+| View / Component | Element                                                     |
+| ---------------- | ----------------------------------------------------------- |
+| Sidebar          | Author role label (`owner`, `member`, `collaborator`, etc.) |
 
 ### `inverted`
 
@@ -238,6 +238,20 @@ comes from the text color fields listed above. Here is the full mapping:
 | `pr_merged` | `text.actor`   |
 | `pr_draft`  | `text.faint`   |
 
+### PR Column Header Icons
+
+These icons appear as the column header glyphs in the PR list table. All column
+headers share a single color: `text.secondary`.
+
+| Icon field        | Colored by       |
+| ----------------- | ---------------- |
+| `header_state`    | `text.secondary` |
+| `header_comments` | `text.secondary` |
+| `header_review`   | `text.secondary` |
+| `header_ci`       | `text.secondary` |
+| `header_lines`    | `text.secondary` |
+| `header_time`     | `text.secondary` |
+
 ### Issue State Icons
 
 | Icon field     | Colored by     |
@@ -282,6 +296,48 @@ comes from the text color fields listed above. Here is the full mapping:
 | `branch_behind` | `text.faint` |
 | `branch_arrow`  | `text.faint` |
 
+### Sidebar Tab Icons
+
+These icons prefix the tab labels in the PR / Issue sidebar (Overview, Activity,
+Commits, Checks, Files). The active tab uses `border.primary` color; inactive
+tabs use `text.faint`.
+
+| Icon field     | Colored by                                       |
+| -------------- | ------------------------------------------------ |
+| `tab_overview` | active: `border.primary`, inactive: `text.faint` |
+| `tab_activity` | active: `border.primary`, inactive: `text.faint` |
+| `tab_commits`  | active: `border.primary`, inactive: `text.faint` |
+| `tab_checks`   | active: `border.primary`, inactive: `text.faint` |
+| `tab_files`    | active: `border.primary`, inactive: `text.faint` |
+
+### Author Role Icons
+
+These glyphs appear next to the author's name in the sidebar Overview tab. Each
+is colored by `text.role`.
+
+| Icon field            | Role                       | Colored by  |
+| --------------------- | -------------------------- | ----------- |
+| `role_newcontributor` | First-time contributor     | `text.role` |
+| `role_contributor`    | Has previous contributions | `text.role` |
+| `role_collaborator`   | Repository collaborator    | `text.role` |
+| `role_member`         | Organization member        | `text.role` |
+| `role_owner`          | Repository owner           | `text.role` |
+| `role_unknown`        | Unknown or undetermined    | `text.role` |
+
+### View Navigator Icons
+
+These icons prefix the view labels in the footer bar. The active view is
+rendered on the view's dedicated `footer.*` background with white text; inactive
+views use `text.faint`.
+
+| Icon field           | Active background      | Inactive color |
+| -------------------- | ---------------------- | -------------- |
+| `view_prs`           | `footer.prs`           | `text.faint`   |
+| `view_issues`        | `footer.issues`        | `text.faint`   |
+| `view_actions`       | `footer.actions`       | `text.faint`   |
+| `view_notifications` | `footer.notifications` | `text.faint`   |
+| `view_repo`          | `footer.repo`          | `text.faint`   |
+
 ### Check Status Icons (Sidebar)
 
 | Icon field      | Colored by     |
@@ -309,6 +365,48 @@ The left/right cap glyphs are rendered with `fg = pill background color` (no
 background), creating the rounded-edge illusion via Powerline half-circle
 characters. When the strings are empty (unicode / ascii presets), the pill
 renders with square edges.
+
+### Branch Update Status Icons
+
+| Icon field        | Colored by       |
+| ----------------- | ---------------- |
+| `header_update`   | `text.secondary` |
+| `update_needed`   | `text.warning`   |
+| `update_conflict` | `text.error`     |
+| `update_ok`       | `text.success`   |
+
+### Feedback Indicator Icons
+
+Shown in the footer context area after a mutation completes (e.g. merge,
+approve, assign).
+
+| Icon field       | Colored by   |
+| ---------------- | ------------ |
+| `feedback_ok`    | `text.faint` |
+| `feedback_error` | `text.faint` |
+
+### UI Chrome Icons
+
+| Icon field      | Colored by                                            |
+| --------------- | ----------------------------------------------------- |
+| `tab_filter`    | active: `footer.*` background, inactive: `text.faint` |
+| `tab_ephemeral` | active: `footer.*` background, inactive: `text.faint` |
+| `select_cursor` | `text.primary`                                        |
+
+`tab_filter` prefixes every config-defined filter tab; `tab_ephemeral` prefixes
+ephemeral tabs (auto-created by deep-linking). Both follow the same active/
+inactive color logic as other tab-bar labels.
+
+### Actions Run Status Icons
+
+| Icon field         | Colored by       |
+| ------------------ | ---------------- |
+| `action_success`   | `text.success`   |
+| `action_failure`   | `text.error`     |
+| `action_cancelled` | `text.faint`     |
+| `action_skipped`   | `text.faint`     |
+| `action_running`   | `text.warning`   |
+| `action_queued`    | `text.secondary` |
 
 ---
 

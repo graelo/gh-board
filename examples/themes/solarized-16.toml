@@ -74,6 +74,7 @@ prs           = "4"        # blue
 issues        = "2"        # green
 notifications = "5"        # magenta
 repo          = "13"       # violet
+actions       = "9"        # orange
 
 [theme.colors.markdown]
 text = "11"             # base00

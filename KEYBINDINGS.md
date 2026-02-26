@@ -15,8 +15,10 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `k` / `↑` | `move_up` | Move cursor up |
 | `g` / `Home` | `first` | Jump to first item |
 | `G` / `End` | `last` | Jump to last item |
-| `ctrl+d` / `PageDown` | `page_down` | Page down |
-| `ctrl+u` / `PageUp` | `page_up` | Page up |
+| `ctrl+d` | `half_page_down` | Half page down / scroll sidebar |
+| `ctrl+u` | `half_page_up` | Half page up / scroll sidebar |
+| `PageDown` | `page_down` | Page down |
+| `PageUp` | `page_up` | Page up |
 | `h` / `←` | `prev_filter` | Previous filter tab |
 | `l` / `→` | `next_filter` | Next filter tab |
 | `p` | `toggle_preview` | Toggle preview pane |
@@ -34,8 +36,8 @@ any of them — or add custom shell commands — in your `config.toml`.
 | Key | Action | Description |
 |---|---|---|
 | `v` | `approve` | Approve PR |
-| `a` | `assign` | Assign (multi, autocomplete) |
-| `A` | `unassign` | Unassign |
+| `L` | `label` | Label (autocomplete) |
+| `a` | `assign` | Assign/Unassign (multiselect) |
 | `c` | `comment` | Comment |
 | `d` | `view_diff` | View diff in pager |
 | `C` / `Space` | `checkout` | Checkout branch |
@@ -44,6 +46,7 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `W` | `mark_ready` | Mark as ready for review |
 | `m` | `merge` | Merge PR |
 | `u` | `update_from_base` | Update from base branch |
+| `ctrl+]` | `jump_to_run` | Jump to Actions run |
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
 | `S` | `toggle_scope` | Toggle repo scope |
 
@@ -52,8 +55,7 @@ any of them — or add custom shell commands — in your `config.toml`.
 | Key | Action | Description |
 |---|---|---|
 | `L` | `label` | Label (autocomplete) |
-| `a` | `assign` | Assign (multi, autocomplete) |
-| `A` | `unassign` | Unassign |
+| `a` | `assign` | Assign/Unassign (multiselect) |
 | `c` | `comment` | Comment |
 | `x` | `close` | Close issue |
 | `X` | `reopen` | Reopen issue |
@@ -75,10 +77,13 @@ any of them — or add custom shell commands — in your `config.toml`.
 | Key | Action | Description |
 |---|---|---|
 | `w` | `toggle_workflow_nav` | Toggle workflow navigator sidebar |
-| `ctrl+r` | `rerun_failed` | Re-run failed jobs |
-| `ctrl+R` | `rerun_all` | Re-run all jobs |
+| `ctrl+t` | `go_back` | Go back to previous view |
+| `d` | `close_tab` | Close ephemeral tab |
+| `e` | `rerun_failed` | Re-run failed jobs |
+| `E` | `rerun_all` | Re-run all jobs |
 | `ctrl+x` | `cancel_run` | Cancel run |
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
+| `S` | `toggle_scope` | Toggle repo scope |
 
 ### Branches view
 
@@ -188,6 +193,8 @@ The full list of names accepted by the `builtin` field:
 | `last` | Jump to last item |
 | `page_down` | Page down |
 | `page_up` | Page up |
+| `half_page_down` | Half page down / scroll sidebar |
+| `half_page_up` | Half page up / scroll sidebar |
 | `prev_filter` | Previous filter tab |
 | `next_filter` | Next filter tab |
 | `toggle_preview` | Toggle preview pane |
@@ -225,6 +232,9 @@ The full list of names accepted by the `builtin` field:
 | `rerun_failed` | Re-run failed jobs (actions) |
 | `rerun_all` | Re-run all jobs (actions) |
 | `cancel_run` | Cancel workflow run (actions) |
+| `jump_to_run` | Jump to Actions run (from PR view) |
+| `go_back` | Go back to previous view (actions) |
+| `close_tab` | Close ephemeral tab (actions) |
 
 ---
 

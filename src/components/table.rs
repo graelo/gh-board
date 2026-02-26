@@ -187,12 +187,13 @@ impl RenderedTable {
         let border_color = cfg.border_color;
         let show_separator = cfg.show_separator;
 
-        // Reserve 1 char for the scrollbar when content overflows.
+        // Account for padding_left(1) on the outer container, plus 1 char for
+        // the scrollbar gutter when content overflows.
         let needs_scrollbar = rows.len() > visible_rows;
         let col_total_width = if needs_scrollbar {
             total_width.saturating_sub(2)
         } else {
-            total_width
+            total_width.saturating_sub(1)
         };
 
         // Filter out hidden columns.

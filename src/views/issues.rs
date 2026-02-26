@@ -1269,7 +1269,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
         let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
-        Some(RenderedSidebar::build_tabbed(
+        let sidebar = RenderedSidebar::build_tabbed(
             title,
             &md_lines,
             preview_scroll.get(),
@@ -1284,7 +1284,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(&theme.icons),
             sidebar_meta,
             Some(ISSUE_TABS),
-        ))
+        );
+        if preview_scroll.get() != sidebar.clamped_scroll {
+            preview_scroll.set(sidebar.clamped_scroll);
+        }
+        Some(sidebar)
     } else {
         None
     };

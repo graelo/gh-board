@@ -234,12 +234,26 @@ impl RenderedSidebar {
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let indicator_fg = indicator_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
 
-        let total = lines.len();
-        let scroll_indicator = if total > visible_lines {
-            let pos = if total == 0 {
+        // Estimate visual row count: each logical line may wrap to multiple
+        // terminal rows. Content width = sidebar width minus left border (1) +
+        // padding (2) + scrollbar (1).
+        let content_width = usize::from(width).saturating_sub(4).max(1);
+        let visual_row_count = |line: &StyledLine| -> usize {
+            let w = line.display_width();
+            if w == 0 { 1 } else { w.div_ceil(content_width) }
+        };
+
+        let visual_total: usize = lines.iter().map(&visual_row_count).sum();
+        let visual_offset: usize = lines[..scroll_offset.min(lines.len())]
+            .iter()
+            .map(visual_row_count)
+            .sum();
+
+        let scroll_indicator = if visual_total > visible_lines {
+            let pos = if visual_total == 0 {
                 0
             } else {
-                (scroll_offset * 100) / total.max(1)
+                (visual_offset * 100) / visual_total.max(1)
             };
             format!("{pos}%")
         } else {
@@ -267,9 +281,9 @@ impl RenderedSidebar {
 
         // Scroll metadata for the scrollbar.
         let scroll_info = ScrollInfo {
-            scroll_offset,
+            scroll_offset: visual_offset,
             visible_count: visible_lines,
-            total_count: total,
+            total_count: visual_total,
         };
         let scroll_info = if scroll_info.needs_scrollbar() {
             Some(scroll_info)

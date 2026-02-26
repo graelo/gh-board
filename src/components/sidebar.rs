@@ -2,6 +2,7 @@ use iocraft::prelude::*;
 
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::markdown_view::{MarkdownView, RenderedMarkdown};
+use crate::components::scrollbar::{ScrollInfo, Scrollbar};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::StyledLine;
 
@@ -121,6 +122,14 @@ pub struct RenderedSidebar {
     pub tab_inactive_fg: Color,
     /// Optional meta header (pill badge + author line) for Overview tab.
     pub meta: Option<SidebarMeta>,
+    /// Scroll metadata for the scrollbar (None when content fits).
+    pub scroll_info: Option<ScrollInfo>,
+    /// Height of the scrollbar track in rows.
+    pub track_height: u32,
+    /// Scrollbar track color.
+    pub scrollbar_track_fg: Color,
+    /// Scrollbar thumb color.
+    pub scrollbar_thumb_fg: Color,
 }
 
 impl RenderedSidebar {
@@ -206,6 +215,21 @@ impl RenderedSidebar {
             Vec::new()
         };
 
+        // Scroll metadata for the scrollbar.
+        let scroll_info = ScrollInfo {
+            scroll_offset,
+            visible_count: visible_lines,
+            total_count: total,
+        };
+        let scroll_info = if scroll_info.needs_scrollbar() {
+            Some(scroll_info)
+        } else {
+            None
+        };
+
+        #[allow(clippy::cast_possible_truncation)]
+        let track_height = visible_lines as u32;
+
         Self {
             title: crate::util::expand_emoji(title).into_owned(),
             scroll_indicator,
@@ -218,6 +242,10 @@ impl RenderedSidebar {
             tab_active_fg: title_fg,
             tab_inactive_fg: indicator_fg,
             meta,
+            scroll_info,
+            track_height,
+            scrollbar_track_fg: border_fg,
+            scrollbar_thumb_fg: title_fg,
         }
     }
 }
@@ -237,9 +265,12 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
         return element! { View }.into_any();
     };
 
-    let has_indicator = !sb.scroll_indicator.is_empty();
     let has_tabs = !sb.tab_labels.is_empty();
     let meta = sb.meta;
+    let scroll_info = sb.scroll_info;
+    let track_height = sb.track_height;
+    let track_color = sb.scrollbar_track_fg;
+    let thumb_color = sb.scrollbar_thumb_fg;
 
     // Pre-build tab label contents for MixedText.
     let tab_contents: Vec<MixedTextContent> = sb
@@ -278,16 +309,6 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                         wrap: TextWrap::NoWrap,
                     )
                 }
-                #(if has_indicator {
-                    Some(element! {
-                        Text(
-                            content: sb.scroll_indicator,
-                            color: sb.indicator_fg,
-                        )
-                    })
-                } else {
-                    None
-                })
             }
 
             // Tab labels (with bottom border separator when tabs are present)
@@ -405,9 +426,17 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                 }
             }))
 
-            // Content area
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
-                MarkdownView(markdown: sb.markdown)
+            // Content area with scrollbar
+            View(flex_grow: 1.0, flex_direction: FlexDirection::Row) {
+                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                    MarkdownView(markdown: sb.markdown)
+                }
+                Scrollbar(
+                    scroll_info: scroll_info,
+                    track_height: track_height,
+                    track_color: track_color,
+                    thumb_color: thumb_color,
+                )
             }
         }
     }

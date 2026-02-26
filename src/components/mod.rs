@@ -1,6 +1,7 @@
 pub mod footer;
 pub mod help_overlay;
 pub mod markdown_view;
+pub mod scrollbar;
 pub mod selection_overlay;
 pub mod sidebar;
 pub mod sidebar_tabs;

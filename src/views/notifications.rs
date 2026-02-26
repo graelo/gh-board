@@ -725,13 +725,12 @@ pub fn NotificationsView<'a>(
                                         action_status.set(None);
                                     }
                                     BuiltinAction::MoveDown if total_rows > 0 => {
-                                        let new_cursor = (cursor.get() + 1)
-                                            .min(total_rows.saturating_sub(1));
+                                        let new_cursor =
+                                            (cursor.get() + 1).min(total_rows.saturating_sub(1));
                                         cursor.set(new_cursor);
                                         if new_cursor >= scroll_offset.get() + visible_rows {
-                                            scroll_offset.set(
-                                                new_cursor.saturating_sub(visible_rows) + 1,
-                                            );
+                                            scroll_offset
+                                                .set(new_cursor.saturating_sub(visible_rows) + 1);
                                         }
                                     }
                                     BuiltinAction::MoveUp => {
@@ -747,17 +746,16 @@ pub fn NotificationsView<'a>(
                                     }
                                     BuiltinAction::Last if total_rows > 0 => {
                                         cursor.set(total_rows.saturating_sub(1));
-                                        scroll_offset
-                                            .set(total_rows.saturating_sub(visible_rows));
+                                        scroll_offset.set(total_rows.saturating_sub(visible_rows));
                                     }
                                     BuiltinAction::PageDown if total_rows > 0 => {
                                         let new_cursor = (cursor.get() + visible_rows)
                                             .min(total_rows.saturating_sub(1));
                                         cursor.set(new_cursor);
-                                        scroll_offset
-                                            .set(new_cursor.saturating_sub(
-                                                visible_rows.saturating_sub(1),
-                                            ));
+                                        scroll_offset.set(
+                                            new_cursor
+                                                .saturating_sub(visible_rows.saturating_sub(1)),
+                                        );
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);
@@ -797,8 +795,7 @@ pub fn NotificationsView<'a>(
                                         scroll_offset.set(0);
                                     }
                                     BuiltinAction::NextFilter if filter_count > 0 => {
-                                        active_filter
-                                            .set((active_filter.get() + 1) % filter_count);
+                                        active_filter.set((active_filter.get() + 1) % filter_count);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }

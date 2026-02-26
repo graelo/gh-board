@@ -1448,7 +1448,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             Ok(()) => action_status
                                                 .set(Some(format!("Copied #{pr_number}"))),
                                             Err(e) => {
-                                                action_status.set(Some(format!("Copy failed: {e}")));
+                                                action_status
+                                                    .set(Some(format!("Copy failed: {e}")));
                                             }
                                         }
                                     }
@@ -1457,7 +1458,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             Ok(()) => action_status
                                                 .set(Some(format!("Copied URL for #{pr_number}"))),
                                             Err(e) => {
-                                                action_status.set(Some(format!("Copy failed: {e}")));
+                                                action_status
+                                                    .set(Some(format!("Copy failed: {e}")));
                                             }
                                         }
                                     }
@@ -1466,7 +1468,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             Ok(()) => action_status
                                                 .set(Some(format!("Opened #{pr_number}"))),
                                             Err(e) => {
-                                                action_status.set(Some(format!("Open failed: {e}")));
+                                                action_status
+                                                    .set(Some(format!("Open failed: {e}")));
                                             }
                                         }
                                     }

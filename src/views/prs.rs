@@ -1590,6 +1590,40 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             }
                                         }
                                     }
+                                    BuiltinAction::Worktree => {
+                                        let current_data = prs_state
+                                            .read()
+                                            .filters
+                                            .get(current_filter_idx)
+                                            .cloned();
+                                        if let Some(data) = current_data
+                                            && let Some(pr) = data.prs.get(cursor.get())
+                                        {
+                                            let repo_name = pr
+                                                .repo
+                                                .as_ref()
+                                                .map(crate::github::types::RepoRef::full_name)
+                                                .unwrap_or_default();
+                                            match crate::actions::local::create_or_open_worktree(
+                                                &pr.head_ref,
+                                                &repo_name,
+                                                &repo_paths,
+                                            ) {
+                                                Ok(path) => {
+                                                    match clipboard::copy_to_clipboard(&path) {
+                                                        Ok(()) => action_status.set(Some(
+                                                            format!("Worktree ready (copied): {path}"),
+                                                        )),
+                                                        Err(e) => action_status.set(Some(
+                                                            format!("Worktree ready: {path} (clipboard: {e})"),
+                                                        )),
+                                                    }
+                                                }
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Worktree error: {e}"))),
+                                            }
+                                        }
+                                    }
                                     BuiltinAction::Assign | BuiltinAction::Unassign => {
                                         input_mode.set(InputMode::Assign);
                                         input_buffer.set(String::new());

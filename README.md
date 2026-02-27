@@ -28,6 +28,12 @@ Mark read, unsubscribe, filter by reason, repo, or status.
 Browse workflow runs, re-run failed jobs, cancel runs. Jump straight from a PR's
 check status to its Actions run with `Ctrl+]`.
 
+### Open any GitHub URL
+
+`gh-board open <URL>` jumps directly to a PR, issue, or workflow run — handy for
+links pasted in chat or CI notifications. Works with `github.com` and GitHub
+Enterprise hosts.
+
 ### Work with branches
 
 Checkout, delete, create new branches, and open PRs — without leaving the
@@ -67,7 +73,8 @@ gh extension install graelo/gh-board
 Then run via:
 
 ```bash
-gh board [REPO]
+gh board              # launch the dashboard
+gh board open <URL>   # jump to a specific PR, issue, or Actions run
 ```
 
 ## Prerequisites
@@ -105,11 +112,13 @@ See [`examples/config.toml`](examples/config.toml) for a comprehensive example.
 ## Usage
 
 ```bash
-gh-board [COMMAND] [OPTIONS] [REPO]
+gh-board [COMMAND] [OPTIONS] [URL]
 ```
 
 **Subcommands:**
 
+- `open <URL>`: Open a GitHub PR, issue, or Actions run URL directly in the
+  matching view
 - `init`: Interactive wizard that generates a starter config
 - `themes`: List all built-in theme names
 
@@ -122,7 +131,8 @@ gh-board [COMMAND] [OPTIONS] [REPO]
 
 **Arguments:**
 
-- `[REPO]`: Optional repository in `owner/repo` format to scope the view
+- `[URL]`: A GitHub URL — shorthand for `gh-board open <URL>` (prints a hint
+  to stderr suggesting the explicit form)
 
 ### Configuration
 

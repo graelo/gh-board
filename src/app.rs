@@ -28,6 +28,18 @@ pub enum NavigationTarget {
         run_id: u64,
         host: Option<String>,
     },
+    PullRequest {
+        owner: String,
+        repo: String,
+        number: u64,
+        host: Option<String>,
+    },
+    Issue {
+        owner: String,
+        repo: String,
+        number: u64,
+        host: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +98,7 @@ pub struct AppProps<'a> {
     pub color_depth: ColorDepth,
     pub repo_path: Option<&'a Path>,
     pub detected_repo: Option<&'a RepoRef>,
+    pub initial_nav_target: Option<NavigationTarget>,
 }
 
 #[component]
@@ -110,7 +123,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let mut active_view = hooks.use_state(move || initial_view);
 
     // Cross-view navigation target (deep-link).
-    let mut nav_target: State<Option<NavigationTarget>> = hooks.use_state(|| None);
+    let initial_nav = props.initial_nav_target.clone();
+    let mut nav_target: State<Option<NavigationTarget>> = hooks.use_state(move || initial_nav);
     let mut previous_view: State<Option<ViewKind>> = hooks.use_state(|| None);
 
     // Go-back signal: when a child view sets this to true, we return to previous view.
@@ -129,6 +143,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     if let Some(target) = &*nav_target.read() {
         let dest = match target {
             NavigationTarget::ActionsRun { .. } => ViewKind::Actions,
+            NavigationTarget::PullRequest { .. } => ViewKind::Prs,
+            NavigationTarget::Issue { .. } => ViewKind::Issues,
         };
         if active_view.get() != dest {
             previous_view.set(Some(active_view.get()));
@@ -165,11 +181,28 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     }
 
     // Scope state: repo-scoped vs global.
+    // When deep-linking to an external repo (different from the detected local
+    // repo), start in global scope so config tabs aren't hidden by scope.
     let detected_repo = props.detected_repo;
     let scope_config = config.map_or(Scope::Auto, |c| c.github.scope);
-    let initial_scoped = match scope_config {
-        Scope::Auto | Scope::Repo => detected_repo.is_some(),
-        Scope::Global => false,
+    let nav_targets_external = {
+        let detected_full = detected_repo.map(RepoRef::full_name);
+        nav_target.read().as_ref().is_some_and(|t| {
+            let target_repo = match t {
+                NavigationTarget::ActionsRun { owner, repo, .. }
+                | NavigationTarget::PullRequest { owner, repo, .. }
+                | NavigationTarget::Issue { owner, repo, .. } => format!("{owner}/{repo}"),
+            };
+            detected_full.as_ref().is_none_or(|d| *d != target_repo)
+        })
+    };
+    let initial_scoped = if nav_targets_external {
+        false
+    } else {
+        match scope_config {
+            Scope::Auto | Scope::Repo => detected_repo.is_some(),
+            Scope::Global => false,
+        }
     };
     let mut repo_scoped = hooks.use_state(move || initial_scoped);
 
@@ -238,6 +271,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     refetch_interval_minutes: refetch_minutes,
                     prefetch_pr_details,
                     nav_target,
+                    go_back: go_back_signal,
                 )
             }
             View(
@@ -263,6 +297,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     date_format,
                     is_active: active == ViewKind::Issues,
                     refetch_interval_minutes: refetch_minutes,
+                    nav_target,
+                    go_back: go_back_signal,
                 )
             }
             View(

@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use iocraft::prelude::*;
 
 use crate::actions::clipboard;
-use crate::app::ViewKind;
+use crate::app::{NavigationTarget, ViewKind};
 use crate::color::ColorDepth;
 use crate::components::footer::{self, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
@@ -26,6 +26,7 @@ use crate::markdown::renderer::{self, StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::RateLimitInfo;
 use crate::types::{Issue, IssueDetail};
+use crate::views::MAX_EPHEMERAL_TABS;
 
 /// Issue sidebar only shows Overview and Activity tabs.
 const ISSUE_TABS: &[SidebarTab] = &[SidebarTab::Overview, SidebarTab::Activity];
@@ -251,6 +252,16 @@ struct IssuesState {
     filters: Vec<FilterData>,
 }
 
+/// Build a merged list of (filter, `is_ephemeral`) from config + ephemeral filters.
+fn merged_issue_filters<'a>(
+    config: &'a [IssueFilter],
+    ephemeral: &'a [(IssueFilter, Option<u64>)],
+) -> Vec<(&'a IssueFilter, bool)> {
+    let mut out: Vec<_> = config.iter().map(|f| (f, false)).collect();
+    out.extend(ephemeral.iter().map(|(f, _)| (f, true)));
+    out
+}
+
 // ---------------------------------------------------------------------------
 // IssuesView component (T047-T048, T086)
 // ---------------------------------------------------------------------------
@@ -282,6 +293,10 @@ pub struct IssuesViewProps<'a> {
     pub is_active: bool,
     /// Auto-refetch interval in minutes (0 = disabled).
     pub refetch_interval_minutes: u32,
+    /// Navigation target state — set by App for deep-linking.
+    pub nav_target: Option<State<Option<NavigationTarget>>>,
+    /// Go-back signal — set to true to return to previous view.
+    pub go_back: Option<State<bool>>,
 }
 
 #[component]
@@ -338,6 +353,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut search_query = hooks.use_state(String::new);
 
     let mut help_visible = hooks.use_state(|| false);
+
+    let go_back_prop = props.go_back;
+
+    // State: ephemeral tabs created by deep-linking to repos without config tabs.
+    let mut ephemeral_filters = hooks.use_state(Vec::<(IssueFilter, Option<u64>)>::new);
 
     // State: rate limit from last GraphQL response.
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
@@ -408,7 +428,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     });
 
     // Compute active filter index early (needed by fetch logic below).
-    let current_filter_idx = active_filter.get().min(filter_count.saturating_sub(1));
+    let eph_snapshot = ephemeral_filters.read().clone();
+    let ephemeral_count = eph_snapshot.len();
+    let total_tab_count = filter_count + ephemeral_count;
+    let current_filter_idx = active_filter.get().min(total_tab_count.saturating_sub(1));
+    let all_filters = merged_issue_filters(filters_cfg, &eph_snapshot);
 
     // Lazy fetch: only fetch the active filter when it needs data.
     let active_needs_fetch = issues_state
@@ -448,11 +472,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         // 'R' was pressed: reset the flag and eagerly fetch every filter.
         refresh_all.set(false);
         let mut in_flight = filter_in_flight.read().clone();
-        for (filter_idx, cfg) in filters_cfg.iter().enumerate() {
+        for (filter_idx, (cfg, _is_eph)) in all_filters.iter().enumerate() {
             if filter_idx < in_flight.len() {
                 in_flight[filter_idx] = true;
             }
-            let mut modified_filter = cfg.clone();
+            let mut modified_filter = (*cfg).clone();
             modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
             engine_ref.send(Request::FetchIssues {
                 filter_idx,
@@ -465,8 +489,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     } else if active_needs_fetch
         && !active_in_flight
         && is_active
-        && let Some(cfg) = filters_cfg.get(current_filter_idx)
         && let Some(ref engine_ref) = engine
+        && let Some((cfg, _is_eph)) = all_filters.get(current_filter_idx)
     {
         let mut in_flight = filter_in_flight.read().clone();
         if current_filter_idx < in_flight.len() {
@@ -475,7 +499,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         filter_in_flight.set(in_flight);
 
         let filter_idx = current_filter_idx;
-        let mut modified_filter = cfg.clone();
+        let mut modified_filter = (*cfg).clone();
         modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
 
         // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
@@ -642,6 +666,180 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 }
             }
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // Process cross-view navigation target (deep-link from CLI)
+    // -----------------------------------------------------------------------
+
+    let nav_target_prop = props.nav_target;
+
+    if is_active && let Some(ref nt_state) = nav_target_prop {
+        let target = nt_state.read().clone();
+        if let Some(NavigationTarget::Issue {
+            ref owner,
+            ref repo,
+            number,
+            ref host,
+        }) = target
+        {
+            // 1. Search all loaded filter data (config + ephemeral) for this issue.
+            let found = {
+                let state = issues_state.read();
+                state.filters.iter().enumerate().find_map(|(fi, fd)| {
+                    if fd.loading {
+                        return None;
+                    }
+                    fd.issues
+                        .iter()
+                        .position(|i| {
+                            i.number == number
+                                && i.repo
+                                    .as_ref()
+                                    .is_some_and(|r| r.owner == *owner && r.name == *repo)
+                        })
+                        .map(|pos| (fi, pos))
+                })
+            };
+
+            if let Some((filter_idx, issue_pos)) = found {
+                // Issue found in an existing tab — switch to it.
+                active_filter.set(filter_idx);
+                cursor.set(issue_pos);
+                scroll_offset.set(issue_pos.saturating_sub(5));
+                preview_open.set(true);
+                preview_scroll.set(0);
+                search_query.set(String::new());
+                if let Some(mut nt) = nav_target_prop {
+                    nt.set(None);
+                }
+            } else {
+                // 2. Check if any filter is still loading — wait.
+                let any_in_flight = filter_in_flight.read().iter().any(|&f| f);
+                if !any_in_flight {
+                    // 3. All loaded, issue not found.
+                    let full_repo = format!("{owner}/{repo}");
+
+                    // Check if an ephemeral tab for this repo already exists.
+                    let existing_eph = {
+                        let eph = ephemeral_filters.read();
+                        eph.iter()
+                            .position(|(f, _)| f.filters.contains(&format!("repo:{full_repo}")))
+                            .map(|ei| filter_count + ei)
+                    };
+
+                    if let Some(tab_idx) = existing_eph {
+                        active_filter.set(tab_idx);
+                        cursor.set(0);
+                        scroll_offset.set(0);
+                        preview_scroll.set(0);
+                        search_query.set(String::new());
+
+                        let issue_in_tab = {
+                            let state = issues_state.read();
+                            state.filters.get(tab_idx).and_then(|fd| {
+                                if fd.loading {
+                                    return None;
+                                }
+                                fd.issues.iter().position(|i| i.number == number)
+                            })
+                        };
+                        if let Some(pos) = issue_in_tab {
+                            cursor.set(pos);
+                            scroll_offset.set(pos.saturating_sub(5));
+                            preview_open.set(true);
+                            preview_scroll.set(0);
+                            if let Some(mut nt) = nav_target_prop {
+                                nt.set(None);
+                            }
+                        } else {
+                            let ei = tab_idx - filter_count;
+                            let mut eph = ephemeral_filters.read().clone();
+                            if ei < eph.len() {
+                                eph[ei].1 = Some(number);
+                                ephemeral_filters.set(eph);
+                            }
+                            if let Some(mut nt) = nav_target_prop {
+                                nt.set(None);
+                            }
+                        }
+                    } else if ephemeral_filters.read().len() < MAX_EPHEMERAL_TABS {
+                        // Create new ephemeral tab.
+                        tracing::debug!(
+                            "deep-link: creating ephemeral issue tab for {full_repo}, number={number}"
+                        );
+                        let new_filter = IssueFilter {
+                            title: full_repo.clone(),
+                            filters: format!("repo:{full_repo}"),
+                            host: host.clone(),
+                            limit: None,
+                            layout: None,
+                        };
+                        let mut eph = ephemeral_filters.read().clone();
+                        eph.push((new_filter, Some(number)));
+                        let new_tab_idx = filter_count + eph.len() - 1;
+                        ephemeral_filters.set(eph);
+
+                        // Grow state vectors for the new tab.
+                        let mut state = issues_state.read().clone();
+                        state.filters.push(FilterData::default());
+                        issues_state.set(state);
+                        let mut in_flight = filter_in_flight.read().clone();
+                        in_flight.push(false);
+                        filter_in_flight.set(in_flight);
+                        let mut times = filter_fetch_times.read().clone();
+                        times.push(None);
+                        filter_fetch_times.set(times);
+
+                        active_filter.set(new_tab_idx);
+                        cursor.set(0);
+                        scroll_offset.set(0);
+                        preview_scroll.set(0);
+                        search_query.set(String::new());
+                    } else {
+                        action_status.set(Some(
+                            "Too many ephemeral tabs \u{2014} close one first (d)".to_owned(),
+                        ));
+                    }
+
+                    if let Some(mut nt) = nav_target_prop {
+                        nt.set(None);
+                    }
+                }
+            }
+        }
+    }
+
+    // Handle pending issue number for ephemeral tabs after data loads.
+    {
+        let eph = ephemeral_filters.read().clone();
+        for (ei, (eph_filter, pending)) in eph.iter().enumerate() {
+            if let Some(target_number) = pending {
+                let tab_idx = filter_count + ei;
+                let state = issues_state.read();
+                if let Some(fd) = state.filters.get(tab_idx)
+                    && !fd.loading
+                {
+                    let pos = fd.issues.iter().position(|i| i.number == *target_number);
+                    if let Some(pos) = pos {
+                        if active_filter.get() == tab_idx {
+                            cursor.set(pos);
+                            scroll_offset.set(pos.saturating_sub(5));
+                            preview_open.set(true);
+                            preview_scroll.set(0);
+                        }
+                    } else {
+                        action_status.set(Some(format!(
+                            "Issue #{target_number} not found in {}",
+                            eph_filter.title
+                        )));
+                    }
+                    let mut eph_mut = ephemeral_filters.read().clone();
+                    eph_mut[ei].1 = None;
+                    ephemeral_filters.set(eph_mut);
+                }
+            }
+        }
     }
 
     let state_ref = issues_state.read();
@@ -1059,10 +1257,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             preview_scroll.set(0);
                                         }
                                     }
-                                    BuiltinAction::PrevFilter if filter_count > 0 => {
+                                    BuiltinAction::PrevFilter if total_tab_count > 0 => {
                                         let current = active_filter.get();
                                         active_filter.set(if current == 0 {
-                                            filter_count.saturating_sub(1)
+                                            total_tab_count.saturating_sub(1)
                                         } else {
                                             current - 1
                                         });
@@ -1071,12 +1269,57 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         preview_scroll.set(0);
                                         pending_detail.set(None);
                                     }
-                                    BuiltinAction::NextFilter if filter_count > 0 => {
-                                        active_filter.set((active_filter.get() + 1) % filter_count);
+                                    BuiltinAction::NextFilter if total_tab_count > 0 => {
+                                        active_filter
+                                            .set((active_filter.get() + 1) % total_tab_count);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         preview_scroll.set(0);
                                         pending_detail.set(None);
+                                    }
+                                    BuiltinAction::CloseTab => {
+                                        if current_filter_idx >= filter_count {
+                                            let ei = current_filter_idx - filter_count;
+                                            let mut eph = ephemeral_filters.read().clone();
+                                            debug_assert!(
+                                                ei < eph.len(),
+                                                "ephemeral index out of range"
+                                            );
+                                            eph.remove(ei);
+                                            let new_total = filter_count + eph.len();
+                                            ephemeral_filters.set(eph);
+
+                                            let mut state = issues_state.read().clone();
+                                            if current_filter_idx < state.filters.len() {
+                                                state.filters.remove(current_filter_idx);
+                                            }
+                                            issues_state.set(state);
+                                            let mut in_flight = filter_in_flight.read().clone();
+                                            if current_filter_idx < in_flight.len() {
+                                                in_flight.remove(current_filter_idx);
+                                            }
+                                            filter_in_flight.set(in_flight);
+                                            let mut times = filter_fetch_times.read().clone();
+                                            if current_filter_idx < times.len() {
+                                                times.remove(current_filter_idx);
+                                            }
+                                            filter_fetch_times.set(times);
+
+                                            if active_filter.get() >= new_total && new_total > 0 {
+                                                active_filter.set(new_total - 1);
+                                            }
+                                            cursor.set(0);
+                                            scroll_offset.set(0);
+                                        } else {
+                                            action_status
+                                                .set(Some("Cannot close config tabs".to_owned()));
+                                        }
+                                    }
+                                    BuiltinAction::GoBack => {
+                                        preview_open.set(false);
+                                        if let Some(mut gb) = go_back_prop {
+                                            gb.set(true);
+                                        }
                                     }
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);
@@ -1130,13 +1373,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     }
 
     // Build tabs.
-    let tabs: Vec<Tab> = filters_cfg
+    let tabs: Vec<Tab> = all_filters
         .iter()
         .enumerate()
-        .map(|(i, s)| Tab {
-            title: s.title.clone(),
+        .map(|(i, (f, is_eph))| Tab {
+            title: f.title.clone(),
             count: state_ref.filters.get(i).map(|d| d.issue_count),
-            is_ephemeral: false,
+            is_ephemeral: *is_eph,
         })
         .collect();
 

@@ -17,5 +17,6 @@ pub mod init;
 pub mod markdown;
 pub mod theme;
 pub mod types;
+pub mod url;
 pub mod util;
 pub mod views;

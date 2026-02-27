@@ -22,6 +22,8 @@ use crate::engine::{EngineHandle, Event, Request};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::{RateLimitInfo, RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
+use crate::url::owner_repo_from_url;
+use crate::views::MAX_EPHEMERAL_TABS;
 use unicode_width::UnicodeWidthStr;
 
 // ---------------------------------------------------------------------------
@@ -201,8 +203,15 @@ enum InputMode {
 
 const NAV_W: u16 = 28;
 
-/// Maximum number of ephemeral tabs (session-scoped, created by deep-linking).
-const MAX_EPHEMERAL_TABS: usize = 5;
+/// Deferred request for a single workflow run, set by the polling future
+/// when an ephemeral tab's bulk fetch completes without the target run.
+#[derive(Clone)]
+struct PendingRunFetch {
+    owner: String,
+    repo: String,
+    run_id: u64,
+    host: Option<String>,
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -222,25 +231,11 @@ fn resolve_filter_repo<'a>(
     }
 }
 
-fn parse_owner_repo_from_url(url: &str) -> Option<(String, String)> {
-    let after_scheme = url
-        .strip_prefix("https://")
-        .or_else(|| url.strip_prefix("http://"))?;
-    let after_host = after_scheme.split_once('/')?.1;
-    let mut parts = after_host.splitn(3, '/');
-    let owner = parts.next()?;
-    let repo = parts.next()?;
-    if owner.is_empty() || repo.is_empty() {
-        return None;
-    }
-    Some((owner.to_owned(), repo.to_owned()))
-}
-
 fn owner_repo_for_run(
     run: &WorkflowRun,
     filter: Option<&ActionsFilter>,
 ) -> Option<(String, String)> {
-    parse_owner_repo_from_url(&run.html_url).or_else(|| {
+    owner_repo_from_url(&run.html_url).or_else(|| {
         filter.and_then(|f| {
             f.repo
                 .split_once('/')
@@ -393,6 +388,11 @@ pub fn ActionsView<'a>(
     // State: ephemeral tabs created by deep-linking to repos without config tabs.
     // Each entry is (filter, optional pending run_id to highlight after fetch).
     let mut ephemeral_filters = hooks.use_state(Vec::<(ActionsFilter, Option<u64>)>::new);
+
+    // Signal: the polling future sets this when an ephemeral tab's data arrives
+    // but the pending run_id is not among the results — the synchronous render
+    // path picks it up and sends FetchRunById.
+    let mut pending_run_fetch = hooks.use_state(|| Option::<PendingRunFetch>::None);
 
     let mut action_status = hooks.use_state(|| Option::<String>::None);
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
@@ -606,6 +606,44 @@ pub fn ActionsView<'a>(
                             if let Some(rl) = rate_limit {
                                 rate_limit_state.set(Some(rl));
                             }
+
+                            // If this is an ephemeral tab with a pending run_id,
+                            // check whether the target run is in the results.
+                            if filter_idx >= filter_count {
+                                let ei = filter_idx - filter_count;
+                                let eph = ephemeral_filters.read().clone();
+                                if let Some((eph_filter, Some(target_id))) = eph.get(ei) {
+                                    let target_id = *target_id;
+                                    let state = actions_state.read();
+                                    let found_pos = state.filters.get(filter_idx).and_then(|fd| {
+                                        fd.runs.iter().position(|r| r.id == target_id)
+                                    });
+                                    if let Some(pos) = found_pos {
+                                        // Run is in the results — position cursor.
+                                        cursor.set(pos);
+                                        scroll_offset.set(pos.saturating_sub(5));
+                                        detail_open.set(true);
+                                        detail_scroll.set(0);
+                                        // Clear pending.
+                                        let mut eph_mut = eph;
+                                        eph_mut[ei].1 = None;
+                                        ephemeral_filters.set(eph_mut);
+                                    } else if let Some((owner, repo)) = eph_filter
+                                        .repo
+                                        .split_once('/')
+                                        .map(|(o, r)| (o.to_owned(), r.to_owned()))
+                                    {
+                                        // Run not in results — signal for
+                                        // FetchRunById (needs engine access).
+                                        pending_run_fetch.set(Some(PendingRunFetch {
+                                            owner,
+                                            repo,
+                                            run_id: target_id,
+                                            host: eph_filter.host.clone(),
+                                        }));
+                                    }
+                                }
+                            }
                         }
                         Event::RunJobsFetched {
                             run_id,
@@ -728,6 +766,30 @@ pub fn ActionsView<'a>(
     }
 
     // -----------------------------------------------------------------------
+    // Deferred FetchRunById: the polling future detected that an ephemeral
+    // tab's data arrived without the target run — fetch it individually.
+    // -----------------------------------------------------------------------
+    let pending_fetch = pending_run_fetch.read().clone();
+    if let Some(prf) = pending_fetch {
+        pending_run_fetch.set(None);
+        tracing::debug!(
+            "deep-link: target run {} not in bulk fetch for {}/{}, fetching individually",
+            prf.run_id,
+            prf.owner,
+            prf.repo,
+        );
+        if let Some(ref eng) = engine {
+            eng.send(Request::FetchRunById {
+                owner: prf.owner,
+                repo: prf.repo,
+                run_id: prf.run_id,
+                host: prf.host,
+                reply_tx: event_tx.clone(),
+            });
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // Process cross-view navigation target (deep-link from PR checks)
     // -----------------------------------------------------------------------
 
@@ -833,6 +895,9 @@ pub fn ActionsView<'a>(
                         }
                     } else if ephemeral_filters.read().len() < MAX_EPHEMERAL_TABS {
                         // Create new ephemeral tab.
+                        tracing::debug!(
+                            "deep-link: creating ephemeral actions tab for {full_repo}, run_id={run_id}"
+                        );
                         let new_filter = ActionsFilter {
                             title: full_repo.clone(),
                             repo: full_repo,

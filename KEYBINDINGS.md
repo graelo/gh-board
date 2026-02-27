@@ -54,11 +54,13 @@ any of them — or add custom shell commands — in your `config.toml`.
 > **Worktree notes:** `checkout` and `worktree` require a `[repo_paths]` entry
 > for the PR's repository. If the local clone doesn't exist yet, you'll be asked
 > to confirm cloning it first (via `gh repo clone`). Set `auto_clone = true`
-> under `[github]` to skip the prompt. `worktree` creates the worktree at
+> under `[github]` to skip the prompt. Both commands automatically run
+> `git fetch origin <branch>` before operating, so they work even when the
+> branch has never been fetched locally. `worktree` creates the worktree at
 > `<repo>-worktrees/<branch-slug>/` next to the configured clone path and copies
 > the path to the clipboard. The PR's head branch must still exist on the remote,
-> so this works reliably on **open** and **draft** PRs. For merged PRs whose
-> branch was deleted, the fetch will fail.
+> so both commands work reliably on **open** and **draft** PRs. For merged PRs
+> whose branch was deleted, the fetch will fail.
 
 ### Issue view
 

@@ -52,6 +52,14 @@ pub fn checkout_branch<S: std::hash::BuildHasher>(
 
     let cloned = ensure_repo_cloned(repo_full_name, repo_path, host)?;
 
+    // Fetch the branch from origin so the remote-tracking ref is up to date.
+    // Without this, `git checkout <branch>` fails when the branch has never
+    // been fetched locally (e.g. a new PR branch on a stale clone).
+    let _fetch = std::process::Command::new("git")
+        .args(["fetch", "origin", head_ref])
+        .current_dir(repo_path)
+        .output();
+
     let output = std::process::Command::new("git")
         .arg("checkout")
         .arg(head_ref)

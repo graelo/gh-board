@@ -140,7 +140,10 @@ filters = "is:unread reason:review_requested"
 # REPOSITORY PATHS
 # ==============================================================================
 
-# Map "owner/repo" to local filesystem paths for checkout and branch operations
+# Map "owner/repo" to local filesystem paths for checkout, worktree, and branch operations.
+# Worktrees are created next to the clone as <dir>-worktrees/<branch-slug>/, e.g.
+#   ~/code/gh-board-worktrees/feat-my-feature/
+# Branch slug: "/" replaced with "-", leading/trailing dashes trimmed.
 [repo_paths]
 "graelo/gh-board" = "~/code/gh-board"
 # "myorg/myrepo" = "/home/user/projects/myrepo"
@@ -595,6 +598,11 @@ name = "Checkout branch"
 key = "space"
 builtin = "checkout"
 name = "Checkout branch"
+
+[[keybindings.prs]]
+key = "w"
+builtin = "worktree"
+name = "Create/open git worktree"
 
 [[keybindings.prs]]
 key = "x"

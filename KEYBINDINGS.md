@@ -41,6 +41,7 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `c` | `comment` | Comment |
 | `d` | `view_diff` | View diff in pager |
 | `C` / `Space` | `checkout` | Checkout branch |
+| `w` | `worktree` | Create/open git worktree |
 | `x` | `close` | Close PR |
 | `X` | `reopen` | Reopen PR |
 | `W` | `mark_ready` | Mark as ready for review |
@@ -49,6 +50,13 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `ctrl+]` | `jump_to_run` | Jump to Actions run |
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
 | `S` | `toggle_scope` | Toggle repo scope |
+
+> **Worktree notes:** `checkout` and `worktree` require a `[repo_paths]` entry
+> for the PR's repository. `worktree` creates the worktree at
+> `<repo>-worktrees/<branch-slug>/` next to the configured clone path and copies
+> the path to the clipboard. The PR's head branch must still exist on the remote,
+> so this works reliably on **open** and **draft** PRs. For merged PRs whose
+> branch was deleted, the fetch will fail.
 
 ### Issue view
 
@@ -212,6 +220,7 @@ The full list of names accepted by the `builtin` field:
 | `comment` | Comment |
 | `view_diff` | View diff in pager |
 | `checkout` | Checkout branch |
+| `worktree` | Create/open git worktree (PRs) |
 | `close` | Close PR or issue |
 | `reopen` | Reopen PR or issue |
 | `mark_ready` | Mark PR as ready for review |

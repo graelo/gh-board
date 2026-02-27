@@ -12,8 +12,8 @@ with named filter tabs (`h`/`l`), and press `?` anywhere for contextual help.
 
 ### Review & merge PRs
 
-Approve, comment, assign, label, merge, checkout branch, view diff, and
-deep-link to CI runs — all from your keyboard.
+Approve, comment, assign, label, merge, checkout branch, create worktrees, view
+diff, and deep-link to CI runs — all from your keyboard.
 
 ### Triage issues
 
@@ -38,6 +38,20 @@ Enterprise hosts.
 
 Checkout, delete, create new branches, and open PRs — without leaving the
 terminal.
+
+### Worktree workflow
+
+Press `w` on any PR to create a git worktree for its branch — the path is
+copied to your clipboard so you can `cd` straight into it. The worktree is
+placed at `<repo>-worktrees/<branch-slug>/` next to your main clone. Pressing
+`w` again on the same PR is a no-op that returns the existing path instantly.
+
+Requires a `[repo_paths]` entry mapping the repository to its local clone:
+
+```toml
+[repo_paths]
+"owner/repo" = "/path/to/repo"
+```
 
 ### Under the hood
 

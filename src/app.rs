@@ -237,6 +237,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let active = active_view.get();
     let refetch_minutes = config.map_or(10, |c| c.github.refetch_interval_minutes);
     let prefetch_pr_details = config.map_or(0, |c| c.github.prefetch_pr_details);
+    let auto_clone = config.is_some_and(|c| c.github.auto_clone);
     let filters_pr = config.map(|c| c.pr_filters.as_slice());
     let filters_issue = config.map(|c| c.issues_filters.as_slice());
     let filters_actions = config.map(|c| c.actions_filters.as_slice());
@@ -270,6 +271,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     is_active: active == ViewKind::Prs,
                     refetch_interval_minutes: refetch_minutes,
                     prefetch_pr_details,
+                    auto_clone,
                     nav_target,
                     go_back: go_back_signal,
                 )

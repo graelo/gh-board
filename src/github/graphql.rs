@@ -1464,7 +1464,8 @@ pub async fn fetch_issue_detail(
 
 /// Fetch how many commits behind `base_ref` the head branch is.
 ///
-/// Uses `GET /repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}`.
+/// Uses `GET /repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_ref}` for same-repo
+/// PRs, or `...{head_owner}:{head_ref}` for cross-fork PRs.
 /// Returns `Some(n)` where `n` is the number of commits the head is behind base,
 /// or `None` if the request fails or the field is absent.
 pub async fn fetch_compare(
@@ -1475,14 +1476,19 @@ pub async fn fetch_compare(
     head_owner: &str,
     head_ref: &str,
 ) -> Result<Option<u32>> {
-    let route =
-        format!("/repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}");
+    let route = if head_owner == base_owner {
+        format!("/repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_ref}")
+    } else {
+        format!("/repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}")
+    };
+    let head_spec = if head_owner == base_owner {
+        head_ref.to_owned()
+    } else {
+        format!("{head_owner}:{head_ref}")
+    };
     let response: serde_json::Value =
         octocrab.get(route, None::<&()>).await.with_context(|| {
-            format!(
-                "compare request failed for {base_owner}/{base_repo}: \
-             {base_ref}...{head_owner}:{head_ref}"
-            )
+            format!("compare request failed for {base_owner}/{base_repo}: {base_ref}...{head_spec}")
         })?;
     let behind_by = response["behind_by"]
         .as_u64()

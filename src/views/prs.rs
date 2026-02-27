@@ -462,6 +462,7 @@ fn merged_pr_filters<'a>(
 // ---------------------------------------------------------------------------
 
 #[derive(Default, Props)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct PrsViewProps<'a> {
     /// PR filter configs.
     pub filters: Option<&'a [PrFilter]>,
@@ -503,6 +504,8 @@ pub struct PrsViewProps<'a> {
     pub refetch_interval_minutes: u32,
     /// Number of PR details to prefetch after list load. 0 = on-demand only.
     pub prefetch_pr_details: u32,
+    /// Auto-clone repos that aren't cloned yet (for checkout / worktree).
+    pub auto_clone: bool,
     /// Navigation target state — set by `JumpToRun` to trigger cross-view navigation.
     pub nav_target: Option<State<Option<NavigationTarget>>>,
     /// Go-back signal — set to true to return to previous view.
@@ -611,6 +614,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         filter_in_flight.set(vec![false; filter_count]);
         refresh_registered.set(false);
     }
+
+    // Channel for local (blocking) action results (clone, checkout, worktree).
+    // Spawned threads send the result string here; the polling future drains it.
+    let local_action_channel = hooks.use_state(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
+    });
+    let (local_action_tx, local_action_rx_arc) = local_action_channel.read().clone();
 
     // Per-view event channel: engine sends results here, polling future processes them.
     let event_channel = hooks.use_state(|| {
@@ -760,6 +771,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Polling future: receive engine events every 100ms and update state.
     {
         let rx_for_poll = event_rx_arc.clone();
+        let local_rx_for_poll = local_action_rx_arc.clone();
         let theme_for_poll = theme.clone();
         let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
         let prefetch_limit = props.prefetch_pr_details as usize;
@@ -769,6 +781,15 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         hooks.use_future(async move {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
+
+                // Drain local action results (clone/checkout/worktree background threads).
+                {
+                    let rx = local_rx_for_poll.lock().unwrap();
+                    while let Ok(msg) = rx.try_recv() {
+                        action_status.set(Some(msg));
+                    }
+                }
+
                 let events: Vec<Event> = {
                     let rx = rx_for_poll.lock().unwrap();
                     let mut evts = Vec::new();
@@ -1172,6 +1193,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let visible_rows = (props.height.saturating_sub(5) / 3).max(1) as usize;
 
     let repo_paths = props.repo_paths.cloned().unwrap_or_default();
+    let auto_clone = props.auto_clone;
     let filter_host_for_kb = all_filters
         .get(current_filter_idx)
         .and_then(|(f, _)| f.host.clone());
@@ -1322,62 +1344,125 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     },
                     InputMode::Confirm(ref pending) => match code {
                         KeyCode::Char('y' | 'Y') => {
-                            let pr_info =
-                                get_current_pr_info(&prs_state, current_filter_idx, cursor.get());
-                            if let Some((owner, repo, number)) = pr_info
-                                && let Some(ref eng) = engine
-                            {
-                                match pending {
-                                    BuiltinAction::Close => {
-                                        eng.send(Request::ClosePr {
-                                            owner: owner.clone(),
-                                            repo: repo.clone(),
-                                            number,
-                                            reply_tx: event_tx.clone(),
-                                        });
+                            match pending {
+                                BuiltinAction::Checkout => {
+                                    let current_data = prs_state
+                                        .read()
+                                        .filters
+                                        .get(current_filter_idx)
+                                        .cloned();
+                                    if let Some(data) = current_data
+                                        && let Some(pr) = data.prs.get(cursor.get())
+                                    {
+                                        let repo_name = pr
+                                            .repo
+                                            .as_ref()
+                                            .map(crate::github::types::RepoRef::full_name)
+                                            .unwrap_or_default();
+                                        let host = filter_host_for_kb
+                                            .as_deref()
+                                            .unwrap_or("github.com")
+                                            .to_owned();
+                                        action_status.set(Some(format!("Cloning {repo_name}…")));
+                                        crate::actions::local::spawn_checkout(
+                                            pr.head_ref.clone(),
+                                            repo_name,
+                                            repo_paths.clone(),
+                                            host,
+                                            local_action_tx.clone(),
+                                        );
                                     }
-                                    BuiltinAction::Reopen => {
-                                        eng.send(Request::ReopenPr {
-                                            owner: owner.clone(),
-                                            repo: repo.clone(),
-                                            number,
-                                            reply_tx: event_tx.clone(),
-                                        });
+                                }
+                                BuiltinAction::Worktree => {
+                                    let current_data = prs_state
+                                        .read()
+                                        .filters
+                                        .get(current_filter_idx)
+                                        .cloned();
+                                    if let Some(data) = current_data
+                                        && let Some(pr) = data.prs.get(cursor.get())
+                                    {
+                                        let repo_name = pr
+                                            .repo
+                                            .as_ref()
+                                            .map(crate::github::types::RepoRef::full_name)
+                                            .unwrap_or_default();
+                                        let host = filter_host_for_kb
+                                            .as_deref()
+                                            .unwrap_or("github.com")
+                                            .to_owned();
+                                        action_status.set(Some(format!("Cloning {repo_name}…")));
+                                        crate::actions::local::spawn_worktree(
+                                            pr.head_ref.clone(),
+                                            repo_name,
+                                            repo_paths.clone(),
+                                            host,
+                                            local_action_tx.clone(),
+                                        );
                                     }
-                                    BuiltinAction::Merge => {
-                                        eng.send(Request::MergePr {
-                                            owner: owner.clone(),
-                                            repo: repo.clone(),
-                                            number,
-                                            reply_tx: event_tx.clone(),
-                                        });
+                                }
+                                _ => {
+                                    let pr_info = get_current_pr_info(
+                                        &prs_state,
+                                        current_filter_idx,
+                                        cursor.get(),
+                                    );
+                                    if let Some((owner, repo, number)) = pr_info
+                                        && let Some(ref eng) = engine
+                                    {
+                                        match pending {
+                                            BuiltinAction::Close => {
+                                                eng.send(Request::ClosePr {
+                                                    owner: owner.clone(),
+                                                    repo: repo.clone(),
+                                                    number,
+                                                    reply_tx: event_tx.clone(),
+                                                });
+                                            }
+                                            BuiltinAction::Reopen => {
+                                                eng.send(Request::ReopenPr {
+                                                    owner: owner.clone(),
+                                                    repo: repo.clone(),
+                                                    number,
+                                                    reply_tx: event_tx.clone(),
+                                                });
+                                            }
+                                            BuiltinAction::Merge => {
+                                                eng.send(Request::MergePr {
+                                                    owner: owner.clone(),
+                                                    repo: repo.clone(),
+                                                    number,
+                                                    reply_tx: event_tx.clone(),
+                                                });
+                                            }
+                                            BuiltinAction::Approve => {
+                                                eng.send(Request::ApprovePr {
+                                                    owner: owner.clone(),
+                                                    repo: repo.clone(),
+                                                    number,
+                                                    body: None,
+                                                    reply_tx: event_tx.clone(),
+                                                });
+                                            }
+                                            BuiltinAction::UpdateFromBase => {
+                                                eng.send(Request::UpdateBranch {
+                                                    owner: owner.clone(),
+                                                    repo: repo.clone(),
+                                                    number,
+                                                    reply_tx: event_tx.clone(),
+                                                });
+                                            }
+                                            BuiltinAction::MarkReady => {
+                                                eng.send(Request::ReadyForReview {
+                                                    owner: owner.clone(),
+                                                    repo: repo.clone(),
+                                                    number,
+                                                    reply_tx: event_tx.clone(),
+                                                });
+                                            }
+                                            _ => {}
+                                        }
                                     }
-                                    BuiltinAction::Approve => {
-                                        eng.send(Request::ApprovePr {
-                                            owner: owner.clone(),
-                                            repo: repo.clone(),
-                                            number,
-                                            body: None,
-                                            reply_tx: event_tx.clone(),
-                                        });
-                                    }
-                                    BuiltinAction::UpdateFromBase => {
-                                        eng.send(Request::UpdateBranch {
-                                            owner: owner.clone(),
-                                            repo: repo.clone(),
-                                            number,
-                                            reply_tx: event_tx.clone(),
-                                        });
-                                    }
-                                    BuiltinAction::MarkReady => {
-                                        eng.send(Request::ReadyForReview {
-                                            owner: owner.clone(),
-                                            repo: repo.clone(),
-                                            number,
-                                            reply_tx: event_tx.clone(),
-                                        });
-                                    }
-                                    _ => {}
                                 }
                             }
                             input_mode.set(InputMode::Normal);
@@ -1561,7 +1646,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         ) {
                                             Ok(msg) => action_status.set(Some(msg)),
                                             Err(e) => {
-                                                action_status.set(Some(format!("Diff error: {e}")));
+                                                action_status.set(Some(format!("Diff error: {e:#}")));
                                             }
                                         }
                                     }
@@ -1579,14 +1664,38 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                 .as_ref()
                                                 .map(crate::github::types::RepoRef::full_name)
                                                 .unwrap_or_default();
-                                            match crate::actions::local::checkout_branch(
-                                                &pr.head_ref,
-                                                &repo_name,
-                                                &repo_paths,
-                                            ) {
-                                                Ok(msg) => action_status.set(Some(msg)),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Checkout error: {e}"))),
+                                            let needs_clone = crate::actions::local::repo_needs_clone(&repo_name, &repo_paths);
+                                            if needs_clone && !auto_clone {
+                                                input_mode.set(InputMode::Confirm(BuiltinAction::Checkout));
+                                                action_status.set(None);
+                                            } else if needs_clone {
+                                                // auto_clone: spawn background thread so UI stays responsive.
+                                                let host = filter_host_for_kb
+                                                    .as_deref()
+                                                    .unwrap_or("github.com")
+                                                    .to_owned();
+                                                action_status.set(Some(format!("Cloning {repo_name}…")));
+                                                crate::actions::local::spawn_checkout(
+                                                    pr.head_ref.clone(),
+                                                    repo_name,
+                                                    repo_paths.clone(),
+                                                    host,
+                                                    local_action_tx.clone(),
+                                                );
+                                            } else {
+                                                let host = filter_host_for_kb
+                                                    .as_deref()
+                                                    .unwrap_or("github.com");
+                                                match crate::actions::local::checkout_branch(
+                                                    &pr.head_ref,
+                                                    &repo_name,
+                                                    &repo_paths,
+                                                    host,
+                                                ) {
+                                                    Ok(msg) => action_status.set(Some(msg)),
+                                                    Err(e) => action_status
+                                                        .set(Some(format!("Checkout error: {e:#}"))),
+                                                }
                                             }
                                         }
                                     }
@@ -1604,23 +1713,47 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                 .as_ref()
                                                 .map(crate::github::types::RepoRef::full_name)
                                                 .unwrap_or_default();
-                                            match crate::actions::local::create_or_open_worktree(
-                                                &pr.head_ref,
-                                                &repo_name,
-                                                &repo_paths,
-                                            ) {
-                                                Ok(path) => {
-                                                    match clipboard::copy_to_clipboard(&path) {
-                                                        Ok(()) => action_status.set(Some(
-                                                            format!("Worktree ready (copied): {path}"),
-                                                        )),
-                                                        Err(e) => action_status.set(Some(
-                                                            format!("Worktree ready: {path} (clipboard: {e})"),
-                                                        )),
+                                            let needs_clone = crate::actions::local::repo_needs_clone(&repo_name, &repo_paths);
+                                            if needs_clone && !auto_clone {
+                                                input_mode.set(InputMode::Confirm(BuiltinAction::Worktree));
+                                                action_status.set(None);
+                                            } else if needs_clone {
+                                                // auto_clone: spawn background thread so UI stays responsive.
+                                                let host = filter_host_for_kb
+                                                    .as_deref()
+                                                    .unwrap_or("github.com")
+                                                    .to_owned();
+                                                action_status.set(Some(format!("Cloning {repo_name}…")));
+                                                crate::actions::local::spawn_worktree(
+                                                    pr.head_ref.clone(),
+                                                    repo_name,
+                                                    repo_paths.clone(),
+                                                    host,
+                                                    local_action_tx.clone(),
+                                                );
+                                            } else {
+                                                let host = filter_host_for_kb
+                                                    .as_deref()
+                                                    .unwrap_or("github.com");
+                                                match crate::actions::local::create_or_open_worktree(
+                                                    &pr.head_ref,
+                                                    &repo_name,
+                                                    &repo_paths,
+                                                    host,
+                                                ) {
+                                                    Ok(path) => {
+                                                        match clipboard::copy_to_clipboard(&path) {
+                                                            Ok(()) => action_status.set(Some(
+                                                                format!("Worktree ready (copied): {path}"),
+                                                            )),
+                                                            Err(e) => action_status.set(Some(
+                                                                format!("Worktree ready: {path} (clipboard: {e})"),
+                                                            )),
+                                                        }
                                                     }
+                                                    Err(e) => action_status
+                                                        .set(Some(format!("Worktree error: {e:#}"))),
                                                 }
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Worktree error: {e}"))),
                                             }
                                         }
                                     }
@@ -2300,6 +2433,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 BuiltinAction::Approve => "Approve this PR? (y/n)",
                 BuiltinAction::UpdateFromBase => "Update branch from base? (y/n)",
                 BuiltinAction::MarkReady => "Mark this draft PR ready for review? (y/n)",
+                BuiltinAction::Checkout => "Clone repo and checkout branch? (y/n)",
+                BuiltinAction::Worktree => "Clone repo and create worktree? (y/n)",
                 _ => "(y/n)",
             };
             Some(RenderedTextInput::build(

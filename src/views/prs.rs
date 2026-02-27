@@ -1561,7 +1561,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         ) {
                                             Ok(msg) => action_status.set(Some(msg)),
                                             Err(e) => {
-                                                action_status.set(Some(format!("Diff error: {e}")));
+                                                action_status.set(Some(format!("Diff error: {e:#}")));
                                             }
                                         }
                                     }
@@ -1586,7 +1586,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             ) {
                                                 Ok(msg) => action_status.set(Some(msg)),
                                                 Err(e) => action_status
-                                                    .set(Some(format!("Checkout error: {e}"))),
+                                                    .set(Some(format!("Checkout error: {e:#}"))),
                                             }
                                         }
                                     }
@@ -1620,7 +1620,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                     }
                                                 }
                                                 Err(e) => action_status
-                                                    .set(Some(format!("Worktree error: {e}"))),
+                                                    .set(Some(format!("Worktree error: {e:#}"))),
                                             }
                                         }
                                     }

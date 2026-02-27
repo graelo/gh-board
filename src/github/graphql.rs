@@ -1481,12 +1481,14 @@ pub async fn fetch_compare(
     } else {
         format!("/repos/{base_owner}/{base_repo}/compare/{base_ref}...{head_owner}:{head_ref}")
     };
+    let head_spec = if head_owner == base_owner {
+        head_ref.to_owned()
+    } else {
+        format!("{head_owner}:{head_ref}")
+    };
     let response: serde_json::Value =
         octocrab.get(route, None::<&()>).await.with_context(|| {
-            format!(
-                "compare request failed for {base_owner}/{base_repo}: \
-             {base_ref}...{head_owner}:{head_ref}"
-            )
+            format!("compare request failed for {base_owner}/{base_repo}: {base_ref}...{head_spec}")
         })?;
     let behind_by = response["behind_by"]
         .as_u64()

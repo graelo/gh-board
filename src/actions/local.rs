@@ -18,12 +18,17 @@ pub fn checkout_branch<S: std::hash::BuildHasher>(
         .arg(head_ref)
         .current_dir(repo_path)
         .output()
-        .context("running git checkout")?;
+        .with_context(|| format!("cannot run git checkout in {}", repo_path.display()))?;
 
     if output.status.success() {
         Ok(format!("Checked out {head_ref}"))
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if stderr.contains("did not match any") {
+            anyhow::bail!(
+                "branch '{head_ref}' not found locally — it may have been deleted from the remote"
+            )
+        }
         anyhow::bail!("git checkout failed: {stderr}")
     }
 }

@@ -3,7 +3,7 @@
 A fast terminal dashboard for GitHub pull requests, issues, notifications, and
 repository branches.
 
-https://github.com/user-attachments/assets/31f0b649-8f4e-4eda-9274-8e47e81e241e
+<https://github.com/user-attachments/assets/ea174fd2-1559-475b-90f9-d34d64f56225>
 
 ## Features
 
@@ -139,43 +139,20 @@ Repo-local config (`.gh-board.toml`) merges on top of global config.
 
 ## Documentation
 
-| Topic | File |
-|-------|------|
+| Topic                   | File                                           |
+| ----------------------- | ---------------------------------------------- |
 | Configuration reference | [`examples/config.toml`](examples/config.toml) |
-| Filter syntax | [`FILTERS.md`](FILTERS.md) |
-| Keybindings | [`KEYBINDINGS.md`](KEYBINDINGS.md) |
-| Themes & colors | [`THEME.md`](THEME.md) |
-| Architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
-
-## Development
-
-### Build
-
-```bash
-cargo build
-```
-
-### Test
-
-```bash
-cargo nextest run
-cargo test --doc
-cargo clippy
-```
-
-### Debug Logging
-
-```bash
-gh-board --debug
-# Logs written to debug.log
-# Control level via LOG_LEVEL env var
-```
+| Filter syntax           | [`FILTERS.md`](FILTERS.md)                     |
+| Keybindings             | [`KEYBINDINGS.md`](KEYBINDINGS.md)             |
+| Themes & colors         | [`THEME.md`](THEME.md)                         |
+| Architecture            | [`ARCHITECTURE.md`](ARCHITECTURE.md)           |
+| Contributing            | [`CONTRIBUTING.md`](CONTRIBUTING.md)           |
 
 ## Architecture Highlights
 
 - **TUI Framework**: [iocraft](https://github.com/ccbrown/iocraft) for reactive,
   component-based UI
-- **Async Runtime**: smol (iocraft's internal runtime)
+- **Async Runtimes**: smol (UI thread) + Tokio (engine thread)
 - **Syntax Highlighting**: tree-sitter with custom color model integration
 - **Markdown**: pulldown-cmark parser with custom ANSI renderer
 - **GitHub API**: octocrab (GraphQL for PRs/issues, REST for notifications)
@@ -187,7 +164,8 @@ MIT
 
 ## Contributing
 
-Contributions welcome. Please open an issue first for major changes.
+Contributions welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for development
+setup, code style, and how to record demo assets.
 
 ## Acknowledgments
 

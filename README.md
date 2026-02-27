@@ -53,6 +53,10 @@ Requires a `[repo_paths]` entry mapping the repository to its local clone:
 "owner/repo" = "/path/to/repo"
 ```
 
+If the target path doesn't exist yet, you'll be prompted to clone the repo
+first. Set `auto_clone = true` under `[github]` to skip the prompt and clone
+automatically.
+
 ### Under the hood
 
 - **Rich markdown preview** — CommonMark with syntax highlighting (18 languages)

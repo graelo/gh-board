@@ -39,6 +39,11 @@ refetch_interval_minutes = 10
 # 0 = on-demand only (default). Higher values consume more GitHub API rate-limit points.
 # prefetch_pr_details = 20
 
+# Automatically clone repos via `gh repo clone` when the [repo_paths] target
+# doesn't exist yet (for checkout / worktree actions).
+# When false (default), a y/n confirmation prompt is shown first.
+# auto_clone = false
+
 # ==============================================================================
 # DEFAULTS
 # ==============================================================================

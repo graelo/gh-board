@@ -258,7 +258,7 @@ fn defaults_prs_has_actions() {
     let bindings = default_prs();
     let keys: Vec<&str> = bindings.iter().map(|b| b.key.as_str()).collect();
     assert!(keys.contains(&"v")); // approve
-    assert!(keys.contains(&"c")); // comment
+    assert!(keys.contains(&"c")); // checkout
     assert!(keys.contains(&"m")); // merge
     assert!(keys.contains(&"x")); // close
     assert!(keys.contains(&"X")); // reopen

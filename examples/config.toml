@@ -585,7 +585,7 @@ builtin = "unassign"
 name = "Unassign"
 
 [[keybindings.prs]]
-key = "c"
+key = "C"
 builtin = "comment"
 name = "Comment"
 
@@ -595,12 +595,7 @@ builtin = "view_diff"
 name = "View diff in pager"
 
 [[keybindings.prs]]
-key = "C"
-builtin = "checkout"
-name = "Checkout branch"
-
-[[keybindings.prs]]
-key = "space"
+key = "c"
 builtin = "checkout"
 name = "Checkout branch"
 

@@ -38,9 +38,9 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `v` | `approve` | Approve PR |
 | `L` | `label` | Label (autocomplete) |
 | `a` | `assign` | Assign/Unassign (multiselect) |
-| `c` | `comment` | Comment |
+| `C` | `comment` | Comment |
 | `d` | `view_diff` | View diff in pager |
-| `C` / `Space` | `checkout` | Checkout branch |
+| `c` | `checkout` | Checkout branch |
 | `w` | `worktree` | Create/open git worktree |
 | `x` | `close` | Close PR |
 | `X` | `reopen` | Reopen PR |

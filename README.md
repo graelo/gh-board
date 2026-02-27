@@ -126,6 +126,7 @@ filters = "is:open assignee:@me"
 3. Navigate with `j`/`k`, switch filters with `h`/`l`, press `?` for help.
 
 See [`examples/config.toml`](examples/config.toml) for a comprehensive example.
+For end-to-end walkthroughs, see [WORKFLOWS.md](WORKFLOWS.md).
 
 ## Usage
 
@@ -169,6 +170,7 @@ Repo-local config (`.gh-board.toml`) merges on top of global config.
 
 | Topic                   | File                                           |
 | ----------------------- | ---------------------------------------------- |
+| Workflows (how-to)      | [`WORKFLOWS.md`](WORKFLOWS.md)                 |
 | Configuration reference | [`examples/config.toml`](examples/config.toml) |
 | Filter syntax           | [`FILTERS.md`](FILTERS.md)                     |
 | Keybindings             | [`KEYBINDINGS.md`](KEYBINDINGS.md)             |

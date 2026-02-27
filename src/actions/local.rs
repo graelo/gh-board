@@ -9,9 +9,7 @@ pub fn repo_needs_clone<S: std::hash::BuildHasher>(
     repo_full_name: &str,
     repo_paths: &HashMap<String, PathBuf, S>,
 ) -> bool {
-    repo_paths
-        .get(repo_full_name)
-        .is_some_and(|p| !p.exists())
+    repo_paths.get(repo_full_name).is_some_and(|p| !p.exists())
 }
 
 /// Clone a repo via `gh repo clone` if the target path doesn't exist yet.
@@ -63,7 +61,9 @@ pub fn checkout_branch<S: std::hash::BuildHasher>(
 
     if output.status.success() {
         if cloned {
-            Ok(format!("Cloned {repo_full_name} then checked out {head_ref}"))
+            Ok(format!(
+                "Cloned {repo_full_name} then checked out {head_ref}"
+            ))
         } else {
             Ok(format!("Checked out {head_ref}"))
         }

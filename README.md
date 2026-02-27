@@ -1,20 +1,9 @@
 # gh-board
 
-A blazingly fast terminal dashboard for GitHub pull requests, issues,
-notifications, and repository branches. A Rust reimplementation of
-[gh-dash](https://github.com/dlvhdr/gh-dash) with a uniform ANSI + hex color
-model for perfect terminal theme integration.
+A fast terminal dashboard for GitHub pull requests, issues, notifications, and
+repository branches.
 
-## Demo
-
-![gh-board PR view with sidebar preview](demo/hero.png)
-
-<details>
-<summary>Navigation walkthrough (GIF)</summary>
-
-![Navigation walkthrough](demo/nav.gif)
-
-</details>
+https://github.com/user-attachments/assets/31f0b649-8f4e-4eda-9274-8e47e81e241e
 
 ## Features
 
@@ -95,9 +84,9 @@ See `examples/config.toml` for a comprehensive example.
 
 ## Key Concepts
 
-| Concept | Description |
-|---------|-------------|
-| **View** | One of the four top-level content areas (PRs, Issues, Notifications, Repo). Switch between views with `n` / `N`. |
+| Concept    | Description                                                                                                                                                                                                                      |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **View**   | One of the four top-level content areas (PRs, Issues, Notifications, Repo). Switch between views with `n` / `N`.                                                                                                                 |
 | **Filter** | A named search-filter group within a view, displayed as a tab at the top of the screen. Navigate filters with `h` / `l`. Configured via `[[pr_filters]]`, `[[issues_filters]]`, `[[notifications_filters]]` in your config file. |
 
 ## Usage
@@ -110,7 +99,8 @@ gh-board [COMMAND] [OPTIONS] [REPO]
 
 **Subcommands:**
 
-- `init`: Interactive wizard that generates a starter `~/.config/gh-board/config.toml`
+- `init`: Interactive wizard that generates a starter
+  `~/.config/gh-board/config.toml`
 - `themes`: List all built-in theme names
 
 **Options:**
@@ -238,87 +228,87 @@ name = "Re-run failed jobs"
 
 The PR view displays the following columns:
 
-| Column   | Header | Description                                                                                                                                                     |
-| -------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| State    | (icon) | PR state: open, closed, merged, or draft                                                                                                                        |
-| Title    | Title  | Two-line cell: repo + number + author on the first line, PR title on the second                                                                                 |
-| Comments | (icon) | Comment count (blank when zero)                                                                                                                                 |
+| Column   | Header | Description                                                                                                                                                      |
+| -------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| State    | (icon) | PR state: open, closed, merged, or draft                                                                                                                         |
+| Title    | Title  | Two-line cell: repo + number + author on the first line, PR title on the second                                                                                  |
+| Comments | (icon) | Comment count (blank when zero)                                                                                                                                  |
 | Review   | (icon) | Review status derived from `reviewDecision` when available, otherwise inferred from the latest reviews: approved, changes requested, commented, pending, or none |
-| CI       | (icon) | Aggregate CI status from check runs: success, failure, pending, or none                                                                                         |
-| Lines    | (icon) | Lines changed (`+N -M`)                                                                                                                                         |
-| Updated  | (icon) | Last updated date                                                                                                                                               |
-| Created  | (icon) | Creation date                                                                                                                                                   |
+| CI       | (icon) | Aggregate CI status from check runs: success, failure, pending, or none                                                                                          |
+| Lines    | (icon) | Lines changed (`+N -M`)                                                                                                                                          |
+| Updated  | (icon) | Last updated date                                                                                                                                                |
+| Created  | (icon) | Creation date                                                                                                                                                    |
 
 ## Keybindings
 
 ### Universal (All Views)
 
-| Key              | Action                             |
-| ---------------- | ---------------------------------- |
-| `j` / `Down`     | Move cursor down                   |
-| `k` / `Up`       | Move cursor up                     |
-| `g` / `Home`     | Jump to first item                 |
-| `G` / `End`      | Jump to last item                  |
-| `Ctrl+d`         | Half page down / scroll sidebar    |
-| `Ctrl+u`         | Half page up / scroll sidebar      |
-| `PageDown`       | Page down                          |
-| `PageUp`         | Page up                            |
-| `h` / `Left`     | Previous filter                    |
-| `l` / `Right`    | Next filter                        |
-| `p`              | Toggle preview pane                |
-| `o`              | Open in browser                    |
-| `r`              | Refresh current filter             |
-| `R`              | Refresh all filters (clear cache)  |
-| `/`              | Search / filter                    |
-| `y`              | Copy number to clipboard           |
-| `Y`              | Copy URL to clipboard              |
-| `?`              | Toggle help overlay                |
-| `q`              | Quit                               |
+| Key           | Action                            |
+| ------------- | --------------------------------- |
+| `j` / `Down`  | Move cursor down                  |
+| `k` / `Up`    | Move cursor up                    |
+| `g` / `Home`  | Jump to first item                |
+| `G` / `End`   | Jump to last item                 |
+| `Ctrl+d`      | Half page down / scroll sidebar   |
+| `Ctrl+u`      | Half page up / scroll sidebar     |
+| `PageDown`    | Page down                         |
+| `PageUp`      | Page up                           |
+| `h` / `Left`  | Previous filter                   |
+| `l` / `Right` | Next filter                       |
+| `p`           | Toggle preview pane               |
+| `o`           | Open in browser                   |
+| `r`           | Refresh current filter            |
+| `R`           | Refresh all filters (clear cache) |
+| `/`           | Search / filter                   |
+| `y`           | Copy number to clipboard          |
+| `Y`           | Copy URL to clipboard             |
+| `?`           | Toggle help overlay               |
+| `q`           | Quit                              |
 
 ### PR View
 
-| Key           | Action                     |
-| ------------- | -------------------------- |
-| `v`           | Approve                    |
-| `L`           | Label (autocomplete)       |
+| Key           | Action                        |
+| ------------- | ----------------------------- |
+| `v`           | Approve                       |
+| `L`           | Label (autocomplete)          |
 | `a`           | Assign/Unassign (multiselect) |
-| `c`           | Comment                    |
-| `d`           | View diff in pager         |
-| `C` / `Space` | Checkout branch ¹          |
-| `x`           | Close PR                   |
-| `X`           | Reopen PR                  |
-| `W`           | Mark as ready for review   |
-| `m`           | Merge PR                   |
-| `u`           | Update PR from base branch |
-| `Ctrl+]`      | Jump to Actions run        |
-| `n`           | Switch view                |
-| `N`           | Switch view back           |
-| `S`           | Toggle repo scope          |
+| `c`           | Comment                       |
+| `d`           | View diff in pager            |
+| `C` / `Space` | Checkout branch ¹             |
+| `x`           | Close PR                      |
+| `X`           | Reopen PR                     |
+| `W`           | Mark as ready for review      |
+| `m`           | Merge PR                      |
+| `u`           | Update PR from base branch    |
+| `Ctrl+]`      | Jump to Actions run           |
+| `n`           | Switch view                   |
+| `N`           | Switch view back              |
+| `S`           | Toggle repo scope             |
 
 ¹ Requires `[repo_paths]` entry for the repo — see Configuration Structure.
 
 ### Issue View
 
-| Key | Action                          |
-| --- | ------------------------------- |
-| `L` | Label (with autocomplete)       |
-| `a` | Assign/Unassign (multiselect)   |
-| `c` | Comment                         |
-| `x` | Close issue                     |
-| `X` | Reopen issue                    |
-| `n` | Switch view                     |
-| `N` | Switch view back                |
-| `S` | Toggle repo scope               |
+| Key | Action                        |
+| --- | ----------------------------- |
+| `L` | Label (with autocomplete)     |
+| `a` | Assign/Unassign (multiselect) |
+| `c` | Comment                       |
+| `x` | Close issue                   |
+| `X` | Reopen issue                  |
+| `n` | Switch view                   |
+| `N` | Switch view back              |
+| `S` | Toggle repo scope             |
 
 ### Notification View
 
-| Key | Action           |
-| --- | ---------------- |
-| `m` | Mark as read     |
-| `M` | Mark all as read |
-| `u` | Unsubscribe      |
-| `n` | Switch view      |
-| `N` | Switch view back |
+| Key | Action            |
+| --- | ----------------- |
+| `m` | Mark as read      |
+| `M` | Mark all as read  |
+| `u` | Unsubscribe       |
+| `n` | Switch view       |
+| `N` | Switch view back  |
 | `S` | Toggle repo scope |
 
 ### Actions View
@@ -337,22 +327,23 @@ The PR view displays the following columns:
 
 ### Branches View
 
-| Key              | Action                |
-| ---------------- | --------------------- |
+| Key               | Action                |
+| ----------------- | --------------------- |
 | `Enter` / `Space` | Checkout branch       |
-| `Delete` / `D`   | Delete branch         |
-| `+`              | Create new branch     |
-| `p`              | Create PR from branch |
-| `v`              | View PRs for branch   |
-| `n`              | Switch view           |
-| `N`              | Switch view back      |
-| `S`              | Toggle repo scope     |
+| `Delete` / `D`    | Delete branch         |
+| `+`               | Create new branch     |
+| `p`               | Create PR from branch |
+| `v`               | View PRs for branch   |
+| `n`               | Switch view           |
+| `N`               | Switch view back      |
+| `S`               | Toggle repo scope     |
 
 All keybindings are customizable via the config.
 
 ## Themes
 
-gh-board ships with 24 built-in themes. Reference one with a single line in your config:
+gh-board ships with 24 built-in themes. Reference one with a single line in your
+config:
 
 ```toml
 theme_file = "builtin:dracula"
@@ -366,7 +357,7 @@ theme_file = "~/.config/gh-board/themes/my-theme.toml"
 
 Run `gh-board themes` to list all available built-in theme names:
 
-```
+```text
 ayu-dark, base16-default, catppuccin-latte, catppuccin-mocha,
 dracula, everforest, gruvbox-dark, iceberg, kanagawa,
 modus-operandi, modus-vivendi, monokai, nightfox, night-owl,
@@ -376,8 +367,8 @@ tokyo-night, zenburn
 ```
 
 > **`solarized-16`** uses ANSI indices 0–15 and relies on your terminal being
-> configured with the Solarized palette. Light or dark depends on your terminal's
-> own background color.
+> configured with the Solarized palette. Light or dark depends on your
+> terminal's own background color.
 
 Any `[theme.*]` blocks in `config.toml` are merged on top of the theme file, so
 you can selectively override individual colors without forking the whole theme.
@@ -460,7 +451,7 @@ Contributions welcome. Please open an issue first for major changes.
 ## Acknowledgments
 
 Inspired by [gh-dash](https://github.com/dlvhdr/gh-dash) by
-[dlvhdr](https://github.com/dlvhdr). This project exists to bring the uniform
+[dlvhdr](https://github.com/dlvhdr). This project startedd to bring the uniform
 ANSI + hex color model to the terminal GitHub dashboard space.
 
 ## Links

@@ -11,7 +11,9 @@
 #   - Adjust timings and key presses to match your data
 
 Output demo/nav.gif
+Output demo/nav.mp4
 
+Set Framerate 20
 Set Shell "zsh"
 Set FontFamily "SFMono Nerd Font"
 Set Width 1400
@@ -29,36 +31,57 @@ Env TERM "screen-256color"
 #   ffmpeg -i demo/nav.gif -filter:v "setpts=3.0*PTS" -r 10 demo/nav-slow.gif
 
 Type "gh board"
+Sleep 1s
 Enter
-Sleep 3s
+Sleep 300ms
 
-# Scroll down through the PR list
-Type "j"
-Sleep 400ms
-Type "j"
-Sleep 400ms
-Type "j"
-Sleep 400ms
-Type "j"
-Sleep 400ms
+# -------------------------------------------------------------------
+# PRs
+# -------------------------------------------------------------------
+
+# Switch to "all repo" mode
+Type "S"
+Sleep 3s
 
 # Open sidebar preview
 Type "p"
 Sleep 2s
 
+# Scroll down through the PR list
+Type "j"
+Sleep 1000ms
+Type "k"
+Sleep 400ms
+
 # Cycle sidebar tabs: Overview -> Checks -> Files
-Type "2"
+Type "]"
 Sleep 1500ms
-Type "3"
+Type "]"
+Sleep 1500ms
+Type "]"
+Sleep 1500ms
+Type "]"
+Sleep 1500ms
+Type "]"
 Sleep 1500ms
 
 # Close sidebar
 Type "p"
 Sleep 800ms
 
+# Open sidebar preview
+Type "p"
+Sleep 2s
+
 # Switch to next filter tab
 Type "l"
-Sleep 1500ms
+Sleep 1s
+Type "l"
+Sleep 9s
+
+# -------------------------------------------------------------------
+# Issues
+# -------------------------------------------------------------------
 
 # Switch to Issues view
 Type "n"
@@ -71,3 +94,70 @@ Sleep 2s
 # Dismiss help
 Type "?"
 Sleep 1s
+
+# Open sidebar preview
+Type "p"
+Sleep 2s
+
+# Scroll down through the Issues list
+Type "j"
+Sleep 1000ms
+
+# Cycle sidebar tabs: Overview -> Activity
+Type "]"
+Sleep 1500ms
+Type "]"
+Sleep 1500ms
+
+# Switch to last filter tab
+Type "h"
+Sleep 9s
+
+# Scroll down through the Issues list
+Type "j"
+Sleep 2s
+Type "j"
+Sleep 2s
+
+
+# -------------------------------------------------------------------
+# Actions
+# -------------------------------------------------------------------
+
+# Switch to Issues view
+Type "n"
+Sleep 2s
+
+# Open sidebar preview
+Type "p"
+Sleep 6s
+
+# Open help overlay
+Type "?"
+Sleep 2s
+
+# Dismiss help
+Type "?"
+Sleep 1s
+
+# Scroll down through the Issues list
+Type "j"
+Sleep 1000ms
+
+# Cycle sidebar tabs: Overview -> Activity
+Type "]"
+Sleep 1500ms
+Type "]"
+Sleep 1500ms
+
+# Switch to last filter tab
+Type "h"
+Sleep 9s
+
+# Scroll down through the Issues list
+Type "j"
+Sleep 2s
+Type "j"
+Sleep 2s
+
+

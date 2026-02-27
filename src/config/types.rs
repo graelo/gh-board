@@ -69,6 +69,9 @@ pub struct GitHubConfig {
     /// Number of PR details to prefetch in the background after the list loads.
     /// `0` = on-demand only (default).
     pub prefetch_pr_details: u32,
+    /// When `true`, automatically clone a repo via `gh repo clone` if the
+    /// configured `repo_paths` target doesn't exist yet (checkout / worktree).
+    pub auto_clone: bool,
 }
 
 impl Default for GitHubConfig {
@@ -77,6 +80,7 @@ impl Default for GitHubConfig {
             scope: Scope::Auto,
             refetch_interval_minutes: 10,
             prefetch_pr_details: 0,
+            auto_clone: false,
         }
     }
 }

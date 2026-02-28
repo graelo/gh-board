@@ -384,6 +384,7 @@ struct DetailRequest {
     base_ref: String,
     head_repo_owner: Option<String>,
     head_ref: String,
+    force: bool,
 }
 
 // Input mode / action state (T058, T061)
@@ -592,6 +593,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     // When true, the next lazy fetch bypasses the moka cache (set by `r` key and MutationOk).
     let mut force_refresh = hooks.use_state(|| false);
+    // When true, the next detail fetch bypasses the moka cache (set by `r`/`R` key and MutationOk).
+    let mut force_detail = hooks.use_state(|| false);
 
     // Whether RegisterPrsRefresh has been sent to the engine yet.
     let mut refresh_registered = hooks.use_state(|| false);
@@ -657,6 +660,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     base_ref,
                     head_repo_owner,
                     head_ref,
+                    force,
                 }) = req
                 {
                     spawned_gen = current_gen;
@@ -668,6 +672,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             base_ref,
                             head_repo_owner,
                             head_ref,
+                            force,
                             reply_tx: event_tx_for_debounce.clone(),
                         });
                     }
@@ -938,6 +943,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 "{} {description}",
                                 theme_for_poll.icons.feedback_ok
                             )));
+                            // Invalidate detail state so activity sidebar refreshes.
+                            detail_cache.set(HashMap::new());
+                            pending_detail.set(None);
+                            force_detail.set(true);
                             // Trigger a refetch of the active filter.
                             let mut state = prs_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -1864,6 +1873,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         filter_fetch_times.set(times);
                                         pending_detail.set(None);
                                         detail_cache.set(HashMap::new());
+                                        force_detail.set(true);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -1878,6 +1888,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         filter_fetch_times.set(times);
                                         pending_detail.set(None);
                                         detail_cache.set(HashMap::new());
+                                        force_detail.set(true);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);
@@ -2229,6 +2240,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             if !already_cached && !already_pending {
                 // Store fetch params; debounce future will spawn fetch when stable.
                 if let Some(repo_ref) = &pr.repo {
+                    let force = force_detail.get();
+                    if force {
+                        force_detail.set(false);
+                    }
                     pending_detail.set(Some(DetailRequest {
                         owner: repo_ref.owner.clone(),
                         repo: repo_ref.name.clone(),
@@ -2236,6 +2251,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         base_ref: pr.base_ref.clone(),
                         head_repo_owner: pr.head_repo_owner.clone(),
                         head_ref: pr.head_ref.clone(),
+                        force,
                     }));
                     debounce_gen.set(debounce_gen.get() + 1);
                 }

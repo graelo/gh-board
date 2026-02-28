@@ -85,6 +85,8 @@ pub enum Request {
         base_ref: String,
         head_repo_owner: Option<String>,
         head_ref: String,
+        /// Skip the moka cache and fetch fresh data from the GitHub API.
+        force: bool,
         reply_tx: Sender<Event>,
     },
     FetchIssueDetail {

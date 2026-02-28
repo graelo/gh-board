@@ -40,11 +40,13 @@ rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 #
-# Async runtime (iocraft uses smol internally)
+# Async runtime for the UI (iocraft uses smol internally)
 smol = "2"
 #
 # Error handling
 thiserror = "2"
+#
+# Async runtime for the Engine
 tokio = { version = "1", features = ["full"] }
 toml = "1"
 #

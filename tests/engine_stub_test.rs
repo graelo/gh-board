@@ -102,6 +102,7 @@ fn stub_engine_detail_returns_fetch_error() {
         base_ref: "main".into(),
         head_repo_owner: None,
         head_ref: "feature".into(),
+        force: false,
         reply_tx: tx,
     });
 

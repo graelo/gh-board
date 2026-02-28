@@ -289,6 +289,7 @@ async fn handle_request(
             base_ref,
             head_repo_owner,
             head_ref,
+            force,
             reply_tx,
         } => {
             let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchPrDetail")
@@ -296,6 +297,10 @@ async fn handle_request(
                 return;
             };
             let cache = client.cache();
+            if force {
+                let cache_key = format!("pr:{owner}/{repo}#{number}");
+                cache.remove(&cache_key).await;
+            }
             match graphql::fetch_pr_detail(&octocrab, &owner, &repo, number, Some(&cache)).await {
                 Ok((mut detail, rate_limit)) => {
                     if detail.behind_by.is_none()
@@ -481,6 +486,8 @@ async fn handle_request(
             match pr_actions::approve(&octocrab, &owner, &repo, number, body.as_deref()).await {
                 Ok(()) => {
                     tracing::debug!("engine: sending MutationOk ApprovePr #{number}");
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Approved PR #{number}"),
                     });
@@ -506,6 +513,8 @@ async fn handle_request(
             };
             match pr_actions::merge(&octocrab, &owner, &repo, number).await {
                 Ok(()) => {
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Merged PR #{number}"),
                     });
@@ -530,6 +539,8 @@ async fn handle_request(
             };
             match pr_actions::close(&octocrab, &owner, &repo, number).await {
                 Ok(()) => {
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Closed PR #{number}"),
                     });
@@ -554,6 +565,8 @@ async fn handle_request(
             };
             match pr_actions::reopen(&octocrab, &owner, &repo, number).await {
                 Ok(()) => {
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Reopened PR #{number}"),
                     });
@@ -580,6 +593,8 @@ async fn handle_request(
             };
             match pr_actions::add_comment(&octocrab, &owner, &repo, number, &body).await {
                 Ok(()) => {
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Added comment to PR #{number}"),
                     });
@@ -605,6 +620,8 @@ async fn handle_request(
             };
             match pr_actions::update_branch(&octocrab, &owner, &repo, number).await {
                 Ok(()) => {
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Updated branch for PR #{number}"),
                     });
@@ -630,6 +647,8 @@ async fn handle_request(
             };
             match pr_actions::ready_for_review(&octocrab, &owner, &repo, number).await {
                 Ok(()) => {
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Marked PR #{number} as ready for review"),
                     });
@@ -657,6 +676,8 @@ async fn handle_request(
             match issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await {
                 Ok(()) => {
                     tracing::debug!("engine: sending MutationOk SetPrAssignees #{number}");
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Set assignees on PR #{number}"),
                     });
@@ -685,6 +706,8 @@ async fn handle_request(
             match issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await {
                 Ok(()) => {
                     tracing::debug!("engine: sending MutationOk SetPrLabels #{number}");
+                    let cache_key = format!("pr:{owner}/{repo}#{number}");
+                    client.cache().remove(&cache_key).await;
                     let _ = reply_tx.send(Event::MutationOk {
                         description: format!("Set labels on PR #{number}"),
                     });

@@ -11,7 +11,7 @@
 #   - Adjust the number of `j` presses to land on a PR with a rich body
 #     (markdown, code blocks, etc.)
 
-Output demo/hero.gif
+Output demo/hero.mp4
 
 Set Shell "zsh"
 Set FontFamily "SFMono Nerd Font"

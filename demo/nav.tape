@@ -10,7 +10,6 @@
 #   - A working gh-board config with PR and Issue filters returning results
 #   - Adjust timings and key presses to match your data
 
-Output demo/nav.gif
 Output demo/nav.mp4
 
 Set Framerate 20

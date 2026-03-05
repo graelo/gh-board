@@ -1396,18 +1396,44 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             .as_ref()
                                             .map(crate::github::types::RepoRef::full_name)
                                             .unwrap_or_default();
-                                        let host = filter_host_for_kb
-                                            .as_deref()
-                                            .unwrap_or("github.com")
-                                            .to_owned();
-                                        action_status.set(Some(format!("Cloning {repo_name}…")));
-                                        crate::actions::local::spawn_worktree(
-                                            pr.head_ref.clone(),
-                                            repo_name,
-                                            repo_paths.clone(),
-                                            host,
-                                            local_action_tx.clone(),
-                                        );
+                                        let needs_clone = crate::actions::local::repo_needs_clone(&repo_name, &repo_paths);
+                                        if needs_clone {
+                                            let host = filter_host_for_kb
+                                                .as_deref()
+                                                .unwrap_or("github.com")
+                                                .to_owned();
+                                            action_status.set(Some(format!("Cloning {repo_name}…")));
+                                            crate::actions::local::spawn_worktree(
+                                                pr.head_ref.clone(),
+                                                repo_name,
+                                                repo_paths.clone(),
+                                                host,
+                                                local_action_tx.clone(),
+                                            );
+                                        } else {
+                                            let host = filter_host_for_kb
+                                                .as_deref()
+                                                .unwrap_or("github.com");
+                                            match crate::actions::local::create_or_open_worktree(
+                                                &pr.head_ref,
+                                                &repo_name,
+                                                &repo_paths,
+                                                host,
+                                            ) {
+                                                Ok(path) => {
+                                                    match clipboard::copy_to_clipboard(&path) {
+                                                        Ok(()) => action_status.set(Some(
+                                                            format!("Worktree ready (copied): {path}"),
+                                                        )),
+                                                        Err(e) => action_status.set(Some(
+                                                            format!("Worktree ready: {path} (clipboard: {e})"),
+                                                        )),
+                                                    }
+                                                }
+                                                Err(e) => action_status
+                                                    .set(Some(format!("Worktree error: {e:#}"))),
+                                            }
+                                        }
                                     }
                                 }
                                 _ => {
@@ -1709,62 +1735,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         }
                                     }
                                     BuiltinAction::Worktree => {
-                                        let current_data = prs_state
-                                            .read()
-                                            .filters
-                                            .get(current_filter_idx)
-                                            .cloned();
-                                        if let Some(data) = current_data
-                                            && let Some(pr) = data.prs.get(cursor.get())
-                                        {
-                                            let repo_name = pr
-                                                .repo
-                                                .as_ref()
-                                                .map(crate::github::types::RepoRef::full_name)
-                                                .unwrap_or_default();
-                                            let needs_clone = crate::actions::local::repo_needs_clone(&repo_name, &repo_paths);
-                                            if needs_clone && !auto_clone {
-                                                input_mode.set(InputMode::Confirm(BuiltinAction::Worktree));
-                                                action_status.set(None);
-                                            } else if needs_clone {
-                                                // auto_clone: spawn background thread so UI stays responsive.
-                                                let host = filter_host_for_kb
-                                                    .as_deref()
-                                                    .unwrap_or("github.com")
-                                                    .to_owned();
-                                                action_status.set(Some(format!("Cloning {repo_name}…")));
-                                                crate::actions::local::spawn_worktree(
-                                                    pr.head_ref.clone(),
-                                                    repo_name,
-                                                    repo_paths.clone(),
-                                                    host,
-                                                    local_action_tx.clone(),
-                                                );
-                                            } else {
-                                                let host = filter_host_for_kb
-                                                    .as_deref()
-                                                    .unwrap_or("github.com");
-                                                match crate::actions::local::create_or_open_worktree(
-                                                    &pr.head_ref,
-                                                    &repo_name,
-                                                    &repo_paths,
-                                                    host,
-                                                ) {
-                                                    Ok(path) => {
-                                                        match clipboard::copy_to_clipboard(&path) {
-                                                            Ok(()) => action_status.set(Some(
-                                                                format!("Worktree ready (copied): {path}"),
-                                                            )),
-                                                            Err(e) => action_status.set(Some(
-                                                                format!("Worktree ready: {path} (clipboard: {e})"),
-                                                            )),
-                                                        }
-                                                    }
-                                                    Err(e) => action_status
-                                                        .set(Some(format!("Worktree error: {e:#}"))),
-                                                }
-                                            }
-                                        }
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Worktree));
+                                        action_status.set(None);
                                     }
                                     BuiltinAction::Assign | BuiltinAction::Unassign => {
                                         input_mode.set(InputMode::Assign);
@@ -2450,7 +2422,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 BuiltinAction::UpdateFromBase => "Update branch from base? (y/n)",
                 BuiltinAction::MarkReady => "Mark this draft PR ready for review? (y/n)",
                 BuiltinAction::Checkout => "Clone repo and checkout branch? (y/n)",
-                BuiltinAction::Worktree => "Clone repo and create worktree? (y/n)",
+                BuiltinAction::Worktree => "Create worktree for this branch? (y/n)",
                 _ => "(y/n)",
             };
             Some(RenderedTextInput::build(

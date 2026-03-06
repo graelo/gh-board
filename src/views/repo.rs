@@ -38,6 +38,7 @@ pub(crate) struct Branch {
     pub(crate) ahead: u32,
     pub(crate) behind: u32,
     pub(crate) worktree_path: Option<PathBuf>,
+    pub(crate) repo_label: String,
 }
 
 /// Recent commit info for the sidebar Commits tab.
@@ -128,7 +129,7 @@ fn get_recent_commits(repo_path: &Path, branch: &str, count: usize) -> Vec<Branc
 }
 
 /// List local branches with metadata.
-fn list_branches(repo_path: &Path) -> Vec<Branch> {
+fn list_branches(repo_path: &Path, repo_label: &str) -> Vec<Branch> {
     let output = Command::new("git")
         .args([
             "for-each-ref",
@@ -179,9 +180,51 @@ fn list_branches(repo_path: &Path) -> Vec<Branch> {
                 ahead,
                 behind,
                 worktree_path,
+                repo_label: repo_label.to_owned(),
             })
         })
         .collect()
+}
+
+/// Collect branches from CWD and all configured `repo_paths`.
+fn list_all_branches(
+    cwd_path: Option<&Path>,
+    cwd_label: &str,
+    repo_paths: Option<&HashMap<String, PathBuf>>,
+) -> Vec<Branch> {
+    let mut branches = Vec::new();
+
+    if let Some(cwd) = cwd_path {
+        branches.extend(list_branches(cwd, cwd_label));
+    }
+
+    if let Some(paths) = repo_paths {
+        for (label, path) in paths {
+            // Skip entries whose path matches CWD to avoid duplicates.
+            if let Some(cwd) = cwd_path
+                && path == cwd
+            {
+                continue;
+            }
+            branches.extend(list_branches(path, label));
+        }
+    }
+
+    // Sort: repo_label ascending, then worktree branches first, then most
+    // recent first (descending date), then name ascending as final tiebreaker.
+    branches.sort_by(|a, b| {
+        a.repo_label
+            .cmp(&b.repo_label)
+            .then_with(|| {
+                let a_wt = a.worktree_path.is_some();
+                let b_wt = b.worktree_path.is_some();
+                b_wt.cmp(&a_wt) // true > false, so reverse for "worktree first"
+            })
+            .then_with(|| b.last_updated.cmp(&a.last_updated)) // most recent first
+            .then_with(|| a.name.cmp(&b.name))
+    });
+
+    branches
 }
 
 fn detect_default_branch(repo_path: &Path) -> String {
@@ -275,26 +318,36 @@ fn checkout_branch(repo_path: &Path, branch: &str) -> Result<String, String> {
 // T080: Table columns and row conversion
 // ---------------------------------------------------------------------------
 
-fn branch_columns(icons: &ResolvedIcons) -> Vec<Column> {
-    vec![
-        Column {
-            id: "current".to_owned(),
-            header: " ".to_owned(),
-            default_width_pct: 0.03,
-            align: TextAlign::Center,
-            fixed_width: Some(3),
-        },
+fn branch_columns(icons: &ResolvedIcons, multi_repo: bool) -> Vec<Column> {
+    let mut cols = vec![Column {
+        id: "current".to_owned(),
+        header: " ".to_owned(),
+        default_width_pct: 0.03,
+        align: TextAlign::Center,
+        fixed_width: Some(3),
+    }];
+
+    if multi_repo {
+        cols.push(Column {
+            id: "repo".to_owned(),
+            header: "Repo".to_owned(),
+            default_width_pct: 0.14,
+            align: TextAlign::Left,
+            fixed_width: None,
+        });
+    }
+
+    let (name_pct, message_pct) = if multi_repo {
+        (0.16, 0.22)
+    } else {
+        (0.20, 0.30)
+    };
+
+    cols.extend([
         Column {
             id: "name".to_owned(),
             header: "Branch".to_owned(),
-            default_width_pct: 0.20,
-            align: TextAlign::Left,
-            fixed_width: None,
-        },
-        Column {
-            id: "message".to_owned(),
-            header: "Last Commit".to_owned(),
-            default_width_pct: 0.30,
+            default_width_pct: name_pct,
             align: TextAlign::Left,
             fixed_width: None,
         },
@@ -313,13 +366,22 @@ fn branch_columns(icons: &ResolvedIcons) -> Vec<Column> {
             fixed_width: Some(10),
         },
         Column {
+            id: "message".to_owned(),
+            header: "Last Commit".to_owned(),
+            default_width_pct: message_pct,
+            align: TextAlign::Left,
+            fixed_width: None,
+        },
+        Column {
             id: "updated".to_owned(),
             header: "Updated".to_owned(),
             default_width_pct: 0.12,
             align: TextAlign::Right,
             fixed_width: Some(8),
         },
-    ]
+    ]);
+
+    cols
 }
 
 fn branch_to_row(branch: &Branch, theme: &ResolvedTheme, date_format: &str) -> Row {
@@ -339,6 +401,11 @@ fn branch_to_row(branch: &Branch, theme: &ResolvedTheme, date_format: &str) -> R
         theme.text_primary
     };
     row.insert("name".to_owned(), Cell::colored(&branch.name, name_color));
+
+    row.insert(
+        "repo".to_owned(),
+        Cell::colored(&branch.repo_label, theme.text_faint),
+    );
 
     row.insert(
         "message".to_owned(),
@@ -419,6 +486,8 @@ pub struct RepoViewProps<'a> {
     pub repo_path: Option<&'a std::path::Path>,
     /// Detected repo (owner/name) from CWD remote.
     pub detected_repo: Option<&'a crate::types::common::RepoRef>,
+    /// Configured `repo_paths` mapping `"owner/repo"` to local paths.
+    pub repo_paths: Option<&'a HashMap<String, PathBuf>>,
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
     pub is_active: bool,
@@ -503,21 +572,48 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         loaded.set(false);
     }
 
+    // Compute CWD repo label.
+    let cwd_label = detected_repo.as_ref().map_or_else(
+        || {
+            props
+                .repo_path
+                .and_then(|p| p.file_name())
+                .and_then(|n| n.to_str())
+                .unwrap_or("local")
+                .to_owned()
+        },
+        crate::types::common::RepoRef::full_name,
+    );
+
+    let multi_repo = props.repo_paths.is_some_and(|m| !m.is_empty());
+
     if !loaded.get() && is_active {
         loaded.set(true);
-        if let Some(repo_path) = props.repo_path {
-            branches_state.set(list_branches(repo_path));
-            last_fetch_time.set(Some(std::time::Instant::now()));
-        }
+        branches_state.set(list_all_branches(
+            props.repo_path,
+            &cwd_label,
+            props.repo_paths,
+        ));
+        last_fetch_time.set(Some(std::time::Instant::now()));
     }
 
     let branches = branches_state.read();
+
+    // Apply scope filter.
+    let branches: Vec<&Branch> = if let Some(scope) = scope_repo {
+        branches.iter().filter(|b| b.repo_label == *scope).collect()
+    } else {
+        branches.iter().collect()
+    };
     let total_rows = branches.len();
     let visible_rows = (props.height.saturating_sub(5) / 2).max(1) as usize;
 
     // Keyboard handling.
     let repo_path_owned = props.repo_path.map(std::borrow::ToOwned::to_owned);
     let keybindings = props.keybindings.cloned();
+    let scope_repo_owned = scope_repo.clone();
+    let cwd_label_owned = cwd_label.clone();
+    let repo_paths_owned = props.repo_paths.cloned();
     hooks.use_terminal_events({
         move |event| match event {
             TerminalEvent::Key(KeyEvent {
@@ -538,20 +634,42 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                     return;
                 }
                 let current_mode = input_mode.read().clone();
+
+                // Helper: get the branch at the current cursor in the
+                // scope-filtered list.
+                let filtered_branch_at = |state: &State<Vec<Branch>>,
+                                          scope: &Option<String>,
+                                          idx: usize|
+                 -> Option<Branch> {
+                    let all = state.read();
+                    let filtered: Vec<&Branch> = match scope {
+                        Some(s) => all.iter().filter(|b| b.repo_label == *s).collect(),
+                        None => all.iter().collect(),
+                    };
+                    filtered.get(idx).copied().cloned()
+                };
+
+                // Macro-like helper: reload branches from all repos.
+                let reload = |state: &mut State<Vec<Branch>>| {
+                    state.set(list_all_branches(
+                        repo_path_owned.as_deref(),
+                        &cwd_label_owned,
+                        repo_paths_owned.as_ref(),
+                    ));
+                };
+
                 match current_mode {
                     InputMode::ConfirmDelete => match code {
                         KeyCode::Char('y' | 'Y') => {
                             if let Some(ref repo_path) = repo_path_owned {
-                                let branch_name = branches_state
-                                    .read()
-                                    .get(cursor.get())
+                                let branch_name = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
                                     .map(|b| b.name.clone());
                                 if let Some(name) = branch_name {
                                     match delete_branch(repo_path, &name) {
                                         Ok(msg) => {
                                             action_status.set(Some(ActionFeedback::Success(msg)));
                                             status_set_at.set(Some(std::time::Instant::now()));
-                                            branches_state.set(list_branches(repo_path));
+                                            reload(&mut branches_state);
                                             if cursor.get() >= branches_state.read().len() {
                                                 cursor.set(
                                                     branches_state.read().len().saturating_sub(1),
@@ -580,15 +698,13 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                             if !name.is_empty()
                                 && let Some(ref repo_path) = repo_path_owned
                             {
-                                let from = branches_state
-                                    .read()
-                                    .get(cursor.get())
+                                let from = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
                                     .map_or_else(|| "HEAD".to_owned(), |b| b.name.clone());
                                 match create_branch(repo_path, &name, &from) {
                                     Ok(msg) => {
                                         action_status.set(Some(ActionFeedback::Success(msg)));
                                         status_set_at.set(Some(std::time::Instant::now()));
-                                        branches_state.set(list_branches(repo_path));
+                                        reload(&mut branches_state);
                                     }
                                     Err(e) => {
                                         action_status.set(Some(ActionFeedback::Error(format!("Create failed: {e}"))));
@@ -617,9 +733,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                     },
                     InputMode::Normal => {
                         if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
-                            let current_branch = branches_state
-                                .read()
-                                .get(cursor.get())
+                            let current_branch = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
                                 .map(|b| b.name.clone())
                                 .unwrap_or_default();
                             let vars = TemplateVars {
@@ -653,17 +767,14 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     }
                                     BuiltinAction::Checkout => {
                                         if let Some(ref repo_path) = repo_path_owned {
-                                            let branch_name = branches_state
-                                                .read()
-                                                .get(cursor.get())
+                                            let branch_name = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
                                                 .map(|b| b.name.clone());
                                             if let Some(name) = branch_name {
                                                 match checkout_branch(repo_path, &name) {
                                                     Ok(msg) => {
                                                         action_status.set(Some(ActionFeedback::Success(msg)));
                                                         status_set_at.set(Some(std::time::Instant::now()));
-                                                        branches_state
-                                                            .set(list_branches(repo_path));
+                                                        reload(&mut branches_state);
                                                     }
                                                     Err(e) => {
                                                         action_status.set(Some(ActionFeedback::Error(format!(
@@ -867,7 +978,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     };
 
     // Build table.
-    let columns = branch_columns(&theme.icons);
+    let show_repo_col = multi_repo && scope_repo.is_none();
+    let columns = branch_columns(&theme.icons, show_repo_col);
     let rows: Vec<Row> = branches
         .iter()
         .map(|b| branch_to_row(b, &theme, date_format))
@@ -970,7 +1082,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     // Pre-render sidebar.
     let rendered_sidebar = if is_preview_open {
-        let current_branch = branches.get(cursor.get());
+        let current_branch = branches.get(cursor.get()).copied();
         let title = current_branch.map_or("Preview", |b| b.name.as_str());
         let current_tab = sidebar_tab.get();
 
@@ -1093,6 +1205,14 @@ fn render_branch_overview(branch: &Branch, theme: &ResolvedTheme) -> Vec<StyledL
     // Blank line
     lines.push(StyledLine::from_spans(vec![]));
 
+    // Repo label
+    if !branch.repo_label.is_empty() {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Repo:     ", theme.text_faint),
+            StyledSpan::text(&branch.repo_label, theme.text_secondary),
+        ]));
+    }
+
     // Tracking info
     let tracking = if branch.ahead == 0 && branch.behind == 0 {
         "Up to date".to_owned()
@@ -1185,20 +1305,44 @@ mod tests {
             ahead: 2,
             behind: 1,
             worktree_path: None,
+            repo_label: String::new(),
         }
     }
 
     #[test]
     fn branch_columns_has_six_entries() {
         let theme = test_theme();
-        let cols = branch_columns(&theme.icons);
+        let cols = branch_columns(&theme.icons, false);
         assert_eq!(cols.len(), 6);
         assert_eq!(cols[0].id, "current");
         assert_eq!(cols[1].id, "name");
-        assert_eq!(cols[2].id, "message");
+        assert_eq!(cols[2].id, "worktree");
+        assert_eq!(cols[3].id, "ahead_behind");
+        assert_eq!(cols[4].id, "message");
+        assert_eq!(cols[5].id, "updated");
+    }
+
+    #[test]
+    fn branch_columns_multi_repo_has_seven() {
+        let theme = test_theme();
+        let cols = branch_columns(&theme.icons, true);
+        assert_eq!(cols.len(), 7);
+        assert_eq!(cols[0].id, "current");
+        assert_eq!(cols[1].id, "repo");
+        assert_eq!(cols[2].id, "name");
         assert_eq!(cols[3].id, "worktree");
         assert_eq!(cols[4].id, "ahead_behind");
-        assert_eq!(cols[5].id, "updated");
+        assert_eq!(cols[5].id, "message");
+        assert_eq!(cols[6].id, "updated");
+    }
+
+    #[test]
+    fn branch_to_row_repo_cell() {
+        let theme = test_theme();
+        let mut branch = sample_branch("main", true);
+        branch.repo_label = "owner/repo".to_owned();
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("repo").unwrap().text(), "owner/repo");
     }
 
     #[test]
@@ -1273,7 +1417,7 @@ mod tests {
 
     #[test]
     fn list_branches_nonexistent_path_returns_empty() {
-        let branches = list_branches(Path::new("/nonexistent/path"));
+        let branches = list_branches(Path::new("/nonexistent/path"), "test");
         assert!(branches.is_empty());
     }
 

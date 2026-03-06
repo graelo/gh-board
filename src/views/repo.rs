@@ -305,6 +305,8 @@ pub struct RepoViewProps<'a> {
     /// Active scope repo (e.g. `"owner/repo"`), or `None` for global.
     pub scope_repo: Option<String>,
     pub repo_path: Option<&'a std::path::Path>,
+    /// Detected repo (owner/name) from CWD remote.
+    pub detected_repo: Option<&'a crate::types::common::RepoRef>,
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
     pub is_active: bool,
@@ -322,6 +324,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let switch_view_back = props.switch_view_back;
     let scope_toggle = props.scope_toggle;
     let scope_repo = &props.scope_repo;
+    let detected_repo = props.detected_repo.cloned();
     let date_format = props.date_format.unwrap_or("relative");
     let is_active = props.is_active;
 
@@ -604,6 +607,38 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         let _ = crate::actions::clipboard::copy_to_clipboard(
                                             &current_branch,
                                         );
+                                    }
+                                    BuiltinAction::CreatePrFromBranch => {
+                                        if let Some(ref repo) = detected_repo {
+                                            let url = format!(
+                                                "https://github.com/{}/compare/{current_branch}?expand=1",
+                                                repo.full_name(),
+                                            );
+                                            match crate::actions::clipboard::open_in_browser(&url) {
+                                                Ok(()) => action_status.set(Some(format!(
+                                                    "Opened PR creation for {current_branch}"
+                                                ))),
+                                                Err(e) => action_status.set(Some(format!(
+                                                    "Failed to open browser: {e}"
+                                                ))),
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::ViewPrsForBranch => {
+                                        if let Some(ref repo) = detected_repo {
+                                            let url = format!(
+                                                "https://github.com/{}/pulls?q=is%3Apr+head%3A{current_branch}",
+                                                repo.full_name(),
+                                            );
+                                            match crate::actions::clipboard::open_in_browser(&url) {
+                                                Ok(()) => action_status.set(Some(format!(
+                                                    "Opened PRs for {current_branch}"
+                                                ))),
+                                                Err(e) => action_status.set(Some(format!(
+                                                    "Failed to open browser: {e}"
+                                                ))),
+                                            }
+                                        }
                                     }
                                     _ => {}
                                 },

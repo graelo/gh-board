@@ -390,8 +390,7 @@ pub(crate) fn default_notifications() -> Vec<Keybinding> {
 /// Default Branch view keybindings.
 pub(crate) fn default_branches() -> Vec<Keybinding> {
     vec![
-        kb("enter", "checkout", "Checkout branch"),
-        kb("space", "checkout", "Checkout branch"),
+        kb("c", "checkout", "Checkout branch"),
         kb("delete", "delete_branch", "Delete branch"),
         kb("D", "delete_branch", "Delete branch"),
         kb("+", "new_branch", "Create new branch"),

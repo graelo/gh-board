@@ -371,6 +371,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     scope_toggle: scope_toggle_signal,
                     scope_repo: scope_repo.clone(),
                     repo_path,
+                    detected_repo,
                     date_format,
                     is_active: active == ViewKind::Repo,
                     refetch_interval_minutes: refetch_minutes,

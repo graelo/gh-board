@@ -394,7 +394,7 @@ pub(crate) fn default_branches() -> Vec<Keybinding> {
         kb("delete", "delete_branch", "Delete branch"),
         kb("D", "delete_branch", "Delete branch"),
         kb("+", "new_branch", "Create new branch"),
-        kb("p", "create_pr_from_branch", "Create PR from branch"),
+        kb("P", "create_pr_from_branch", "Create PR from branch"),
         kb("v", "view_prs_for_branch", "View PRs for branch"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),

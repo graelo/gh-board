@@ -377,13 +377,15 @@ renders with square edges.
 
 ### Feedback Indicator Icons
 
-Shown in the footer context area after a mutation completes (e.g. merge,
-approve, assign).
+Shown in the footer status slot after an action completes or a warning is
+raised.
 
-| Icon field       | Colored by   |
-| ---------------- | ------------ |
-| `feedback_ok`    | `text.faint` |
-| `feedback_error` | `text.faint` |
+| Icon field         | Colored by      |
+| ------------------ | --------------- |
+| `feedback_ok`      | `text.success`  |
+| `feedback_error`   | `text.error`    |
+| `feedback_warning` | `text.warning`  |
+| `feedback_info`    | `text.primary`  |
 
 ### UI Chrome Icons
 

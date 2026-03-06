@@ -5,7 +5,7 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::ViewKind;
 use crate::color::ColorDepth;
-use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
@@ -244,7 +244,8 @@ pub fn NotificationsView<'a>(
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut search_query = hooks.use_state(String::new);
     let mut help_visible = hooks.use_state(|| false);
-    let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
+    let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
 
     // Whether RegisterNotificationsRefresh has been sent to the engine yet.
@@ -369,6 +370,13 @@ pub fn NotificationsView<'a>(
         hooks.use_future(async move {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                // Auto-clear status after 60 seconds.
+                if let Some(t) = status_set_at.get()
+                    && t.elapsed().as_secs() >= 60
+                {
+                    action_status.set(None);
+                    status_set_at.set(None);
+                }
                 let events: Vec<Event> = {
                     let rx = rx_for_poll.lock().unwrap();
                     let mut evts = Vec::new();
@@ -449,10 +457,8 @@ pub fn NotificationsView<'a>(
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!(
-                                "{} {description}",
-                                theme_for_poll.icons.feedback_ok
-                            )));
+                            action_status.set(Some(ActionFeedback::Success(description)));
+                            status_set_at.set(Some(std::time::Instant::now()));
                             // Trigger refetch of current filter.
                             let mut state = notif_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -469,10 +475,9 @@ pub fn NotificationsView<'a>(
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!(
-                                "{} {description}: {message}",
-                                theme_for_poll.icons.feedback_error
-                            )));
+                            action_status
+                                .set(Some(ActionFeedback::Error(format!("{description}: {message}"))));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -570,7 +575,8 @@ pub fn NotificationsView<'a>(
                         }
                         KeyCode::Char('n' | 'N') | KeyCode::Esc => {
                             input_mode.set(InputMode::Normal);
-                            action_status.set(Some("Cancelled".to_owned()));
+                            action_status.set(Some(ActionFeedback::Info("Cancelled".to_owned())));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         _ => {}
                     },
@@ -915,9 +921,7 @@ pub fn NotificationsView<'a>(
         InputMode::Normal => None,
     };
 
-    let context_text = if let Some(msg) = action_status.read().as_ref() {
-        msg.clone()
-    } else if current_data.is_some_and(|d| d.loading) {
+    let context_text = if current_data.is_some_and(|d| d.loading) {
         "Fetching notifications...".to_owned()
     } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
         format!("Error: {err}")
@@ -949,6 +953,8 @@ pub fn NotificationsView<'a>(
         context_text,
         updated_text,
         rate_limit_text,
+        action_status.read().as_ref(),
+        &theme,
         depth,
         [
             Some(theme.footer_prs),

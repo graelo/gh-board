@@ -406,6 +406,8 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         update_ok: overlay.update_ok.or(base.update_ok),
         feedback_ok: overlay.feedback_ok.or(base.feedback_ok),
         feedback_error: overlay.feedback_error.or(base.feedback_error),
+        feedback_warning: overlay.feedback_warning.or(base.feedback_warning),
+        feedback_info: overlay.feedback_info.or(base.feedback_info),
         tab_ephemeral: overlay.tab_ephemeral.or(base.tab_ephemeral),
         select_cursor: overlay.select_cursor.or(base.select_cursor),
         action_success: overlay.action_success.or(base.action_success),
@@ -722,6 +724,8 @@ pub struct IconConfig {
     // Feedback indicators
     pub feedback_ok: Option<String>,
     pub feedback_error: Option<String>,
+    pub feedback_warning: Option<String>,
+    pub feedback_info: Option<String>,
     // UI chrome
     pub tab_ephemeral: Option<String>,
     pub select_cursor: Option<String>,

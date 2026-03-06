@@ -5,7 +5,7 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{RenderedSidebar, Sidebar};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
@@ -394,7 +394,8 @@ pub fn ActionsView<'a>(
     // path picks it up and sends FetchRunById.
     let mut pending_run_fetch = hooks.use_state(|| Option::<PendingRunFetch>::None);
 
-    let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
+    let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
     let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
 
     let mut refresh_registered = hooks.use_state(|| false);
@@ -556,6 +557,14 @@ pub fn ActionsView<'a>(
         hooks.use_future(async move {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                // Auto-clear status after 60 seconds.
+                if let Some(t) = status_set_at.get()
+                    && t.elapsed().as_secs() >= 60
+                {
+                    action_status.set(None);
+                    status_set_at.set(None);
+                }
+
                 let events: Vec<Event> = {
                     let rx = rx_for_poll.lock().unwrap();
                     let mut evts = Vec::new();
@@ -661,10 +670,8 @@ pub fn ActionsView<'a>(
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!(
-                                "{} {description}",
-                                theme_for_poll.icons.feedback_ok
-                            )));
+                            action_status.set(Some(ActionFeedback::Success(description)));
+                            status_set_at.set(Some(std::time::Instant::now()));
                             // Refetch current filter.
                             let mut state = actions_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -681,10 +688,10 @@ pub fn ActionsView<'a>(
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!(
-                                "{} {description}: {message}",
-                                theme_for_poll.icons.feedback_error
-                            )));
+                            action_status.set(Some(ActionFeedback::Error(format!(
+                                "{description}: {message}"
+                            ))));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -725,9 +732,10 @@ pub fn ActionsView<'a>(
                                     detail_scroll.set(0);
                                 }
                             } else {
-                                action_status.set(Some(format!(
+                                action_status.set(Some(ActionFeedback::Warning(format!(
                                     "Run #{run_id} not found (deleted or inaccessible)"
-                                )));
+                                ))));
+                                status_set_at.set(Some(std::time::Instant::now()));
                             }
                             if let Some(rl) = rate_limit {
                                 rate_limit_state.set(Some(rl));
@@ -934,9 +942,10 @@ pub fn ActionsView<'a>(
                         // logic on the next render cycle (the new FilterData has
                         // loading: true by default).
                     } else {
-                        action_status.set(Some(
+                        action_status.set(Some(ActionFeedback::Warning(
                             "Too many ephemeral tabs \u{2014} close one first (d)".to_owned(),
-                        ));
+                        )));
+                        status_set_at.set(Some(std::time::Instant::now()));
                     }
 
                     if let Some(mut nt) = nav_target_prop {
@@ -1154,7 +1163,8 @@ pub fn ActionsView<'a>(
                         }
                         KeyCode::Char('n' | 'N') | KeyCode::Esc => {
                             input_mode.set(InputMode::Normal);
-                            action_status.set(Some("Cancelled".to_owned()));
+                            action_status.set(Some(ActionFeedback::Info("Cancelled".to_owned())));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         _ => {}
                     },
@@ -1249,12 +1259,18 @@ pub fn ActionsView<'a>(
                                         if let Some(run) = current_run {
                                             let text = run.run_number.to_string();
                                             match clipboard::copy_to_clipboard(&text) {
-                                                Ok(()) => action_status.set(Some(format!(
-                                                    "Copied #{}",
-                                                    run.run_number
-                                                ))),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Copy failed: {e}"))),
+                                                Ok(()) => {
+                                                    action_status.set(Some(ActionFeedback::Success(format!(
+                                                        "Copied #{}",
+                                                        run.run_number
+                                                    ))));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                }
+                                                Err(e) => {
+                                                    action_status
+                                                        .set(Some(ActionFeedback::Error(format!("Copy failed: {e}"))));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                }
                                             }
                                         }
                                     }
@@ -1326,10 +1342,11 @@ pub fn ActionsView<'a>(
                                                 ));
                                                 action_status.set(None);
                                             } else {
-                                                action_status.set(Some(
+                                                action_status.set(Some(ActionFeedback::Warning(
                                                     "Cannot re-run: run is still in progress"
                                                         .to_owned(),
-                                                ));
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
@@ -1346,10 +1363,11 @@ pub fn ActionsView<'a>(
                                                 ));
                                                 action_status.set(None);
                                             } else {
-                                                action_status.set(Some(
+                                                action_status.set(Some(ActionFeedback::Warning(
                                                     "Cannot re-run: run is still in progress"
                                                         .to_owned(),
-                                                ));
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
@@ -1369,10 +1387,11 @@ pub fn ActionsView<'a>(
                                                 ));
                                                 action_status.set(None);
                                             } else {
-                                                action_status.set(Some(
+                                                action_status.set(Some(ActionFeedback::Warning(
                                                     "Cannot cancel: run is not in progress"
                                                         .to_owned(),
-                                                ));
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
@@ -1507,7 +1526,8 @@ pub fn ActionsView<'a>(
                                             scroll_offset.set(0);
                                         } else {
                                             action_status
-                                                .set(Some("Cannot close config tabs".to_owned()));
+                                                .set(Some(ActionFeedback::Warning("Cannot close config tabs".to_owned())));
+                                            status_set_at.set(Some(std::time::Instant::now()));
                                         }
                                     }
                                     _ => {}
@@ -1646,9 +1666,7 @@ pub fn ActionsView<'a>(
     };
 
     // Context text: action status > normal.
-    let context_text = if let Some(ref status) = *action_status.read() {
-        status.clone()
-    } else if current_data.is_some_and(|d| d.loading) {
+    let context_text = if current_data.is_some_and(|d| d.loading) {
         "Fetching workflow runs\u{2026}".to_owned()
     } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
         format!("Error: {err}")
@@ -1683,6 +1701,8 @@ pub fn ActionsView<'a>(
         context_text,
         updated_text,
         rate_limit_text,
+        action_status.read().as_ref(),
+        &theme,
         depth,
         [
             Some(theme.footer_prs),

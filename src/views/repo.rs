@@ -7,7 +7,7 @@ use iocraft::prelude::*;
 
 use crate::app::ViewKind;
 use crate::color::ColorDepth;
-use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
@@ -332,7 +332,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut scroll_offset = hooks.use_state(|| 0usize);
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut input_buffer = hooks.use_state(String::new);
-    let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
+    let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
     let mut help_visible = hooks.use_state(|| false);
 
     // State: last fetch time (for status bar).
@@ -350,6 +351,21 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             tick.set(tick.get() + 1);
         }
     });
+
+    // Auto-clear action status after 60 seconds.
+    {
+        hooks.use_future(async move {
+            loop {
+                smol::Timer::after(std::time::Duration::from_secs(1)).await;
+                if let Some(t) = status_set_at.get()
+                    && t.elapsed().as_secs() >= 60
+                {
+                    action_status.set(None);
+                    status_set_at.set(None);
+                }
+            }
+        });
+    }
 
     // Auto-refetch if interval has elapsed (only for already-visited views).
     let refetch_interval = props.refetch_interval_minutes;
@@ -408,7 +424,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                 if let Some(name) = branch_name {
                                     match delete_branch(repo_path, &name) {
                                         Ok(msg) => {
-                                            action_status.set(Some(msg));
+                                            action_status.set(Some(ActionFeedback::Success(msg)));
+                                            status_set_at.set(Some(std::time::Instant::now()));
                                             branches_state.set(list_branches(repo_path));
                                             if cursor.get() >= branches_state.read().len() {
                                                 cursor.set(
@@ -417,7 +434,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             }
                                         }
                                         Err(e) => {
-                                            action_status.set(Some(format!("Delete failed: {e}")));
+                                            action_status.set(Some(ActionFeedback::Error(format!("Delete failed: {e}"))));
+                                            status_set_at.set(Some(std::time::Instant::now()));
                                         }
                                     }
                                 }
@@ -426,7 +444,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                         }
                         KeyCode::Char('n' | 'N') | KeyCode::Esc => {
                             input_mode.set(InputMode::Normal);
-                            action_status.set(Some("Cancelled".to_owned()));
+                            action_status.set(Some(ActionFeedback::Info("Cancelled".to_owned())));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         _ => {}
                     },
@@ -442,11 +461,13 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     .map_or_else(|| "HEAD".to_owned(), |b| b.name.clone());
                                 match create_branch(repo_path, &name, &from) {
                                     Ok(msg) => {
-                                        action_status.set(Some(msg));
+                                        action_status.set(Some(ActionFeedback::Success(msg)));
+                                        status_set_at.set(Some(std::time::Instant::now()));
                                         branches_state.set(list_branches(repo_path));
                                     }
                                     Err(e) => {
-                                        action_status.set(Some(format!("Create failed: {e}")));
+                                        action_status.set(Some(ActionFeedback::Error(format!("Create failed: {e}"))));
+                                        status_set_at.set(Some(std::time::Instant::now()));
                                     }
                                 }
                             }
@@ -514,14 +535,16 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             if let Some(name) = branch_name {
                                                 match checkout_branch(repo_path, &name) {
                                                     Ok(msg) => {
-                                                        action_status.set(Some(msg));
+                                                        action_status.set(Some(ActionFeedback::Success(msg)));
+                                                        status_set_at.set(Some(std::time::Instant::now()));
                                                         branches_state
                                                             .set(list_branches(repo_path));
                                                     }
                                                     Err(e) => {
-                                                        action_status.set(Some(format!(
+                                                        action_status.set(Some(ActionFeedback::Error(format!(
                                                             "Checkout failed: {e}"
-                                                        )));
+                                                        ))));
+                                                        status_set_at.set(Some(std::time::Instant::now()));
                                                     }
                                                 }
                                             }
@@ -615,12 +638,18 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                                 repo.full_name(),
                                             );
                                             match crate::actions::clipboard::open_in_browser(&url) {
-                                                Ok(()) => action_status.set(Some(format!(
-                                                    "Opened PR creation for {current_branch}"
-                                                ))),
-                                                Err(e) => action_status.set(Some(format!(
-                                                    "Failed to open browser: {e}"
-                                                ))),
+                                                Ok(()) => {
+                                                    action_status.set(Some(ActionFeedback::Success(format!(
+                                                        "Opened PR creation for {current_branch}"
+                                                    ))));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                }
+                                                Err(e) => {
+                                                    action_status.set(Some(ActionFeedback::Error(format!(
+                                                        "Failed to open browser: {e}"
+                                                    ))));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                }
                                             }
                                         }
                                     }
@@ -631,12 +660,18 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                                 repo.full_name(),
                                             );
                                             match crate::actions::clipboard::open_in_browser(&url) {
-                                                Ok(()) => action_status.set(Some(format!(
-                                                    "Opened PRs for {current_branch}"
-                                                ))),
-                                                Err(e) => action_status.set(Some(format!(
-                                                    "Failed to open browser: {e}"
-                                                ))),
+                                                Ok(()) => {
+                                                    action_status.set(Some(ActionFeedback::Success(format!(
+                                                        "Opened PRs for {current_branch}"
+                                                    ))));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                }
+                                                Err(e) => {
+                                                    action_status.set(Some(ActionFeedback::Error(format!(
+                                                        "Failed to open browser: {e}"
+                                                    ))));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                }
                                             }
                                         }
                                     }
@@ -734,9 +769,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         InputMode::Normal => None,
     };
 
-    let context_text = if let Some(msg) = action_status.read().as_ref() {
-        msg.clone()
-    } else {
+    let context_text = {
         let cursor_pos = if total_rows > 0 { cursor.get() + 1 } else { 0 };
         format!("Branch {cursor_pos}/{total_rows}")
     };
@@ -753,6 +786,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         context_text,
         updated_text,
         String::new(),
+        action_status.read().as_ref(),
+        &theme,
         depth,
         [
             Some(theme.footer_prs),

@@ -984,7 +984,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             description,
                             message,
                         } => {
-                            action_status.set(Some(ActionFeedback::Error(format!("{description}: {message}"))));
+                            action_status.set(Some(ActionFeedback::Error(format!(
+                                "{description}: {message}"
+                            ))));
                             status_set_at.set(Some(std::time::Instant::now()));
                         }
                         Event::RateLimitUpdated { info } => {

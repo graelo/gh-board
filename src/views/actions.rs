@@ -1260,16 +1260,21 @@ pub fn ActionsView<'a>(
                                             let text = run.run_number.to_string();
                                             match clipboard::copy_to_clipboard(&text) {
                                                 Ok(()) => {
-                                                    action_status.set(Some(ActionFeedback::Success(format!(
-                                                        "Copied #{}",
-                                                        run.run_number
-                                                    ))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(
+                                                        ActionFeedback::Success(format!(
+                                                            "Copied #{}",
+                                                            run.run_number
+                                                        )),
+                                                    ));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                                 Err(e) => {
-                                                    action_status
-                                                        .set(Some(ActionFeedback::Error(format!("Copy failed: {e}"))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(ActionFeedback::Error(
+                                                        format!("Copy failed: {e}"),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                             }
                                         }
@@ -1525,8 +1530,9 @@ pub fn ActionsView<'a>(
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         } else {
-                                            action_status
-                                                .set(Some(ActionFeedback::Warning("Cannot close config tabs".to_owned())));
+                                            action_status.set(Some(ActionFeedback::Warning(
+                                                "Cannot close config tabs".to_owned(),
+                                            )));
                                             status_set_at.set(Some(std::time::Instant::now()));
                                         }
                                     }

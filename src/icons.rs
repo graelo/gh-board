@@ -259,9 +259,9 @@ impl ResolvedIcons {
             update_ok: "\u{f00c}".to_owned(),      //  nf-fa-check
             // Feedback indicators
             feedback_ok: "\u{f00c}".to_owned(),    //  nf-fa-check
-            feedback_error: "\u{f00d}".to_owned(),   //  nf-fa-times
+            feedback_error: "\u{f00d}".to_owned(), //  nf-fa-times
             feedback_warning: "\u{f071}".to_owned(), //  nf-fa-warning
-            feedback_info: "\u{f449}".to_owned(),    //  nf-oct-info
+            feedback_info: "\u{f449}".to_owned(),  //  nf-oct-info
             // UI chrome
             tab_ephemeral: "\u{f4c3}".to_owned(), //  nf-oct-dot
             select_cursor: "\u{ea9c}".to_owned(), //  nf-cod-triangle_right

@@ -1123,12 +1123,20 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             let text = number.to_string();
                                             match clipboard::copy_to_clipboard(&text) {
                                                 Ok(()) => {
-                                                    action_status.set(Some(ActionFeedback::Success(format!("Copied #{number}"))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(
+                                                        ActionFeedback::Success(format!(
+                                                            "Copied #{number}"
+                                                        )),
+                                                    ));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                                 Err(e) => {
-                                                    action_status.set(Some(ActionFeedback::Error(format!("Copy failed: {e}"))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(ActionFeedback::Error(
+                                                        format!("Copy failed: {e}"),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                             }
                                         }
@@ -1140,12 +1148,20 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             );
                                             match clipboard::copy_to_clipboard(&url) {
                                                 Ok(()) => {
-                                                    action_status.set(Some(ActionFeedback::Success(format!("Copied URL for #{number}"))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(
+                                                        ActionFeedback::Success(format!(
+                                                            "Copied URL for #{number}"
+                                                        )),
+                                                    ));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                                 Err(e) => {
-                                                    action_status.set(Some(ActionFeedback::Error(format!("Copy failed: {e}"))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(ActionFeedback::Error(
+                                                        format!("Copy failed: {e}"),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                             }
                                         }
@@ -1157,12 +1173,20 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             );
                                             match clipboard::open_in_browser(&url) {
                                                 Ok(()) => {
-                                                    action_status.set(Some(ActionFeedback::Success(format!("Opened #{number}"))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(
+                                                        ActionFeedback::Success(format!(
+                                                            "Opened #{number}"
+                                                        )),
+                                                    ));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                                 Err(e) => {
-                                                    action_status.set(Some(ActionFeedback::Error(format!("Open failed: {e}"))));
-                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                    action_status.set(Some(ActionFeedback::Error(
+                                                        format!("Open failed: {e}"),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
                                                 }
                                             }
                                         }
@@ -1333,8 +1357,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         } else {
-                                            action_status
-                                                .set(Some(ActionFeedback::Warning("Cannot close config tabs".to_owned())));
+                                            action_status.set(Some(ActionFeedback::Warning(
+                                                "Cannot close config tabs".to_owned(),
+                                            )));
                                             status_set_at.set(Some(std::time::Instant::now()));
                                         }
                                     }

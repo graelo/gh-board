@@ -374,6 +374,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     repo_path,
                     detected_repo,
                     repo_paths,
+                    engine: props.engine,
+                    nav_target,
                     date_format,
                     is_active: active == ViewKind::Repo,
                     refetch_interval_minutes: refetch_minutes,

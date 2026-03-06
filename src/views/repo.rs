@@ -1,11 +1,13 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Utc};
 use iocraft::prelude::*;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::app::ViewKind;
+use crate::app::{NavigationTarget, ViewKind};
 use crate::color::ColorDepth;
 use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
@@ -18,27 +20,39 @@ use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
 };
+use crate::config::types::PrFilter;
+use crate::engine::{EngineHandle, Event};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
+use crate::types::PullRequest;
 
 /// Sidebar tabs available for branches (subset of `SidebarTab`).
-const BRANCH_TABS: &[SidebarTab] = &[SidebarTab::Overview, SidebarTab::Commits];
+const BRANCH_TABS: &[SidebarTab] = &[SidebarTab::Overview, SidebarTab::Commits, SidebarTab::Files];
 
 // ---------------------------------------------------------------------------
 // T079: Branch type
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
-pub(crate) struct Branch {
-    pub(crate) name: String,
-    pub(crate) is_current: bool,
-    pub(crate) last_commit_message: String,
-    pub(crate) last_updated: Option<DateTime<Utc>>,
-    pub(crate) ahead: u32,
-    pub(crate) behind: u32,
-    pub(crate) worktree_path: Option<PathBuf>,
-    pub(crate) repo_label: String,
+struct Branch {
+    name: String,
+    is_current: bool,
+    last_commit_message: String,
+    last_updated: Option<DateTime<Utc>>,
+    ahead: u32,
+    behind: u32,
+    worktree_path: Option<PathBuf>,
+    repo_label: String,
+}
+
+/// File changed on a branch vs its merge-base.
+#[derive(Debug, Clone)]
+struct BranchFile {
+    path: String,
+    status: char,
+    additions: u32,
+    deletions: u32,
 }
 
 /// Recent commit info for the sidebar Commits tab.
@@ -123,6 +137,92 @@ fn get_recent_commits(repo_path: &Path, branch: &str, count: usize) -> Vec<Branc
                 message: parts[1].to_owned(),
                 author: parts[2].to_owned(),
                 date: parts[3].to_owned(),
+            })
+        })
+        .collect()
+}
+
+/// Find the merge-base for a branch vs the trunk, using `detect_default_branch()`
+/// to dynamically resolve the default branch name.
+fn find_merge_base(repo_path: &Path, branch: &str) -> Option<String> {
+    let default = detect_default_branch(repo_path);
+    let trunk_ref = format!("origin/{default}");
+    let output = Command::new("git")
+        .args(["merge-base", &trunk_ref, branch])
+        .current_dir(repo_path)
+        .output();
+    if let Ok(o) = output
+        && o.status.success()
+    {
+        let sha = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+        if !sha.is_empty() {
+            return Some(sha);
+        }
+    }
+    None
+}
+
+/// Fetch files changed on a branch vs its merge-base.
+fn get_branch_files(repo_path: &Path, branch: &str) -> Vec<BranchFile> {
+    let Some(base) = find_merge_base(repo_path, branch) else {
+        return Vec::new();
+    };
+
+    let range = format!("{base}..{branch}");
+
+    // git diff --numstat <base>..<branch> → adds\tdels\tpath
+    let numstat_output = Command::new("git")
+        .args(["diff", "--numstat", &range])
+        .current_dir(repo_path)
+        .output();
+    let numstat_output = match numstat_output {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    // git diff --name-status <base>..<branch> → status\tpath
+    let status_output = Command::new("git")
+        .args(["diff", "--name-status", &range])
+        .current_dir(repo_path)
+        .output();
+    let status_output = match status_output {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    // Build status map: path -> status char.
+    // Renames/copies emit 3 fields (e.g. "R100\told\tnew"), so use splitn(3).
+    let status_text = String::from_utf8_lossy(&status_output.stdout);
+    let mut status_map = HashMap::new();
+    for line in status_text.lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() >= 2 {
+            let ch = parts[0].chars().next().unwrap_or('?');
+            // For renames (3 parts), key on the new path; otherwise key on the only path.
+            let key = if parts.len() == 3 { parts[2] } else { parts[1] };
+            status_map.insert(key.to_owned(), ch);
+        }
+    }
+
+    // Parse numstat and zip with status
+    let numstat_text = String::from_utf8_lossy(&numstat_output.stdout);
+    numstat_text
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(3, '\t').collect();
+            if parts.len() < 3 {
+                return None;
+            }
+            let additions = parts[0].parse::<u32>().unwrap_or(0);
+            let deletions = parts[1].parse::<u32>().unwrap_or(0);
+            let path = parts[2].to_owned();
+            let status = status_map.get(&path).copied().unwrap_or('?');
+            Some(BranchFile {
+                path,
+                status,
+                additions,
+                deletions,
             })
         })
         .collect()
@@ -338,9 +438,9 @@ fn branch_columns(icons: &ResolvedIcons, multi_repo: bool) -> Vec<Column> {
     }
 
     let (name_pct, message_pct) = if multi_repo {
-        (0.16, 0.22)
+        (0.14, 0.18)
     } else {
-        (0.20, 0.30)
+        (0.18, 0.26)
     };
 
     cols.extend([
@@ -350,6 +450,13 @@ fn branch_columns(icons: &ResolvedIcons, multi_repo: bool) -> Vec<Column> {
             default_width_pct: name_pct,
             align: TextAlign::Left,
             fixed_width: None,
+        },
+        Column {
+            id: "pr".to_owned(),
+            header: "PR".to_owned(),
+            default_width_pct: 0.06,
+            align: TextAlign::Left,
+            fixed_width: Some(7),
         },
         Column {
             id: "worktree".to_owned(),
@@ -384,7 +491,30 @@ fn branch_columns(icons: &ResolvedIcons, multi_repo: bool) -> Vec<Column> {
     cols
 }
 
-fn branch_to_row(branch: &Branch, theme: &ResolvedTheme, date_format: &str) -> Row {
+/// Get the branch at `idx` in the scope-filtered list.
+fn filtered_branch_at(
+    state: &State<Vec<Branch>>,
+    scope: Option<&str>,
+    idx: usize,
+) -> Option<Branch> {
+    let all = state.read();
+    match scope {
+        Some(s) => all.iter().filter(|b| b.repo_label == s).nth(idx).cloned(),
+        None => all.get(idx).cloned(),
+    }
+}
+
+/// Composite key for the PR map: `"{repo_label}\0{branch_name}"`.
+fn pr_map_key(repo_label: &str, branch_name: &str) -> String {
+    format!("{repo_label}\0{branch_name}")
+}
+
+fn branch_to_row(
+    branch: &Branch,
+    theme: &ResolvedTheme,
+    date_format: &str,
+    pr_map: &HashMap<String, PullRequest>,
+) -> Row {
     let mut row = HashMap::new();
 
     let marker = if branch.is_current { "*" } else { " " };
@@ -406,6 +536,12 @@ fn branch_to_row(branch: &Branch, theme: &ResolvedTheme, date_format: &str) -> R
         "repo".to_owned(),
         Cell::colored(&branch.repo_label, theme.text_faint),
     );
+
+    let (pr_text, pr_color) = match pr_map.get(&pr_map_key(&branch.repo_label, &branch.name)) {
+        Some(pr) => (format!("#{}", pr.number), theme.text_success),
+        None => (String::new(), theme.text_faint),
+    };
+    row.insert("pr".to_owned(), Cell::colored(pr_text, pr_color));
 
     row.insert(
         "message".to_owned(),
@@ -488,6 +624,10 @@ pub struct RepoViewProps<'a> {
     pub detected_repo: Option<&'a crate::types::common::RepoRef>,
     /// Configured `repo_paths` mapping `"owner/repo"` to local paths.
     pub repo_paths: Option<&'a HashMap<String, PathBuf>>,
+    /// Engine handle for async PR data fetching (optional).
+    pub engine: Option<&'a EngineHandle>,
+    /// Navigation target state for cross-view deep-linking.
+    pub nav_target: Option<State<Option<NavigationTarget>>>,
     pub date_format: Option<&'a str>,
     /// Whether this view is the currently active (visible) one.
     pub is_active: bool,
@@ -506,6 +646,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let scope_toggle = props.scope_toggle;
     let scope_repo = &props.scope_repo;
     let detected_repo = props.detected_repo.cloned();
+    let nav_target = props.nav_target;
     let date_format = props.date_format.unwrap_or("relative");
     let is_active = props.is_active;
 
@@ -529,6 +670,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
     // Cache of recent commits per branch name.
     let mut commits_cache = hooks.use_state(HashMap::<String, Vec<BranchCommit>>::new);
+    // Cache of changed files per branch name.
+    let mut files_cache = hooks.use_state(HashMap::<String, Vec<BranchFile>>::new);
 
     // State: last fetch time (for status bar).
     let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
@@ -536,6 +679,46 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     // Load branches.
     let mut branches_state = hooks.use_state(Vec::<Branch>::new);
     let mut loaded = hooks.use_state(|| false);
+
+    // PR indicator data: maps "{repo_label}\0{branch_name}" -> PullRequest.
+    let mut pr_map = hooks.use_state(HashMap::<String, PullRequest>::new);
+    let mut pr_repos_fetched = hooks.use_state(HashSet::<String>::new);
+
+    // Per-view event channel for engine replies.
+    let event_channel = hooks.use_state(|| {
+        let (tx, rx) = std::sync::mpsc::channel::<Event>();
+        (tx, Arc::new(Mutex::new(rx)))
+    });
+    let (event_tx, event_rx_arc) = event_channel.read().clone();
+
+    // Poll engine events (PR data).
+    {
+        let rx_for_poll = event_rx_arc.clone();
+        hooks.use_future(async move {
+            loop {
+                smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                let rx = rx_for_poll.lock().unwrap();
+                while let Ok(ev) = rx.try_recv() {
+                    if let Event::PrsFetched { prs, .. } = ev {
+                        let mut map = pr_map.read().clone();
+                        for pr in prs {
+                            if let Some(repo_ref) = &pr.repo {
+                                let label = format!("{}/{}", repo_ref.owner, repo_ref.name);
+                                let key = pr_map_key(&label, &pr.head_ref);
+                                let dominated = map
+                                    .get(&key)
+                                    .is_some_and(|existing| existing.updated_at >= pr.updated_at);
+                                if !dominated {
+                                    map.insert(key, pr);
+                                }
+                            }
+                        }
+                        pr_map.set(map);
+                    }
+                }
+            }
+        });
+    }
 
     // Timer tick for periodic re-renders (supports auto-refetch).
     let mut tick = hooks.use_state(|| 0u64);
@@ -570,6 +753,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         && last.elapsed() >= std::time::Duration::from_secs(u64::from(refetch_interval) * 60)
     {
         loaded.set(false);
+        pr_repos_fetched.set(HashSet::new());
+        pr_map.set(HashMap::new());
     }
 
     // Compute CWD repo label.
@@ -595,6 +780,38 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             props.repo_paths,
         ));
         last_fetch_time.set(Some(std::time::Instant::now()));
+
+        // Fetch open PRs for each distinct repo label.
+        if let Some(engine) = props.engine {
+            let repos: HashSet<String> = branches_state
+                .read()
+                .iter()
+                .map(|b| b.repo_label.clone())
+                .collect();
+            let fetched = pr_repos_fetched.read();
+            for repo_label in &repos {
+                if fetched.contains(repo_label) {
+                    continue;
+                }
+                let filter = PrFilter {
+                    title: repo_label.clone(),
+                    filters: format!("repo:{repo_label} is:pr is:open"),
+                    host: None,
+                    limit: Some(200),
+                    layout: None,
+                };
+                // filter_idx is ignored in the repo view polling loop;
+                // all PR events are merged into pr_map by head_ref key.
+                engine.send(crate::engine::Request::FetchPrs {
+                    filter_idx: 0,
+                    filter,
+                    force: false,
+                    reply_tx: event_tx.clone(),
+                });
+            }
+            drop(fetched);
+            pr_repos_fetched.set(repos);
+        }
     }
 
     let branches = branches_state.read();
@@ -635,21 +852,6 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                 }
                 let current_mode = input_mode.read().clone();
 
-                // Helper: get the branch at the current cursor in the
-                // scope-filtered list.
-                let filtered_branch_at = |state: &State<Vec<Branch>>,
-                                          scope: &Option<String>,
-                                          idx: usize|
-                 -> Option<Branch> {
-                    let all = state.read();
-                    let filtered: Vec<&Branch> = match scope {
-                        Some(s) => all.iter().filter(|b| b.repo_label == *s).collect(),
-                        None => all.iter().collect(),
-                    };
-                    filtered.get(idx).copied().cloned()
-                };
-
-                // Macro-like helper: reload branches from all repos.
                 let reload = |state: &mut State<Vec<Branch>>| {
                     state.set(list_all_branches(
                         repo_path_owned.as_deref(),
@@ -662,7 +864,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                     InputMode::ConfirmDelete => match code {
                         KeyCode::Char('y' | 'Y') => {
                             if let Some(ref repo_path) = repo_path_owned {
-                                let branch_name = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
+                                let branch_name = filtered_branch_at(&branches_state, scope_repo_owned.as_deref(), cursor.get())
                                     .map(|b| b.name.clone());
                                 if let Some(name) = branch_name {
                                     match delete_branch(repo_path, &name) {
@@ -670,10 +872,15 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             action_status.set(Some(ActionFeedback::Success(msg)));
                                             status_set_at.set(Some(std::time::Instant::now()));
                                             reload(&mut branches_state);
-                                            if cursor.get() >= branches_state.read().len() {
-                                                cursor.set(
-                                                    branches_state.read().len().saturating_sub(1),
-                                                );
+                                            let filtered_len = {
+                                                let all = branches_state.read();
+                                                match &scope_repo_owned {
+                                                    Some(s) => all.iter().filter(|b| b.repo_label == *s).count(),
+                                                    None => all.len(),
+                                                }
+                                            };
+                                            if cursor.get() >= filtered_len {
+                                                cursor.set(filtered_len.saturating_sub(1));
                                             }
                                         }
                                         Err(e) => {
@@ -698,7 +905,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                             if !name.is_empty()
                                 && let Some(ref repo_path) = repo_path_owned
                             {
-                                let from = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
+                                let from = filtered_branch_at(&branches_state, scope_repo_owned.as_deref(), cursor.get())
                                     .map_or_else(|| "HEAD".to_owned(), |b| b.name.clone());
                                 match create_branch(repo_path, &name, &from) {
                                     Ok(msg) => {
@@ -733,7 +940,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                     },
                     InputMode::Normal => {
                         if let Some(key_str) = key_event_to_string(code, modifiers, kind) {
-                            let current_branch = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
+                            let current_branch = filtered_branch_at(&branches_state, scope_repo_owned.as_deref(), cursor.get())
                                 .map(|b| b.name.clone())
                                 .unwrap_or_default();
                             let vars = TemplateVars {
@@ -767,7 +974,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     }
                                     BuiltinAction::Checkout => {
                                         if let Some(ref repo_path) = repo_path_owned {
-                                            let branch_name = filtered_branch_at(&branches_state, &scope_repo_owned, cursor.get())
+                                            let branch_name = filtered_branch_at(&branches_state, scope_repo_owned.as_deref(), cursor.get())
                                                 .map(|b| b.name.clone());
                                             if let Some(name) = branch_name {
                                                 match checkout_branch(repo_path, &name) {
@@ -877,6 +1084,9 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     BuiltinAction::Refresh | BuiltinAction::RefreshAll => {
                                         loaded.set(false);
                                         commits_cache.set(HashMap::new());
+                                        files_cache.set(HashMap::new());
+                                        pr_repos_fetched.set(HashSet::new());
+                                        pr_map.set(HashMap::new());
                                         action_status.set(None);
                                     }
                                     BuiltinAction::ToggleHelp => {
@@ -906,6 +1116,36 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                                     ))));
                                                     status_set_at.set(Some(std::time::Instant::now()));
                                                 }
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::JumpToPr => {
+                                        if let Some(branch) = filtered_branch_at(
+                                            &branches_state,
+                                            scope_repo_owned.as_deref(),
+                                            cursor.get(),
+                                        ) {
+                                            let map = pr_map.read();
+                                            if let Some(pr) = map.get(&pr_map_key(
+                                                &branch.repo_label,
+                                                &branch.name,
+                                            ))
+                                                && let Some(repo_ref) = &pr.repo
+                                            {
+                                                if let Some(mut nt) = nav_target {
+                                                    nt.set(Some(NavigationTarget::PullRequest {
+                                                        owner: repo_ref.owner.clone(),
+                                                        repo: repo_ref.name.clone(),
+                                                        number: pr.number,
+                                                        host: None,
+                                                    }));
+                                                }
+                                            } else {
+                                                action_status.set(Some(ActionFeedback::Info(
+                                                    "No open PR for this branch".to_owned(),
+                                                )));
+                                                status_set_at
+                                                    .set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
@@ -980,9 +1220,10 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     // Build table.
     let show_repo_col = multi_repo && scope_repo.is_none();
     let columns = branch_columns(&theme.icons, show_repo_col);
+    let pr_map_read = pr_map.read();
     let rows: Vec<Row> = branches
         .iter()
-        .map(|b| branch_to_row(b, &theme, date_format))
+        .map(|b| branch_to_row(b, &theme, date_format, &pr_map_read))
         .collect();
 
     let rendered_table = RenderedTable::build(&TableBuildConfig {
@@ -1089,16 +1330,17 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         let md_lines: Vec<StyledLine> = match current_tab {
             SidebarTab::Overview => {
                 if let Some(branch) = current_branch {
-                    render_branch_overview(branch, &theme)
+                    render_branch_overview(branch, &theme, &pr_map_read)
                 } else {
                     Vec::new()
                 }
             }
             SidebarTab::Commits => {
                 if let Some(branch) = current_branch {
-                    // Lazy-fetch and cache commits.
+                    // Lazy-fetch and cache commits (keyed by repo+branch for multi-repo).
+                    let cache_key = pr_map_key(&branch.repo_label, &branch.name);
                     let cached = commits_cache.read();
-                    let commits = if let Some(c) = cached.get(&branch.name) {
+                    let commits = if let Some(c) = cached.get(&cache_key) {
                         c.clone()
                     } else {
                         drop(cached);
@@ -1107,7 +1349,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                             .map(|rp| get_recent_commits(rp, &branch.name, 20))
                             .unwrap_or_default();
                         let mut new_cache = commits_cache.read().clone();
-                        new_cache.insert(branch.name.clone(), c.clone());
+                        new_cache.insert(cache_key, c.clone());
                         commits_cache.set(new_cache);
                         c
                     };
@@ -1116,11 +1358,50 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                     Vec::new()
                 }
             }
+            SidebarTab::Files => {
+                if let Some(branch) = current_branch {
+                    let cache_key = pr_map_key(&branch.repo_label, &branch.name);
+                    let cached = files_cache.read();
+                    let files = if let Some(f) = cached.get(&cache_key) {
+                        f.clone()
+                    } else {
+                        drop(cached);
+                        let f = props
+                            .repo_path
+                            .map(|rp| get_branch_files(rp, &branch.name))
+                            .unwrap_or_default();
+                        let mut new_cache = files_cache.read().clone();
+                        new_cache.insert(cache_key, f.clone());
+                        files_cache.set(new_cache);
+                        f
+                    };
+                    render_branch_files(&files, &theme, sidebar_width)
+                } else {
+                    Vec::new()
+                }
+            }
             _ => Vec::new(),
         };
 
+        // Build tab label overrides for dynamic file count.
+        let mut tab_overrides = HashMap::new();
+        if let Some(branch) = current_branch {
+            let cache_key = pr_map_key(&branch.repo_label, &branch.name);
+            let cached = files_cache.read();
+            if let Some(files) = cached.get(&cache_key) {
+                let icon = &theme.icons.tab_files;
+                tab_overrides.insert(SidebarTab::Files, format!("{icon} Files ({})", files.len()));
+            }
+        }
+
         #[allow(clippy::cast_possible_truncation)]
         let sidebar_visible_lines = props.height.saturating_sub(8) as usize;
+
+        let tab_overrides_ref = if tab_overrides.is_empty() {
+            None
+        } else {
+            Some(&tab_overrides)
+        };
 
         let sidebar = RenderedSidebar::build_tabbed(
             title,
@@ -1137,6 +1418,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             Some(&theme.icons),
             None,
             Some(BRANCH_TABS),
+            tab_overrides_ref,
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);
@@ -1183,7 +1465,11 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
 }
 
 /// Render the Overview tab for a branch sidebar.
-fn render_branch_overview(branch: &Branch, theme: &ResolvedTheme) -> Vec<StyledLine> {
+fn render_branch_overview(
+    branch: &Branch,
+    theme: &ResolvedTheme,
+    pr_map: &HashMap<String, PullRequest>,
+) -> Vec<StyledLine> {
     let mut lines = Vec::new();
 
     // Status badge
@@ -1205,6 +1491,15 @@ fn render_branch_overview(branch: &Branch, theme: &ResolvedTheme) -> Vec<StyledL
     // Blank line
     lines.push(StyledLine::from_spans(vec![]));
 
+    // PR info
+    if let Some(pr) = pr_map.get(&pr_map_key(&branch.repo_label, &branch.name)) {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("PR:       ", theme.text_faint),
+            StyledSpan::text(format!("#{}", pr.number), theme.text_success),
+            StyledSpan::text(format!(" {}", pr.title), theme.text_primary),
+        ]));
+    }
+
     // Repo label
     if !branch.repo_label.is_empty() {
         lines.push(StyledLine::from_spans(vec![
@@ -1212,17 +1507,6 @@ fn render_branch_overview(branch: &Branch, theme: &ResolvedTheme) -> Vec<StyledL
             StyledSpan::text(&branch.repo_label, theme.text_secondary),
         ]));
     }
-
-    // Tracking info
-    let tracking = if branch.ahead == 0 && branch.behind == 0 {
-        "Up to date".to_owned()
-    } else {
-        format!("↑{} ahead  ↓{} behind", branch.ahead, branch.behind)
-    };
-    lines.push(StyledLine::from_spans(vec![
-        StyledSpan::text("Tracking: ", theme.text_faint),
-        StyledSpan::text(tracking, theme.text_secondary),
-    ]));
 
     // Worktree path (replace $HOME prefix with ~ for brevity)
     if let Some(ref wt) = branch.worktree_path {
@@ -1240,6 +1524,17 @@ fn render_branch_overview(branch: &Branch, theme: &ResolvedTheme) -> Vec<StyledL
             StyledSpan::text(display_path, theme.text_secondary),
         ]));
     }
+
+    // Tracking info
+    let tracking = if branch.ahead == 0 && branch.behind == 0 {
+        "Up to date".to_owned()
+    } else {
+        format!("↑{} ahead  ↓{} behind", branch.ahead, branch.behind)
+    };
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Tracking: ", theme.text_faint),
+        StyledSpan::text(tracking, theme.text_secondary),
+    ]));
 
     // Last commit
     lines.push(StyledLine::from_spans(vec![
@@ -1284,6 +1579,112 @@ fn render_branch_commits(commits: &[BranchCommit], theme: &ResolvedTheme) -> Vec
     lines
 }
 
+fn render_branch_files(
+    files: &[BranchFile],
+    theme: &ResolvedTheme,
+    sidebar_width: u16,
+) -> Vec<StyledLine> {
+    if files.is_empty() {
+        return vec![StyledLine::from_span(StyledSpan::text(
+            "(no files changed)",
+            theme.text_faint,
+        ))];
+    }
+
+    let content_width = usize::from(sidebar_width).saturating_sub(4).max(1);
+
+    let max_add_width = files
+        .iter()
+        .map(|f| format!("+{}", f.additions).len())
+        .max()
+        .unwrap_or(2);
+    let max_del_width = files
+        .iter()
+        .map(|f| format!("-{}", f.deletions).len())
+        .max()
+        .unwrap_or(2);
+
+    let fixed_cols = 2 + 1 + max_add_width + 1 + max_del_width;
+    let path_budget = content_width.saturating_sub(fixed_cols);
+
+    let natural_max = files
+        .iter()
+        .map(|f| UnicodeWidthStr::width(f.path.as_str()))
+        .max()
+        .unwrap_or(0);
+    let path_col_width = natural_max.min(path_budget);
+
+    let mut lines = Vec::new();
+    for file in files {
+        let change = match file.status {
+            'A' => "A",
+            'D' => "D",
+            'M' => "M",
+            'R' => "R",
+            'C' => "C",
+            _ => "?",
+        };
+        let change_color = match file.status {
+            'A' => theme.text_success,
+            'D' => theme.text_error,
+            _ => theme.text_warning,
+        };
+
+        let path_w = UnicodeWidthStr::width(file.path.as_str());
+        let (display_path, display_w) = if path_w > path_col_width {
+            truncate_path_with_ellipsis(&file.path, path_col_width)
+        } else {
+            (file.path.clone(), path_w)
+        };
+        let pad = path_col_width.saturating_sub(display_w) + 1;
+
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text(format!("{change} "), change_color),
+            StyledSpan::text(display_path, theme.text_primary),
+            StyledSpan::text(
+                format!(
+                    "{:pad$}{:>width$}",
+                    "",
+                    format!("+{}", file.additions),
+                    pad = pad,
+                    width = max_add_width
+                ),
+                theme.text_success,
+            ),
+            StyledSpan::text(
+                format!(
+                    " {:>width$}",
+                    format!("-{}", file.deletions),
+                    width = max_del_width
+                ),
+                theme.text_error,
+            ),
+        ]));
+    }
+    lines
+}
+
+/// Truncate a path to fit within `max_width` display columns, appending `…`.
+fn truncate_path_with_ellipsis(s: &str, max_width: usize) -> (String, usize) {
+    if max_width == 0 {
+        return (String::new(), 0);
+    }
+    let target = max_width.saturating_sub(1); // 1 for `…`
+    let mut buf = String::new();
+    let mut w = 0;
+    for ch in s.chars() {
+        let cw = UnicodeWidthChar::width(ch).unwrap_or(0);
+        if w + cw > target {
+            break;
+        }
+        buf.push(ch);
+        w += cw;
+    }
+    buf.push('…');
+    w += UnicodeWidthChar::width('…').unwrap_or(1);
+    (buf, w)
+}
+
 fn default_theme() -> ResolvedTheme {
     super::default_theme()
 }
@@ -1309,27 +1710,18 @@ mod tests {
         }
     }
 
-    #[test]
-    fn branch_columns_has_six_entries() {
-        let theme = test_theme();
-        let cols = branch_columns(&theme.icons, false);
-        assert_eq!(cols.len(), 6);
-        assert_eq!(cols[0].id, "current");
-        assert_eq!(cols[1].id, "name");
-        assert_eq!(cols[2].id, "worktree");
-        assert_eq!(cols[3].id, "ahead_behind");
-        assert_eq!(cols[4].id, "message");
-        assert_eq!(cols[5].id, "updated");
+    fn empty_pr_map() -> HashMap<String, PullRequest> {
+        HashMap::new()
     }
 
     #[test]
-    fn branch_columns_multi_repo_has_seven() {
+    fn branch_columns_single_repo_has_seven() {
         let theme = test_theme();
-        let cols = branch_columns(&theme.icons, true);
+        let cols = branch_columns(&theme.icons, false);
         assert_eq!(cols.len(), 7);
         assert_eq!(cols[0].id, "current");
-        assert_eq!(cols[1].id, "repo");
-        assert_eq!(cols[2].id, "name");
+        assert_eq!(cols[1].id, "name");
+        assert_eq!(cols[2].id, "pr");
         assert_eq!(cols[3].id, "worktree");
         assert_eq!(cols[4].id, "ahead_behind");
         assert_eq!(cols[5].id, "message");
@@ -1337,19 +1729,42 @@ mod tests {
     }
 
     #[test]
+    fn branch_columns_multi_repo_has_eight() {
+        let theme = test_theme();
+        let cols = branch_columns(&theme.icons, true);
+        assert_eq!(cols.len(), 8);
+        assert_eq!(cols[0].id, "current");
+        assert_eq!(cols[1].id, "repo");
+        assert_eq!(cols[2].id, "name");
+        assert_eq!(cols[3].id, "pr");
+        assert_eq!(cols[4].id, "worktree");
+        assert_eq!(cols[5].id, "ahead_behind");
+        assert_eq!(cols[6].id, "message");
+        assert_eq!(cols[7].id, "updated");
+    }
+
+    #[test]
     fn branch_to_row_repo_cell() {
         let theme = test_theme();
         let mut branch = sample_branch("main", true);
         branch.repo_label = "owner/repo".to_owned();
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("repo").unwrap().text(), "owner/repo");
+    }
+
+    #[test]
+    fn branch_to_row_pr_cell_empty() {
+        let theme = test_theme();
+        let branch = sample_branch("main", true);
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
+        assert_eq!(row.get("pr").unwrap().text(), "");
     }
 
     #[test]
     fn branch_to_row_current_marker() {
         let theme = test_theme();
         let branch = sample_branch("main", true);
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("current").unwrap().text(), "*");
     }
 
@@ -1357,7 +1772,7 @@ mod tests {
     fn branch_to_row_non_current_marker() {
         let theme = test_theme();
         let branch = sample_branch("feature", false);
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("current").unwrap().text(), " ");
     }
 
@@ -1365,7 +1780,7 @@ mod tests {
     fn branch_to_row_name() {
         let theme = test_theme();
         let branch = sample_branch("feature-xyz", false);
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("name").unwrap().text(), "feature-xyz");
     }
 
@@ -1373,7 +1788,7 @@ mod tests {
     fn branch_to_row_ahead_behind_nonzero() {
         let theme = test_theme();
         let branch = sample_branch("dev", false);
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         let ab = &row.get("ahead_behind").unwrap().text();
         assert!(ab.contains('2'), "should contain ahead count");
         assert!(ab.contains('1'), "should contain behind count");
@@ -1385,7 +1800,7 @@ mod tests {
         let mut branch = sample_branch("main", true);
         branch.ahead = 0;
         branch.behind = 0;
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("ahead_behind").unwrap().text(), "");
     }
 
@@ -1394,7 +1809,7 @@ mod tests {
         let theme = test_theme();
         let mut branch = sample_branch("fix", false);
         branch.last_commit_message = "fix: resolve bug".to_owned();
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("message").unwrap().text(), "fix: resolve bug");
     }
 
@@ -1403,7 +1818,7 @@ mod tests {
         let theme = test_theme();
         let mut branch = sample_branch("feat-x", false);
         branch.worktree_path = Some(PathBuf::from("/home/user/worktrees/feat-x"));
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("worktree").unwrap().text(), "feat-x");
     }
 
@@ -1411,7 +1826,7 @@ mod tests {
     fn branch_to_row_worktree_empty() {
         let theme = test_theme();
         let branch = sample_branch("main", true);
-        let row = branch_to_row(&branch, &theme, "relative");
+        let row = branch_to_row(&branch, &theme, "relative", &empty_pr_map());
         assert_eq!(row.get("worktree").unwrap().text(), "");
     }
 

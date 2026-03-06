@@ -1575,6 +1575,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(&theme.icons),
             sidebar_meta,
             Some(ISSUE_TABS),
+            None,
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);

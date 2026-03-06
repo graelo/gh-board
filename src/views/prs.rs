@@ -2364,6 +2364,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(&theme.icons),
             sidebar_meta,
             None, // Show all tabs for PRs
+            None, // No tab label overrides
         );
         // Store the clamped offset so ctrl+u works immediately.
         if preview_scroll.get() != sidebar.clamped_scroll {

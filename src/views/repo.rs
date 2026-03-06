@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use chrono::{DateTime, Utc};
@@ -9,6 +9,7 @@ use crate::app::ViewKind;
 use crate::color::ColorDepth;
 use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
+use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarTab};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
@@ -18,7 +19,11 @@ use crate::config::keybindings::{
     execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::icons::ResolvedIcons;
+use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
+
+/// Sidebar tabs available for branches (subset of `SidebarTab`).
+const BRANCH_TABS: &[SidebarTab] = &[SidebarTab::Overview, SidebarTab::Commits];
 
 // ---------------------------------------------------------------------------
 // T079: Branch type
@@ -32,11 +37,95 @@ pub(crate) struct Branch {
     pub(crate) last_updated: Option<DateTime<Utc>>,
     pub(crate) ahead: u32,
     pub(crate) behind: u32,
+    pub(crate) worktree_path: Option<PathBuf>,
+}
+
+/// Recent commit info for the sidebar Commits tab.
+#[derive(Debug, Clone)]
+struct BranchCommit {
+    short_sha: String,
+    message: String,
+    author: String,
+    date: String,
 }
 
 // ---------------------------------------------------------------------------
 // T078: Local Git operations
 // ---------------------------------------------------------------------------
+
+/// Discover git worktrees and map branch names to their worktree paths.
+fn list_worktrees(repo_path: &Path) -> HashMap<String, PathBuf> {
+    let output = Command::new("git")
+        .args(["worktree", "list", "--porcelain"])
+        .current_dir(repo_path)
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return HashMap::new(),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut result = HashMap::new();
+    let mut current_path: Option<PathBuf> = None;
+    let mut is_bare = false;
+
+    for line in stdout.lines() {
+        if let Some(path_str) = line.strip_prefix("worktree ") {
+            current_path = Some(PathBuf::from(path_str));
+            is_bare = false;
+        } else if line == "bare" {
+            is_bare = true;
+        } else if let Some(branch_ref) = line.strip_prefix("branch ")
+            && !is_bare
+            && let Some(branch_name) = branch_ref.strip_prefix("refs/heads/")
+            && let Some(ref path) = current_path
+        {
+            result.insert(branch_name.to_owned(), path.clone());
+        } else if line.is_empty() {
+            current_path = None;
+            is_bare = false;
+        }
+    }
+
+    result
+}
+
+/// Fetch recent commits for a branch.
+fn get_recent_commits(repo_path: &Path, branch: &str, count: usize) -> Vec<BranchCommit> {
+    let output = Command::new("git")
+        .args([
+            "log",
+            "--format=%h|%s|%an|%ar",
+            "-n",
+            &count.to_string(),
+            branch,
+        ])
+        .current_dir(repo_path)
+        .output();
+
+    let output = match output {
+        Ok(o) if o.status.success() => o,
+        _ => return Vec::new(),
+    };
+
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|l| !l.is_empty())
+        .filter_map(|line| {
+            let parts: Vec<&str> = line.splitn(4, '|').collect();
+            if parts.len() < 4 {
+                return None;
+            }
+            Some(BranchCommit {
+                short_sha: parts[0].to_owned(),
+                message: parts[1].to_owned(),
+                author: parts[2].to_owned(),
+                date: parts[3].to_owned(),
+            })
+        })
+        .collect()
+}
 
 /// List local branches with metadata.
 fn list_branches(repo_path: &Path) -> Vec<Branch> {
@@ -57,6 +146,7 @@ fn list_branches(repo_path: &Path) -> Vec<Branch> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let default_branch = detect_default_branch(repo_path);
+    let worktrees = list_worktrees(repo_path);
 
     stdout
         .lines()
@@ -79,6 +169,8 @@ fn list_branches(repo_path: &Path) -> Vec<Branch> {
                 get_ahead_behind(repo_path, &name, &default_branch)
             };
 
+            let worktree_path = worktrees.get(&name).cloned();
+
             Some(Branch {
                 name,
                 is_current,
@@ -86,6 +178,7 @@ fn list_branches(repo_path: &Path) -> Vec<Branch> {
                 last_updated,
                 ahead,
                 behind,
+                worktree_path,
             })
         })
         .collect()
@@ -194,14 +287,21 @@ fn branch_columns(icons: &ResolvedIcons) -> Vec<Column> {
         Column {
             id: "name".to_owned(),
             header: "Branch".to_owned(),
-            default_width_pct: 0.25,
+            default_width_pct: 0.20,
             align: TextAlign::Left,
             fixed_width: None,
         },
         Column {
             id: "message".to_owned(),
             header: "Last Commit".to_owned(),
-            default_width_pct: 0.35,
+            default_width_pct: 0.30,
+            align: TextAlign::Left,
+            fixed_width: None,
+        },
+        Column {
+            id: "worktree".to_owned(),
+            header: "Worktree".to_owned(),
+            default_width_pct: 0.15,
             align: TextAlign::Left,
             fixed_width: None,
         },
@@ -243,6 +343,17 @@ fn branch_to_row(branch: &Branch, theme: &ResolvedTheme, date_format: &str) -> R
     row.insert(
         "message".to_owned(),
         Cell::colored(&branch.last_commit_message, theme.text_secondary),
+    );
+
+    let worktree_label = branch
+        .worktree_path
+        .as_ref()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .unwrap_or("");
+    row.insert(
+        "worktree".to_owned(),
+        Cell::colored(worktree_label, theme.text_faint),
     );
 
     let icons = &theme.icons;
@@ -295,6 +406,7 @@ pub struct RepoViewProps<'a> {
     pub color_depth: ColorDepth,
     pub width: u16,
     pub height: u16,
+    pub preview_width_pct: f64,
     pub show_separator: bool,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
@@ -328,6 +440,12 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let date_format = props.date_format.unwrap_or("relative");
     let is_active = props.is_active;
 
+    let preview_pct = if props.preview_width_pct > 0.0 {
+        props.preview_width_pct
+    } else {
+        0.45
+    };
+
     let mut cursor = hooks.use_state(|| 0usize);
     let mut scroll_offset = hooks.use_state(|| 0usize);
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
@@ -335,6 +453,13 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
     let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
     let mut help_visible = hooks.use_state(|| false);
+
+    // Sidebar state.
+    let mut preview_open = hooks.use_state(|| false);
+    let mut preview_scroll = hooks.use_state(|| 0usize);
+    let mut sidebar_tab = hooks.use_state(|| SidebarTab::Overview);
+    // Cache of recent commits per branch name.
+    let mut commits_cache = hooks.use_state(HashMap::<String, Vec<BranchCommit>>::new);
 
     // State: last fetch time (for status bar).
     let mut last_fetch_time = hooks.use_state(|| Option::<std::time::Instant>::None);
@@ -559,6 +684,10 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         input_buffer.set(String::new());
                                         action_status.set(None);
                                     }
+                                    BuiltinAction::TogglePreview => {
+                                        preview_open.set(!preview_open.get());
+                                        preview_scroll.set(0);
+                                    }
                                     BuiltinAction::MoveDown if total_rows > 0 => {
                                         let new_cursor =
                                             (cursor.get() + 1).min(total_rows.saturating_sub(1));
@@ -567,6 +696,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             scroll_offset
                                                 .set(new_cursor.saturating_sub(visible_rows) + 1);
                                         }
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::MoveUp => {
                                         let new_cursor = cursor.get().saturating_sub(1);
@@ -574,14 +704,17 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         if new_cursor < scroll_offset.get() {
                                             scroll_offset.set(new_cursor);
                                         }
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::First => {
                                         cursor.set(0);
                                         scroll_offset.set(0);
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::Last if total_rows > 0 => {
                                         cursor.set(total_rows.saturating_sub(1));
                                         scroll_offset.set(total_rows.saturating_sub(visible_rows));
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::PageDown if total_rows > 0 => {
                                         let new_cursor = (cursor.get() + visible_rows)
@@ -591,16 +724,20 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             new_cursor
                                                 .saturating_sub(visible_rows.saturating_sub(1)),
                                         );
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::PageUp => {
                                         let new_cursor = cursor.get().saturating_sub(visible_rows);
                                         cursor.set(new_cursor);
                                         scroll_offset
                                             .set(scroll_offset.get().saturating_sub(visible_rows));
+                                        preview_scroll.set(0);
                                     }
                                     BuiltinAction::HalfPageDown => {
                                         let half = visible_rows / 2;
-                                        if total_rows > 0 {
+                                        if preview_open.get() {
+                                            preview_scroll.set(preview_scroll.get() + half);
+                                        } else if total_rows > 0 {
                                             let new_cursor = (cursor.get() + half)
                                                 .min(total_rows.saturating_sub(1));
                                             cursor.set(new_cursor);
@@ -609,18 +746,26 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                                     new_cursor.saturating_sub(visible_rows) + 1,
                                                 );
                                             }
+                                            preview_scroll.set(0);
                                         }
                                     }
                                     BuiltinAction::HalfPageUp => {
                                         let half = visible_rows / 2;
-                                        let new_cursor = cursor.get().saturating_sub(half);
-                                        cursor.set(new_cursor);
-                                        if new_cursor < scroll_offset.get() {
-                                            scroll_offset.set(new_cursor);
+                                        if preview_open.get() {
+                                            preview_scroll
+                                                .set(preview_scroll.get().saturating_sub(half));
+                                        } else {
+                                            let new_cursor = cursor.get().saturating_sub(half);
+                                            cursor.set(new_cursor);
+                                            if new_cursor < scroll_offset.get() {
+                                                scroll_offset.set(new_cursor);
+                                            }
+                                            preview_scroll.set(0);
                                         }
                                     }
                                     BuiltinAction::Refresh | BuiltinAction::RefreshAll => {
                                         loaded.set(false);
+                                        commits_cache.set(HashMap::new());
                                         action_status.set(None);
                                     }
                                     BuiltinAction::ToggleHelp => {
@@ -681,7 +826,19 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     let expanded = expand_template(&cmd, &vars);
                                     let _ = execute_shell_command(&expanded);
                                 }
-                                None => {}
+                                None => {
+                                    if key_str == "]" {
+                                        let current = sidebar_tab.get();
+                                        let idx = BRANCH_TABS.iter().position(|&t| t == current).unwrap_or(0);
+                                        sidebar_tab.set(BRANCH_TABS[(idx + 1) % BRANCH_TABS.len()]);
+                                        preview_scroll.set(0);
+                                    } else if key_str == "[" {
+                                        let current = sidebar_tab.get();
+                                        let idx = BRANCH_TABS.iter().position(|&t| t == current).unwrap_or(0);
+                                        sidebar_tab.set(BRANCH_TABS[if idx == 0 { BRANCH_TABS.len() - 1 } else { idx - 1 }]);
+                                        preview_scroll.set(0);
+                                    }
+                                }
                             }
                         }
                     }
@@ -699,6 +856,16 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         .into_any();
     }
 
+    // Compute widths for table vs sidebar.
+    let is_preview_open = preview_open.get();
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    let (table_width, sidebar_width) = if is_preview_open {
+        let sb_w = (f64::from(props.width) * preview_pct).round() as u16;
+        (props.width.saturating_sub(sb_w), sb_w)
+    } else {
+        (props.width, 0)
+    };
+
     // Build table.
     let columns = branch_columns(&theme.icons);
     let rows: Vec<Row> = branches
@@ -714,7 +881,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         visible_rows,
         hidden_columns: None,
         width_overrides: None,
-        total_width: props.width,
+        total_width: table_width,
         depth,
         selected_bg: Some(theme.bg_selected),
         header_color: Some(theme.text_secondary),
@@ -801,6 +968,72 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         Some(theme.border_faint),
     );
 
+    // Pre-render sidebar.
+    let rendered_sidebar = if is_preview_open {
+        let current_branch = branches.get(cursor.get());
+        let title = current_branch.map_or("Preview", |b| b.name.as_str());
+        let current_tab = sidebar_tab.get();
+
+        let md_lines: Vec<StyledLine> = match current_tab {
+            SidebarTab::Overview => {
+                if let Some(branch) = current_branch {
+                    render_branch_overview(branch, &theme)
+                } else {
+                    Vec::new()
+                }
+            }
+            SidebarTab::Commits => {
+                if let Some(branch) = current_branch {
+                    // Lazy-fetch and cache commits.
+                    let cached = commits_cache.read();
+                    let commits = if let Some(c) = cached.get(&branch.name) {
+                        c.clone()
+                    } else {
+                        drop(cached);
+                        let c = props
+                            .repo_path
+                            .map(|rp| get_recent_commits(rp, &branch.name, 20))
+                            .unwrap_or_default();
+                        let mut new_cache = commits_cache.read().clone();
+                        new_cache.insert(branch.name.clone(), c.clone());
+                        commits_cache.set(new_cache);
+                        c
+                    };
+                    render_branch_commits(&commits, &theme)
+                } else {
+                    Vec::new()
+                }
+            }
+            _ => Vec::new(),
+        };
+
+        #[allow(clippy::cast_possible_truncation)]
+        let sidebar_visible_lines = props.height.saturating_sub(8) as usize;
+
+        let sidebar = RenderedSidebar::build_tabbed(
+            title,
+            &md_lines,
+            preview_scroll.get(),
+            sidebar_visible_lines,
+            sidebar_width,
+            depth,
+            Some(theme.text_primary),
+            Some(theme.border_faint),
+            Some(theme.text_faint),
+            Some(theme.border_primary),
+            Some(current_tab),
+            Some(&theme.icons),
+            None,
+            Some(BRANCH_TABS),
+        );
+        if preview_scroll.get() != sidebar.clamped_scroll {
+            preview_scroll.set(sidebar.clamped_scroll);
+        }
+        Some(sidebar)
+    } else {
+        None
+    };
+
     let rendered_help = if help_visible.get() {
         props.keybindings.map(|kb| {
             RenderedHelpOverlay::build(&HelpOverlayBuildConfig {
@@ -823,8 +1056,11 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     element! {
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
-                ScrollableTable(table: rendered_table)
+            View(flex_grow: 1.0, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
+                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                    ScrollableTable(table: rendered_table)
+                }
+                Sidebar(sidebar: rendered_sidebar)
             }
             crate::components::text_input::TextInput(input: rendered_text_input)
             Footer(footer: rendered_footer)
@@ -832,6 +1068,100 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         }
     }
     .into_any()
+}
+
+/// Render the Overview tab for a branch sidebar.
+fn render_branch_overview(branch: &Branch, theme: &ResolvedTheme) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+
+    // Status badge
+    let status = if branch.is_current {
+        "* current"
+    } else {
+        "branch"
+    };
+    let status_color = if branch.is_current {
+        theme.text_success
+    } else {
+        theme.text_secondary
+    };
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text(format!("[{status}]"), status_color),
+        StyledSpan::text(format!(" {}", branch.name), theme.text_primary),
+    ]));
+
+    // Blank line
+    lines.push(StyledLine::from_spans(vec![]));
+
+    // Tracking info
+    let tracking = if branch.ahead == 0 && branch.behind == 0 {
+        "Up to date".to_owned()
+    } else {
+        format!("↑{} ahead  ↓{} behind", branch.ahead, branch.behind)
+    };
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Tracking: ", theme.text_faint),
+        StyledSpan::text(tracking, theme.text_secondary),
+    ]));
+
+    // Worktree path (replace $HOME prefix with ~ for brevity)
+    if let Some(ref wt) = branch.worktree_path {
+        let display_path = if let Some(home) = std::env::var_os("HOME") {
+            let home = Path::new(&home);
+            wt.strip_prefix(home).map_or_else(
+                |_| wt.display().to_string(),
+                |rel| format!("~/{}", rel.display()),
+            )
+        } else {
+            wt.display().to_string()
+        };
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Worktree: ", theme.text_faint),
+            StyledSpan::text(display_path, theme.text_secondary),
+        ]));
+    }
+
+    // Last commit
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Commit:   ", theme.text_faint),
+        StyledSpan::text(&branch.last_commit_message, theme.text_primary),
+    ]));
+
+    // Updated
+    if let Some(ref dt) = branch.last_updated {
+        let formatted = crate::util::format_date(dt, "relative");
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Updated:  ", theme.text_faint),
+            StyledSpan::text(formatted, theme.text_secondary),
+        ]));
+    }
+
+    lines
+}
+
+/// Render the Commits tab for a branch sidebar.
+fn render_branch_commits(commits: &[BranchCommit], theme: &ResolvedTheme) -> Vec<StyledLine> {
+    if commits.is_empty() {
+        return vec![StyledLine::from_span(StyledSpan::text(
+            "(no commits)",
+            theme.text_faint,
+        ))];
+    }
+
+    let mut lines = Vec::new();
+    for c in commits {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text(format!("{} ", c.short_sha), theme.text_warning),
+            StyledSpan::text(crate::util::expand_emoji(&c.message), theme.text_primary),
+        ]));
+        if !c.author.is_empty() || !c.date.is_empty() {
+            lines.push(StyledLine::from_spans(vec![
+                StyledSpan::text(format!("        {}", c.author), theme.text_actor),
+                StyledSpan::text(format!("  {}", c.date), theme.text_faint),
+            ]));
+        }
+    }
+    lines
 }
 
 fn default_theme() -> ResolvedTheme {
@@ -854,19 +1184,21 @@ mod tests {
             last_updated: Some(chrono::Utc::now()),
             ahead: 2,
             behind: 1,
+            worktree_path: None,
         }
     }
 
     #[test]
-    fn branch_columns_has_five_entries() {
+    fn branch_columns_has_six_entries() {
         let theme = test_theme();
         let cols = branch_columns(&theme.icons);
-        assert_eq!(cols.len(), 5);
+        assert_eq!(cols.len(), 6);
         assert_eq!(cols[0].id, "current");
         assert_eq!(cols[1].id, "name");
         assert_eq!(cols[2].id, "message");
-        assert_eq!(cols[3].id, "ahead_behind");
-        assert_eq!(cols[4].id, "updated");
+        assert_eq!(cols[3].id, "worktree");
+        assert_eq!(cols[4].id, "ahead_behind");
+        assert_eq!(cols[5].id, "updated");
     }
 
     #[test]
@@ -920,6 +1252,23 @@ mod tests {
         branch.last_commit_message = "fix: resolve bug".to_owned();
         let row = branch_to_row(&branch, &theme, "relative");
         assert_eq!(row.get("message").unwrap().text(), "fix: resolve bug");
+    }
+
+    #[test]
+    fn branch_to_row_worktree_cell() {
+        let theme = test_theme();
+        let mut branch = sample_branch("feat-x", false);
+        branch.worktree_path = Some(PathBuf::from("/home/user/worktrees/feat-x"));
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("worktree").unwrap().text(), "feat-x");
+    }
+
+    #[test]
+    fn branch_to_row_worktree_empty() {
+        let theme = test_theme();
+        let branch = sample_branch("main", true);
+        let row = branch_to_row(&branch, &theme, "relative");
+        assert_eq!(row.get("worktree").unwrap().text(), "");
     }
 
     #[test]

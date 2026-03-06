@@ -364,6 +364,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     color_depth: depth,
                     width,
                     height,
+                    preview_width_pct,
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,

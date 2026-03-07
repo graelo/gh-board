@@ -123,7 +123,8 @@ async fn handle_request(
     scheduler: &mut RefreshScheduler,
     refresh_interval: Duration,
 ) {
-    tracing::debug!("engine: received request");
+    let label = req.label();
+    tracing::debug!("engine: received request: {label}");
     match req {
         // --- Fetch PRs ---
         Request::FetchPrs {

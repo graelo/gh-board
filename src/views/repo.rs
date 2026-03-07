@@ -789,8 +789,13 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                 .iter()
                 .map(|b| b.repo_label.clone())
                 .collect();
+            let repos_to_fetch: Vec<&String> = if let Some(scope) = scope_repo {
+                repos.iter().filter(|r| *r == scope).collect()
+            } else {
+                repos.iter().collect()
+            };
             let fetched = pr_repos_fetched.read();
-            for repo_label in &repos {
+            for repo_label in repos_to_fetch {
                 if fetched.contains(repo_label) {
                     continue;
                 }
@@ -798,7 +803,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                     title: repo_label.clone(),
                     filters: format!("repo:{repo_label} is:pr is:open"),
                     host: None,
-                    limit: Some(200),
+                    limit: Some(50),
                     layout: None,
                 };
                 // filter_idx is ignored in the repo view polling loop;

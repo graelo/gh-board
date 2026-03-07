@@ -834,7 +834,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             rate_limit,
                         } => {
                             tracing::debug!(
-                                "prs: PrsFetched received: filter_idx={filter_idx} count={}", prs.len()
+                                "prs: PrsFetched received: filter_idx={filter_idx} count={}",
+                                prs.len()
                             );
                             if rate_limit.is_some() {
                                 rate_limit_state.set(rate_limit);

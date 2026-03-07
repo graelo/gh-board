@@ -315,7 +315,10 @@ pub fn NotificationsView<'a>(
             })
             .collect();
         eng.send(Request::RegisterRefresh {
-            configs: scoped_configs.into_iter().map(FilterConfig::Notification).collect(),
+            configs: scoped_configs
+                .into_iter()
+                .map(FilterConfig::Notification)
+                .collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

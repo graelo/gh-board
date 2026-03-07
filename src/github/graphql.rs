@@ -1683,4 +1683,3 @@ pub async fn fetch_repo_collaborators(
 
     Ok((logins, rate_limit))
 }
-

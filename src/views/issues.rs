@@ -463,7 +463,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             })
             .collect();
         eng.send(Request::RegisterRefresh {
-            configs: scoped_configs.into_iter().map(FilterConfig::Issue).collect(),
+            configs: scoped_configs
+                .into_iter()
+                .map(FilterConfig::Issue)
+                .collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);
@@ -593,7 +596,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             }
                             filter_in_flight.set(ifl);
                         }
-                        Event::IssueDetailFetched { number, detail, rate_limit } => {
+                        Event::IssueDetailFetched {
+                            number,
+                            detail,
+                            rate_limit,
+                        } => {
                             let mut cache = detail_cache.read().clone();
                             cache.insert(number, detail);
                             detail_cache.set(cache);

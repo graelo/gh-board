@@ -469,7 +469,10 @@ pub fn ActionsView<'a>(
             })
             .collect();
         eng.send(Request::RegisterRefresh {
-            configs: resolved_for_refresh.into_iter().map(FilterConfig::Action).collect(),
+            configs: resolved_for_refresh
+                .into_iter()
+                .map(FilterConfig::Action)
+                .collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

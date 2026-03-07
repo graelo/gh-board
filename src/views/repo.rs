@@ -634,6 +634,8 @@ pub struct RepoViewProps<'a> {
     pub is_active: bool,
     /// Auto-refetch interval in minutes (0 = disabled).
     pub refetch_interval_minutes: u32,
+    /// Shared rate-limit state (owned by App).
+    pub rate_limit: Option<State<Option<RateLimitInfo>>>,
 }
 
 #[component]
@@ -686,7 +688,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut pr_repos_fetched = hooks.use_state(HashSet::<String>::new);
 
     // Rate-limit info from engine responses.
-    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+    let fallback_rl = hooks.use_state(|| None);
+    let mut rate_limit_state = props.rate_limit.unwrap_or(fallback_rl);
 
     // Per-view event channel for engine replies.
     let event_channel = hooks.use_state(|| {

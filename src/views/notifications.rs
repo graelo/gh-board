@@ -17,7 +17,7 @@ use crate::config::keybindings::{
     execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::NotificationFilter;
-use crate::engine::{EngineHandle, Event, Request};
+use crate::engine::{EngineHandle, Event, FilterConfig, Request};
 use crate::filter::{self, apply_scope};
 use crate::theme::ResolvedTheme;
 use crate::types::{Notification, RateLimitInfo, SubjectType};
@@ -217,6 +217,8 @@ pub struct NotificationsViewProps<'a> {
     pub is_active: bool,
     /// Auto-refetch interval in minutes (0 = disabled).
     pub refetch_interval_minutes: u32,
+    /// Shared rate-limit state (owned by App).
+    pub rate_limit: Option<State<Option<RateLimitInfo>>>,
 }
 
 #[component]
@@ -246,7 +248,8 @@ pub fn NotificationsView<'a>(
     let mut help_visible = hooks.use_state(|| false);
     let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
     let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
-    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+    let fallback_rl = hooks.use_state(|| None);
+    let mut rate_limit_state = props.rate_limit.unwrap_or(fallback_rl);
 
     // Whether RegisterNotificationsRefresh has been sent to the engine yet.
     let mut refresh_registered = hooks.use_state(|| false);
@@ -264,10 +267,7 @@ pub fn NotificationsView<'a>(
     });
 
     // Event channel: engine sends events back to this view.
-    let event_channel = hooks.use_state(|| {
-        let (tx, rx) = std::sync::mpsc::channel::<Event>();
-        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-    });
+    let event_channel = hooks.use_state(super::common::new_event_channel);
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     // Clone so it can be captured in 'static futures.
     let engine: Option<crate::engine::EngineHandle> = props.engine.cloned();
@@ -311,8 +311,11 @@ pub fn NotificationsView<'a>(
                 modified
             })
             .collect();
-        eng.send(Request::RegisterNotificationsRefresh {
-            filter_configs: scoped_configs,
+        eng.send(Request::RegisterRefresh {
+            configs: scoped_configs
+                .into_iter()
+                .map(FilterConfig::Notification)
+                .collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);
@@ -324,11 +327,8 @@ pub fn NotificationsView<'a>(
     {
         // 'R' was pressed: reset the flag and eagerly fetch every filter.
         refresh_all.set(false);
-        let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, cfg) in filters_cfg.iter().enumerate() {
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = true;
-            }
+            super::common::set_in_flight(&mut filter_in_flight, filter_idx, true);
             let mut modified_filter = cfg.clone();
             modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
             eng.send(Request::FetchNotifications {
@@ -337,18 +337,13 @@ pub fn NotificationsView<'a>(
                 reply_tx: event_tx.clone(),
             });
         }
-        filter_in_flight.set(in_flight);
     } else if active_needs_fetch
         && !active_in_flight
         && is_active
         && let Some(cfg) = filters_cfg.get(current_filter_idx)
         && let Some(ref eng) = engine
     {
-        let mut in_flight = filter_in_flight.read().clone();
-        if current_filter_idx < in_flight.len() {
-            in_flight[current_filter_idx] = true;
-        }
-        filter_in_flight.set(in_flight);
+        super::common::set_in_flight(&mut filter_in_flight, current_filter_idx, true);
 
         let filter_idx = current_filter_idx;
         let mut modified_filter = cfg.clone();
@@ -419,11 +414,7 @@ pub fn NotificationsView<'a>(
                                 times[filter_idx] = Some(std::time::Instant::now());
                             }
                             filter_fetch_times.set(times);
-                            let mut ifl = filter_in_flight.read().clone();
-                            if filter_idx < ifl.len() {
-                                ifl[filter_idx] = false;
-                            }
-                            filter_in_flight.set(ifl);
+                            super::common::set_in_flight(&mut filter_in_flight, filter_idx, false);
                             if let Some(rl) = rate_limit {
                                 rate_limit_state.set(Some(rl));
                             }
@@ -449,11 +440,7 @@ pub fn NotificationsView<'a>(
                                     times[fi] = Some(std::time::Instant::now());
                                 }
                                 filter_fetch_times.set(times);
-                                let mut ifl2 = filter_in_flight.read().clone();
-                                if fi < ifl2.len() {
-                                    ifl2[fi] = false;
-                                }
-                                filter_in_flight.set(ifl2);
+                                super::common::set_in_flight(&mut filter_in_flight, fi, false);
                             }
                         }
                         Event::MutationOk { description } => {
@@ -479,9 +466,6 @@ pub fn NotificationsView<'a>(
                                 "{description}: {message}"
                             ))));
                             status_set_at.set(Some(std::time::Instant::now()));
-                        }
-                        Event::RateLimitUpdated { info } => {
-                            rate_limit_state.set(Some(info));
                         }
                         _ => {}
                     }

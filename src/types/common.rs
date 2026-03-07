@@ -227,7 +227,7 @@ impl ReactionGroups {
 }
 
 /// Public rate limit info extracted from GraphQL responses.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Deserialize)]
 pub struct RateLimitInfo {
     pub limit: u32,
     pub remaining: u32,

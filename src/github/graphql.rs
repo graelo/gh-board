@@ -256,17 +256,10 @@ struct GraphQLError {
     message: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct RawRateLimit {
-    limit: u32,
-    remaining: u32,
-    cost: u32,
-}
-
 #[derive(Debug, Deserialize)]
 struct SearchData {
     #[serde(rename = "rateLimit", default)]
-    rate_limit: Option<RawRateLimit>,
+    rate_limit: Option<RateLimitInfo>,
     search: SearchResult,
 }
 
@@ -281,7 +274,7 @@ struct SearchResult {
 #[derive(Debug, Deserialize)]
 struct IssueSearchData {
     #[serde(rename = "rateLimit", default)]
-    rate_limit: Option<RawRateLimit>,
+    rate_limit: Option<RateLimitInfo>,
     search: IssueSearchResult,
 }
 
@@ -309,7 +302,7 @@ pub struct PageInfo {
 #[derive(Debug, Deserialize)]
 struct PrDetailData {
     #[serde(rename = "rateLimit", default)]
-    rate_limit: Option<RawRateLimit>,
+    rate_limit: Option<RateLimitInfo>,
     repository: Option<PrDetailRepo>,
 }
 
@@ -928,11 +921,7 @@ pub async fn search_pull_requests(
         .data
         .context("GraphQL response missing data field")?;
 
-    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
-        limit: rl.limit,
-        remaining: rl.remaining,
-        cost: rl.cost,
-    });
+    let rate_limit = data.rate_limit;
 
     let pull_requests = data
         .search
@@ -1051,11 +1040,7 @@ pub async fn search_issues(
         .data
         .context("GraphQL response missing data field")?;
 
-    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
-        limit: rl.limit,
-        remaining: rl.remaining,
-        cost: rl.cost,
-    });
+    let rate_limit = data.rate_limit;
 
     let issues = data
         .search
@@ -1138,7 +1123,7 @@ pub async fn search_issues_all(
 #[derive(Debug, Deserialize)]
 struct IssueDetailData {
     #[serde(rename = "rateLimit", default)]
-    rate_limit: Option<RawRateLimit>,
+    rate_limit: Option<RateLimitInfo>,
     repository: Option<IssueDetailRepo>,
 }
 
@@ -1350,11 +1335,7 @@ pub async fn fetch_pr_detail(
         .data
         .context("GraphQL response missing data field")?;
 
-    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
-        limit: rl.limit,
-        remaining: rl.remaining,
-        cost: rl.cost,
-    });
+    let rate_limit = data.rate_limit;
 
     let raw = data
         .repository
@@ -1422,11 +1403,7 @@ pub async fn fetch_issue_detail(
         .data
         .context("GraphQL response missing data field")?;
 
-    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
-        limit: rl.limit,
-        remaining: rl.remaining,
-        cost: rl.cost,
-    });
+    let rate_limit = data.rate_limit;
 
     let raw = data
         .repository
@@ -1510,7 +1487,7 @@ struct RepoLabelsVariables {
 #[derive(Debug, Deserialize)]
 struct RepoLabelsData {
     #[serde(rename = "rateLimit", default)]
-    rate_limit: Option<RawRateLimit>,
+    rate_limit: Option<RateLimitInfo>,
     repository: Option<RepoLabelsRepo>,
 }
 
@@ -1549,7 +1526,7 @@ struct RepoCollaboratorsVariables {
 #[derive(Debug, Deserialize)]
 struct RepoCollaboratorsData {
     #[serde(rename = "rateLimit", default)]
-    rate_limit: Option<RawRateLimit>,
+    rate_limit: Option<RateLimitInfo>,
     repository: Option<RepoCollaboratorsRepo>,
 }
 
@@ -1613,11 +1590,7 @@ pub async fn fetch_repo_labels(
         .data
         .context("GraphQL response missing data field")?;
 
-    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
-        limit: rl.limit,
-        remaining: rl.remaining,
-        cost: rl.cost,
-    });
+    let rate_limit = data.rate_limit;
 
     let labels: Vec<RepoLabel> = data
         .repository
@@ -1689,11 +1662,7 @@ pub async fn fetch_repo_collaborators(
         .context("GraphQL response missing data field")?;
 
     // Extract rate limit
-    let rate_limit = data.rate_limit.map(|rl| RateLimitInfo {
-        limit: rl.limit,
-        remaining: rl.remaining,
-        cost: rl.cost,
-    });
+    let rate_limit = data.rate_limit;
 
     // Parse collaborators
     let logins: Vec<String> = data
@@ -1713,51 +1682,4 @@ pub async fn fetch_repo_collaborators(
     }
 
     Ok((logins, rate_limit))
-}
-
-// ---------------------------------------------------------------------------
-// Standalone rate-limit query
-// ---------------------------------------------------------------------------
-
-const RATE_LIMIT_QUERY: &str = r"
-query RateLimit {
-  rateLimit { limit remaining cost }
-}
-";
-
-#[derive(Serialize)]
-struct NoVariables {}
-
-#[derive(Debug, Deserialize)]
-struct RateLimitOnlyData {
-    #[serde(rename = "rateLimit", default)]
-    rate_limit: Option<RawRateLimit>,
-}
-
-/// Fetch current GraphQL rate-limit info with a minimal query (cost = 1).
-pub async fn fetch_rate_limit(octocrab: &Arc<Octocrab>) -> Result<Option<RateLimitInfo>> {
-    let payload = GraphQLPayload {
-        query: RATE_LIMIT_QUERY,
-        variables: NoVariables {},
-    };
-
-    let response: GraphQLResponse<RateLimitOnlyData> = octocrab
-        .graphql(&payload)
-        .await
-        .context("GraphQL rate limit request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
-
-    Ok(data.rate_limit.map(|rl| RateLimitInfo {
-        limit: rl.limit,
-        remaining: rl.remaining,
-        cost: rl.cost,
-    }))
 }

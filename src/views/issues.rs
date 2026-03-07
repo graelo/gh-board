@@ -19,7 +19,7 @@ use crate::config::keybindings::{
     execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::IssueFilter;
-use crate::engine::{EngineHandle, Event, Request};
+use crate::engine::{EngineHandle, Event, FilterConfig, Request};
 use crate::filter::{self, apply_scope};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine, StyledSpan};
@@ -297,6 +297,8 @@ pub struct IssuesViewProps<'a> {
     pub nav_target: Option<State<Option<NavigationTarget>>>,
     /// Go-back signal — set to true to return to previous view.
     pub go_back: Option<State<bool>>,
+    /// Shared rate-limit state (owned by App).
+    pub rate_limit: Option<State<Option<RateLimitInfo>>>,
 }
 
 #[component]
@@ -361,7 +363,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut ephemeral_filters = hooks.use_state(Vec::<(IssueFilter, Option<u64>)>::new);
 
     // State: rate limit from last GraphQL response.
-    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+    let fallback_rl = hooks.use_state(|| None);
+    let mut rate_limit_state = props.rate_limit.unwrap_or(fallback_rl);
 
     // State: per-filter fetch tracking (lazy: only fetch the active filter).
     let mut filter_fetch_times =
@@ -388,10 +391,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     }
 
     // Event channel: engine pushes events back to UI.
-    let event_channel = hooks.use_state(|| {
-        let (tx, rx) = std::sync::mpsc::channel::<Event>();
-        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-    });
+    let event_channel = hooks.use_state(super::common::new_event_channel);
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     // Clone the EngineHandle so it can be captured in 'static use_future closures.
     let engine: Option<EngineHandle> = props.engine.cloned();
@@ -459,8 +459,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 modified
             })
             .collect();
-        eng.send(Request::RegisterIssuesRefresh {
-            filter_configs: scoped_configs,
+        eng.send(Request::RegisterRefresh {
+            configs: scoped_configs
+                .into_iter()
+                .map(FilterConfig::Issue)
+                .collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);
@@ -472,11 +475,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     {
         // 'R' was pressed: reset the flag and eagerly fetch every filter.
         refresh_all.set(false);
-        let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, (cfg, _is_eph)) in all_filters.iter().enumerate() {
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = true;
-            }
+            super::common::set_in_flight(&mut filter_in_flight, filter_idx, true);
             let mut modified_filter = (*cfg).clone();
             modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
             engine_ref.send(Request::FetchIssues {
@@ -486,18 +486,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 reply_tx: event_tx.clone(),
             });
         }
-        filter_in_flight.set(in_flight);
     } else if active_needs_fetch
         && !active_in_flight
         && is_active
         && let Some(ref engine_ref) = engine
         && let Some((cfg, _is_eph)) = all_filters.get(current_filter_idx)
     {
-        let mut in_flight = filter_in_flight.read().clone();
-        if current_filter_idx < in_flight.len() {
-            in_flight[current_filter_idx] = true;
-        }
-        filter_in_flight.set(in_flight);
+        super::common::set_in_flight(&mut filter_in_flight, current_filter_idx, true);
 
         let filter_idx = current_filter_idx;
         let mut modified_filter = (*cfg).clone();
@@ -584,16 +579,19 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 times[filter_idx] = Some(std::time::Instant::now());
                             }
                             filter_fetch_times.set(times);
-                            let mut ifl = filter_in_flight.read().clone();
-                            if filter_idx < ifl.len() {
-                                ifl[filter_idx] = false;
-                            }
-                            filter_in_flight.set(ifl);
+                            super::common::set_in_flight(&mut filter_in_flight, filter_idx, false);
                         }
-                        Event::IssueDetailFetched { number, detail } => {
+                        Event::IssueDetailFetched {
+                            number,
+                            detail,
+                            rate_limit,
+                        } => {
                             let mut cache = detail_cache.read().clone();
                             cache.insert(number, detail);
                             detail_cache.set(cache);
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
+                            }
                         }
                         Event::FetchError {
                             context: _,
@@ -616,11 +614,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                     times[fi] = Some(std::time::Instant::now());
                                 }
                                 filter_fetch_times.set(times);
-                                let mut ifl = filter_in_flight.read().clone();
-                                if fi < ifl.len() {
-                                    ifl[fi] = false;
-                                }
-                                filter_in_flight.set(ifl);
+                                super::common::set_in_flight(&mut filter_in_flight, fi, false);
                             }
                         }
                         Event::MutationOk { description } => {
@@ -654,9 +648,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 "{description}: {message}"
                             ))));
                             status_set_at.set(Some(std::time::Instant::now()));
-                        }
-                        Event::RateLimitUpdated { info } => {
-                            rate_limit_state.set(Some(info));
                         }
                         Event::RepoLabelsFetched { labels, .. } => {
                             label_candidates.set(labels);

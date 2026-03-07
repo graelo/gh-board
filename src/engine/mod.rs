@@ -7,5 +7,5 @@ pub mod stub;
 
 pub use github::GitHubEngine;
 pub use interface::{Engine, EngineHandle, Event, PrRef, Request};
-pub use refresh::RefreshScheduler;
+pub use refresh::{FilterConfig, RefreshScheduler};
 pub use stub::StubEngine;

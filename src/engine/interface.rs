@@ -288,6 +288,93 @@ pub enum Request {
     Shutdown,
 }
 
+impl Request {
+    /// Clone the reply channel (if any) so we can send a timeout error after
+    /// the request future is cancelled.
+    pub(crate) fn reply_tx(&self) -> Option<Sender<Event>> {
+        match self {
+            Self::FetchPrs { reply_tx, .. }
+            | Self::FetchIssues { reply_tx, .. }
+            | Self::FetchActions { reply_tx, .. }
+            | Self::FetchRunJobs { reply_tx, .. }
+            | Self::FetchNotifications { reply_tx, .. }
+            | Self::FetchPrDetail { reply_tx, .. }
+            | Self::FetchIssueDetail { reply_tx, .. }
+            | Self::FetchRepoLabels { reply_tx, .. }
+            | Self::FetchRepoCollaborators { reply_tx, .. }
+            | Self::FetchRateLimit { reply_tx, .. }
+            | Self::PrefetchPrDetails { reply_tx, .. }
+            | Self::ApprovePr { reply_tx, .. }
+            | Self::MergePr { reply_tx, .. }
+            | Self::ClosePr { reply_tx, .. }
+            | Self::ReopenPr { reply_tx, .. }
+            | Self::AddPrComment { reply_tx, .. }
+            | Self::UpdateBranch { reply_tx, .. }
+            | Self::ReadyForReview { reply_tx, .. }
+            | Self::SetPrAssignees { reply_tx, .. }
+            | Self::SetPrLabels { reply_tx, .. }
+            | Self::CloseIssue { reply_tx, .. }
+            | Self::ReopenIssue { reply_tx, .. }
+            | Self::AddIssueComment { reply_tx, .. }
+            | Self::SetIssueLabels { reply_tx, .. }
+            | Self::SetIssueAssignees { reply_tx, .. }
+            | Self::RerunWorkflowRun { reply_tx, .. }
+            | Self::CancelWorkflowRun { reply_tx, .. }
+            | Self::MarkNotificationRead { reply_tx, .. }
+            | Self::MarkAllNotificationsRead { reply_tx, .. }
+            | Self::UnsubscribeNotification { reply_tx, .. }
+            | Self::FetchRunById { reply_tx, .. } => Some(reply_tx.clone()),
+            Self::RegisterPrsRefresh { .. }
+            | Self::RegisterIssuesRefresh { .. }
+            | Self::RegisterActionsRefresh { .. }
+            | Self::RegisterNotificationsRefresh { .. }
+            | Self::Shutdown => None,
+        }
+    }
+
+    /// Short label for logging.
+    pub(crate) fn label(&self) -> &'static str {
+        match self {
+            Self::FetchPrs { .. } => "FetchPrs",
+            Self::FetchIssues { .. } => "FetchIssues",
+            Self::FetchActions { .. } => "FetchActions",
+            Self::FetchRunJobs { .. } => "FetchRunJobs",
+            Self::FetchNotifications { .. } => "FetchNotifications",
+            Self::FetchPrDetail { .. } => "FetchPrDetail",
+            Self::FetchIssueDetail { .. } => "FetchIssueDetail",
+            Self::FetchRepoLabels { .. } => "FetchRepoLabels",
+            Self::FetchRepoCollaborators { .. } => "FetchRepoCollaborators",
+            Self::FetchRateLimit { .. } => "FetchRateLimit",
+            Self::PrefetchPrDetails { .. } => "PrefetchPrDetails",
+            Self::ApprovePr { .. } => "ApprovePr",
+            Self::MergePr { .. } => "MergePr",
+            Self::ClosePr { .. } => "ClosePr",
+            Self::ReopenPr { .. } => "ReopenPr",
+            Self::AddPrComment { .. } => "AddPrComment",
+            Self::UpdateBranch { .. } => "UpdateBranch",
+            Self::ReadyForReview { .. } => "ReadyForReview",
+            Self::SetPrAssignees { .. } => "SetPrAssignees",
+            Self::SetPrLabels { .. } => "SetPrLabels",
+            Self::CloseIssue { .. } => "CloseIssue",
+            Self::ReopenIssue { .. } => "ReopenIssue",
+            Self::AddIssueComment { .. } => "AddIssueComment",
+            Self::SetIssueLabels { .. } => "SetIssueLabels",
+            Self::SetIssueAssignees { .. } => "SetIssueAssignees",
+            Self::RerunWorkflowRun { .. } => "RerunWorkflowRun",
+            Self::CancelWorkflowRun { .. } => "CancelWorkflowRun",
+            Self::MarkNotificationRead { .. } => "MarkNotificationRead",
+            Self::MarkAllNotificationsRead { .. } => "MarkAllNotificationsRead",
+            Self::UnsubscribeNotification { .. } => "UnsubscribeNotification",
+            Self::FetchRunById { .. } => "FetchRunById",
+            Self::RegisterPrsRefresh { .. } => "RegisterPrsRefresh",
+            Self::RegisterIssuesRefresh { .. } => "RegisterIssuesRefresh",
+            Self::RegisterActionsRefresh { .. } => "RegisterActionsRefresh",
+            Self::RegisterNotificationsRefresh { .. } => "RegisterNotificationsRefresh",
+            Self::Shutdown => "Shutdown",
+        }
+    }
+}
+
 /// All events the engine can push back to UI views.
 pub enum Event {
     // -----------------------------------------------------------------------

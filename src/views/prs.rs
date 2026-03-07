@@ -701,6 +701,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .copied()
         .unwrap_or(false);
 
+    tracing::debug!(
+        "prs: lazy-fetch check: needs={active_needs_fetch} in_flight={active_in_flight} \
+         is_active={is_active} filter_idx={current_filter_idx} \
+         filter_count={filter_count} eph_count={ephemeral_count}"
+    );
+
     // Register all filters for background refresh once at mount (or after scope change).
     if !refresh_registered.get()
         && let Some(ref eng) = engine
@@ -725,6 +731,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         && let Some(ref engine) = engine
     {
         // 'R' was pressed: reset the flag and eagerly fetch every filter.
+        tracing::debug!("prs: refresh_all FIRING for {} filters", all_filters.len());
         refresh_all.set(false);
         let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, (cfg, _is_eph)) in all_filters.iter().enumerate() {
@@ -761,6 +768,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
             // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
             let force = force_refresh.get();
+            tracing::debug!("prs: lazy-fetch FIRING for filter_idx={filter_idx} force={force}");
             if force {
                 force_refresh.set(false);
             }
@@ -825,6 +833,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             prs,
                             rate_limit,
                         } => {
+                            tracing::debug!(
+                                "prs: PrsFetched received: filter_idx={filter_idx} count={}", prs.len()
+                            );
                             if rate_limit.is_some() {
                                 rate_limit_state.set(rate_limit);
                             }
@@ -1057,6 +1068,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             } else {
                 // 2. Check if any filter is still loading — wait.
                 let any_in_flight = filter_in_flight.read().iter().any(|&f| f);
+                tracing::debug!("prs: deep-link: any_in_flight={any_in_flight}");
                 if !any_in_flight {
                     // 3. All loaded, PR not found.
                     let full_repo = format!("{owner}/{repo}");
@@ -1883,6 +1895,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             state.filters[idx] = FilterData::default();
                                         }
                                         prs_state.set(state);
+                                        tracing::debug!("prs: Refresh handler: idx={idx} force_refresh=true");
                                         let mut times = filter_fetch_times.read().clone();
                                         if idx < times.len() {
                                             times[idx] = None;
@@ -1895,6 +1908,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         scroll_offset.set(0);
                                     }
                                     BuiltinAction::RefreshAll => {
+                                        tracing::debug!("prs: RefreshAll handler: refresh_all=true");
                                         let mut state = prs_state.read().clone();
                                         for filter in &mut state.filters {
                                             *filter = FilterData::default();

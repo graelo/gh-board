@@ -480,9 +480,6 @@ pub fn NotificationsView<'a>(
                             ))));
                             status_set_at.set(Some(std::time::Instant::now()));
                         }
-                        Event::RateLimitUpdated { info } => {
-                            rate_limit_state.set(Some(info));
-                        }
                         _ => {}
                     }
                 }

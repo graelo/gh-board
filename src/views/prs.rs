@@ -1001,9 +1001,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             ))));
                             status_set_at.set(Some(std::time::Instant::now()));
                         }
-                        Event::RateLimitUpdated { info } => {
-                            rate_limit_state.set(Some(info));
-                        }
                         Event::RepoLabelsFetched { labels, .. } => {
                             label_candidates.set(labels);
                         }

@@ -105,10 +105,6 @@ pub enum Request {
         repo: String,
         reply_tx: Sender<Event>,
     },
-    /// Fetch current GraphQL rate-limit info (minimal query, cost = 1).
-    FetchRateLimit {
-        reply_tx: Sender<Event>,
-    },
     /// Prefetch PR details for a list of PRs (includes branch refs for the compare call).
     PrefetchPrDetails {
         prs: Vec<PrRef>,
@@ -302,7 +298,6 @@ impl Request {
             | Self::FetchIssueDetail { reply_tx, .. }
             | Self::FetchRepoLabels { reply_tx, .. }
             | Self::FetchRepoCollaborators { reply_tx, .. }
-            | Self::FetchRateLimit { reply_tx, .. }
             | Self::PrefetchPrDetails { reply_tx, .. }
             | Self::ApprovePr { reply_tx, .. }
             | Self::MergePr { reply_tx, .. }
@@ -344,7 +339,6 @@ impl Request {
             Self::FetchIssueDetail { .. } => "FetchIssueDetail",
             Self::FetchRepoLabels { .. } => "FetchRepoLabels",
             Self::FetchRepoCollaborators { .. } => "FetchRepoCollaborators",
-            Self::FetchRateLimit { .. } => "FetchRateLimit",
             Self::PrefetchPrDetails { .. } => "PrefetchPrDetails",
             Self::ApprovePr { .. } => "ApprovePr",
             Self::MergePr { .. } => "MergePr",
@@ -445,10 +439,4 @@ pub enum Event {
         message: String,
     },
 
-    // -----------------------------------------------------------------------
-    // Rate limit
-    // -----------------------------------------------------------------------
-    RateLimitUpdated {
-        info: RateLimitInfo,
-    },
 }

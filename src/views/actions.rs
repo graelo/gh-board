@@ -693,9 +693,6 @@ pub fn ActionsView<'a>(
                             ))));
                             status_set_at.set(Some(std::time::Instant::now()));
                         }
-                        Event::RateLimitUpdated { info } => {
-                            rate_limit_state.set(Some(info));
-                        }
                         Event::SingleRunFetched {
                             run_id,
                             run,

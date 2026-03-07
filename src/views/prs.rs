@@ -631,10 +631,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let (local_action_tx, local_action_rx_arc) = local_action_channel.read().clone();
 
     // Per-view event channel: engine sends results here, polling future processes them.
-    let event_channel = hooks.use_state(|| {
-        let (tx, rx) = std::sync::mpsc::channel::<Event>();
-        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-    });
+    let event_channel = hooks.use_state(super::common::new_event_channel);
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     // Clone the EngineHandle so it can be captured in 'static use_future closures.
     let engine: Option<EngineHandle> = props.engine.cloned();
@@ -738,11 +735,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         // 'R' was pressed: reset the flag and eagerly fetch every filter.
         tracing::debug!("prs: refresh_all FIRING for {} filters", all_filters.len());
         refresh_all.set(false);
-        let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, (cfg, _is_eph)) in all_filters.iter().enumerate() {
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = true;
-            }
+            super::common::set_in_flight(&mut filter_in_flight, filter_idx, true);
             let mut modified_filter = (*cfg).clone();
             modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
             engine.send(Request::FetchPrs {
@@ -752,7 +746,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 reply_tx: event_tx.clone(),
             });
         }
-        filter_in_flight.set(in_flight);
     } else if active_needs_fetch
         && !active_in_flight
         && is_active
@@ -760,12 +753,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     {
         // Look up the active filter from the merged list (config + ephemeral).
         if let Some((cfg, _is_eph)) = all_filters.get(current_filter_idx) {
-            // Mark this filter as in-flight.
-            let mut in_flight = filter_in_flight.read().clone();
-            if current_filter_idx < in_flight.len() {
-                in_flight[current_filter_idx] = true;
-            }
-            filter_in_flight.set(in_flight);
+            super::common::set_in_flight(&mut filter_in_flight, current_filter_idx, true);
 
             let filter_idx = current_filter_idx;
             let mut modified_filter = (*cfg).clone();
@@ -895,11 +883,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 times[filter_idx] = Some(std::time::Instant::now());
                             }
                             filter_fetch_times.set(times);
-                            let mut ifl = filter_in_flight.read().clone();
-                            if filter_idx < ifl.len() {
-                                ifl[filter_idx] = false;
-                            }
-                            filter_in_flight.set(ifl);
+                            super::common::set_in_flight(&mut filter_in_flight, filter_idx, false);
                             // Trigger prefetch via engine.
                             if !prs_for_prefetch.is_empty()
                                 && let Some(ref eng) = engine
@@ -963,11 +947,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     times[fi] = Some(std::time::Instant::now());
                                 }
                                 filter_fetch_times.set(times);
-                                let mut ifl = filter_in_flight.read().clone();
-                                if fi < ifl.len() {
-                                    ifl[fi] = false;
-                                }
-                                filter_in_flight.set(ifl);
+                                super::common::set_in_flight(&mut filter_in_flight, fi, false);
                             }
                         }
                         Event::MutationOk { description } => {

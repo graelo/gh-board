@@ -412,10 +412,7 @@ pub fn ActionsView<'a>(
         filters: initial_filters,
     });
 
-    let event_channel = hooks.use_state(|| {
-        let (tx, rx) = std::sync::mpsc::channel::<Event>();
-        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-    });
+    let event_channel = hooks.use_state(super::common::new_event_channel);
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     let engine: Option<crate::engine::EngineHandle> = props.engine.cloned();
 
@@ -483,7 +480,6 @@ pub fn ActionsView<'a>(
         && let Some(ref eng) = engine
     {
         refresh_all.set(false);
-        let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, (cfg, is_eph)) in all_filters.iter().enumerate() {
             let Some(resolved_repo) =
                 resolve_filter_repo(&cfg.repo, scope_repo.as_deref(), detected_repo.as_deref())
@@ -503,16 +499,13 @@ pub fn ActionsView<'a>(
                     ..(*cfg).clone()
                 }
             };
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = true;
-            }
+            super::common::set_in_flight(&mut filter_in_flight, filter_idx, true);
             eng.send(Request::FetchActions {
                 filter_idx,
                 filter,
                 reply_tx: event_tx.clone(),
             });
         }
-        filter_in_flight.set(in_flight);
     } else if active_needs_fetch
         && !active_in_flight
         && is_active
@@ -531,11 +524,7 @@ pub fn ActionsView<'a>(
                         ..(*cfg).clone()
                     }
                 };
-                let mut in_flight = filter_in_flight.read().clone();
-                if current_filter_idx < in_flight.len() {
-                    in_flight[current_filter_idx] = true;
-                }
-                filter_in_flight.set(in_flight);
+                super::common::set_in_flight(&mut filter_in_flight, current_filter_idx, true);
                 eng.send(Request::FetchActions {
                     filter_idx: current_filter_idx,
                     filter,
@@ -608,11 +597,7 @@ pub fn ActionsView<'a>(
                                 times[filter_idx] = Some(std::time::Instant::now());
                             }
                             filter_fetch_times.set(times);
-                            let mut ifl = filter_in_flight.read().clone();
-                            if filter_idx < ifl.len() {
-                                ifl[filter_idx] = false;
-                            }
-                            filter_in_flight.set(ifl);
+                            super::common::set_in_flight(&mut filter_in_flight, filter_idx, false);
                             // Fresh run data arrived — evict job cache so the
                             // sidebar re-fetches updated job status rather than
                             // displaying stale results from the previous poll.
@@ -762,11 +747,7 @@ pub fn ActionsView<'a>(
                                     times[fi] = Some(std::time::Instant::now());
                                 }
                                 filter_fetch_times.set(times);
-                                let mut ifl2 = filter_in_flight.read().clone();
-                                if fi < ifl2.len() {
-                                    ifl2[fi] = false;
-                                }
-                                filter_in_flight.set(ifl2);
+                                super::common::set_in_flight(&mut filter_in_flight, fi, false);
                             }
                         }
                         _ => {}

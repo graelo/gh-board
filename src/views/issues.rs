@@ -391,10 +391,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     }
 
     // Event channel: engine pushes events back to UI.
-    let event_channel = hooks.use_state(|| {
-        let (tx, rx) = std::sync::mpsc::channel::<Event>();
-        (tx, std::sync::Arc::new(std::sync::Mutex::new(rx)))
-    });
+    let event_channel = hooks.use_state(super::common::new_event_channel);
     let (event_tx, event_rx_arc) = event_channel.read().clone();
     // Clone the EngineHandle so it can be captured in 'static use_future closures.
     let engine: Option<EngineHandle> = props.engine.cloned();
@@ -478,11 +475,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     {
         // 'R' was pressed: reset the flag and eagerly fetch every filter.
         refresh_all.set(false);
-        let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, (cfg, _is_eph)) in all_filters.iter().enumerate() {
-            if filter_idx < in_flight.len() {
-                in_flight[filter_idx] = true;
-            }
+            super::common::set_in_flight(&mut filter_in_flight, filter_idx, true);
             let mut modified_filter = (*cfg).clone();
             modified_filter.filters = apply_scope(&cfg.filters, scope_repo.as_deref());
             engine_ref.send(Request::FetchIssues {
@@ -492,18 +486,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 reply_tx: event_tx.clone(),
             });
         }
-        filter_in_flight.set(in_flight);
     } else if active_needs_fetch
         && !active_in_flight
         && is_active
         && let Some(ref engine_ref) = engine
         && let Some((cfg, _is_eph)) = all_filters.get(current_filter_idx)
     {
-        let mut in_flight = filter_in_flight.read().clone();
-        if current_filter_idx < in_flight.len() {
-            in_flight[current_filter_idx] = true;
-        }
-        filter_in_flight.set(in_flight);
+        super::common::set_in_flight(&mut filter_in_flight, current_filter_idx, true);
 
         let filter_idx = current_filter_idx;
         let mut modified_filter = (*cfg).clone();
@@ -590,11 +579,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 times[filter_idx] = Some(std::time::Instant::now());
                             }
                             filter_fetch_times.set(times);
-                            let mut ifl = filter_in_flight.read().clone();
-                            if filter_idx < ifl.len() {
-                                ifl[filter_idx] = false;
-                            }
-                            filter_in_flight.set(ifl);
+                            super::common::set_in_flight(&mut filter_in_flight, filter_idx, false);
                         }
                         Event::IssueDetailFetched {
                             number,
@@ -629,11 +614,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                     times[fi] = Some(std::time::Instant::now());
                                 }
                                 filter_fetch_times.set(times);
-                                let mut ifl = filter_in_flight.read().clone();
-                                if fi < ifl.len() {
-                                    ifl[fi] = false;
-                                }
-                                filter_in_flight.set(ifl);
+                                super::common::set_in_flight(&mut filter_in_flight, fi, false);
                             }
                         }
                         Event::MutationOk { description } => {

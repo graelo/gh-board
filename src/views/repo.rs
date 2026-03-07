@@ -1499,7 +1499,7 @@ fn render_branch_overview(
     // PR info
     if let Some(pr) = pr_map.get(&pr_map_key(&branch.repo_label, &branch.name)) {
         lines.push(StyledLine::from_spans(vec![
-            StyledSpan::text("PR:       ", theme.text_faint),
+            StyledSpan::bold("PR:       ", theme.text_secondary),
             StyledSpan::text(format!("#{}", pr.number), theme.text_success),
             StyledSpan::text(format!(" {}", pr.title), theme.text_primary),
         ]));
@@ -1508,7 +1508,7 @@ fn render_branch_overview(
     // Repo label
     if !branch.repo_label.is_empty() {
         lines.push(StyledLine::from_spans(vec![
-            StyledSpan::text("Repo:     ", theme.text_faint),
+            StyledSpan::bold("Repo:     ", theme.text_secondary),
             StyledSpan::text(&branch.repo_label, theme.text_secondary),
         ]));
     }
@@ -1525,7 +1525,7 @@ fn render_branch_overview(
             wt.display().to_string()
         };
         lines.push(StyledLine::from_spans(vec![
-            StyledSpan::text("Worktree: ", theme.text_faint),
+            StyledSpan::bold("Worktree: ", theme.text_secondary),
             StyledSpan::text(display_path, theme.text_secondary),
         ]));
     }
@@ -1537,13 +1537,13 @@ fn render_branch_overview(
         format!("↑{} ahead  ↓{} behind", branch.ahead, branch.behind)
     };
     lines.push(StyledLine::from_spans(vec![
-        StyledSpan::text(format!("vs {default_branch}: "), theme.text_faint),
+        StyledSpan::bold(format!("vs {default_branch}: "), theme.text_secondary),
         StyledSpan::text(tracking, theme.text_secondary),
     ]));
 
     // Last commit
     lines.push(StyledLine::from_spans(vec![
-        StyledSpan::text("Commit:   ", theme.text_faint),
+        StyledSpan::bold("Commit:   ", theme.text_secondary),
         StyledSpan::text(&branch.last_commit_message, theme.text_primary),
     ]));
 
@@ -1551,8 +1551,8 @@ fn render_branch_overview(
     if let Some(ref dt) = branch.last_updated {
         let formatted = crate::util::format_date(dt, "relative");
         lines.push(StyledLine::from_spans(vec![
-            StyledSpan::text("Updated:  ", theme.text_faint),
-            StyledSpan::text(formatted, theme.text_secondary),
+            StyledSpan::bold("Updated:  ", theme.text_secondary),
+            StyledSpan::text(formatted, theme.text_faint),
         ]));
     }
 

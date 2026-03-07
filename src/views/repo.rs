@@ -247,6 +247,7 @@ fn list_branches(repo_path: &Path, repo_label: &str) -> Vec<Branch> {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let default_branch = detect_default_branch(repo_path);
+    let origin_default = format!("origin/{default_branch}");
     let worktrees = list_worktrees(repo_path);
 
     stdout
@@ -267,7 +268,7 @@ fn list_branches(repo_path: &Path, repo_label: &str) -> Vec<Branch> {
             let (ahead, behind) = if name == default_branch {
                 (0, 0)
             } else {
-                get_ahead_behind(repo_path, &name, &default_branch)
+                get_ahead_behind(repo_path, &name, &origin_default)
             };
 
             let worktree_path = worktrees.get(&name).cloned();
@@ -1330,7 +1331,10 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         let md_lines: Vec<StyledLine> = match current_tab {
             SidebarTab::Overview => {
                 if let Some(branch) = current_branch {
-                    render_branch_overview(branch, &theme, &pr_map_read)
+                    let def_branch = props
+                        .repo_path
+                        .map_or_else(|| "main".to_owned(), detect_default_branch);
+                    render_branch_overview(branch, &theme, &pr_map_read, &def_branch)
                 } else {
                     Vec::new()
                 }
@@ -1469,6 +1473,7 @@ fn render_branch_overview(
     branch: &Branch,
     theme: &ResolvedTheme,
     pr_map: &HashMap<String, PullRequest>,
+    default_branch: &str,
 ) -> Vec<StyledLine> {
     let mut lines = Vec::new();
 
@@ -1532,7 +1537,7 @@ fn render_branch_overview(
         format!("↑{} ahead  ↓{} behind", branch.ahead, branch.behind)
     };
     lines.push(StyledLine::from_spans(vec![
-        StyledSpan::text("Tracking: ", theme.text_faint),
+        StyledSpan::text(format!("vs {default_branch}: "), theme.text_faint),
         StyledSpan::text(tracking, theme.text_secondary),
     ]));
 

@@ -97,7 +97,7 @@ impl GitHubEngine {
                 _ = refresh_tick.tick() => {
                     if tokio::time::timeout(
                         TICK_REFRESH_TIMEOUT,
-                        tick_refresh(&mut client, &mut scheduler),
+                        tick_refresh(&mut client, &mut scheduler, refresh_interval),
                     )
                     .await
                     .is_err()
@@ -787,119 +787,42 @@ async fn handle_request(
 // Background refresh
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::too_many_lines)]
-async fn tick_refresh(client: &mut GitHubClient, scheduler: &mut RefreshScheduler) {
-    let due = scheduler.due_entries();
+async fn tick_refresh(
+    client: &mut GitHubClient,
+    scheduler: &mut RefreshScheduler,
+    refresh_interval: Duration,
+) {
     for DueEntry {
         filter_idx,
         filter,
         notify_tx,
-    } in due
+    } in scheduler.due_entries()
     {
-        match filter {
-            FilterConfig::Pr(pr_filter) => {
-                let host = pr_filter.host.as_deref().unwrap_or("github.com");
-                let Ok(octocrab) = client.octocrab_for(host) else {
-                    continue;
-                };
-                let limit = pr_filter.limit.unwrap_or(100);
-                match graphql::search_pull_requests_all(&octocrab, &pr_filter.filters, limit, None)
-                    .await
-                {
-                    Ok((prs, rate_limit)) => {
-                        scheduler.mark_fetched(filter_idx, ViewKind::Prs);
-                        tracing::debug!(
-                            "engine: refresh PrsFetched[{filter_idx}] count={}",
-                            prs.len()
-                        );
-                        let _ = notify_tx.send(Event::PrsFetched {
-                            filter_idx,
-                            prs,
-                            rate_limit,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::debug!("engine: refresh FetchPrs[{filter_idx}] error: {e}");
-                    }
-                }
-            }
-            FilterConfig::Issue(issue_filter) => {
-                let host = issue_filter.host.as_deref().unwrap_or("github.com");
-                let Ok(octocrab) = client.octocrab_for(host) else {
-                    continue;
-                };
-                let limit = issue_filter.limit.unwrap_or(100);
-                match graphql::search_issues_all(&octocrab, &issue_filter.filters, limit, None)
-                    .await
-                {
-                    Ok((issues, rate_limit)) => {
-                        scheduler.mark_fetched(filter_idx, ViewKind::Issues);
-                        tracing::debug!(
-                            "engine: refresh IssuesFetched[{filter_idx}] count={}",
-                            issues.len()
-                        );
-                        let _ = notify_tx.send(Event::IssuesFetched {
-                            filter_idx,
-                            issues,
-                            rate_limit,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::debug!("engine: refresh FetchIssues[{filter_idx}] error: {e}");
-                    }
-                }
-            }
-            FilterConfig::Notification(notif_filter) => {
-                let host = notif_filter.host.as_deref().unwrap_or("github.com");
-                let Ok(octocrab) = client.octocrab_for(host) else {
-                    continue;
-                };
-                let limit = notif_filter.limit.unwrap_or(50);
-                let params = notif::parse_filters(&notif_filter.filters, limit);
-                match notif::fetch_notifications(&octocrab, &params).await {
-                    Ok((notifications, rate_limit)) => {
-                        scheduler.mark_fetched(filter_idx, ViewKind::Notifications);
-                        tracing::debug!(
-                            "engine: refresh NotificationsFetched[{filter_idx}] count={}",
-                            notifications.len()
-                        );
-                        let _ = notify_tx.send(Event::NotificationsFetched {
-                            filter_idx,
-                            notifications,
-                            rate_limit,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::debug!(
-                            "engine: refresh FetchNotifications[{filter_idx}] error: {e}"
-                        );
-                    }
-                }
-            }
-            FilterConfig::Action(actions_filter) => {
-                let host = actions_filter.host.as_deref().unwrap_or("github.com");
-                let Ok(octocrab) = client.octocrab_for(host) else {
-                    continue;
-                };
-                match gh_actions::fetch_workflow_runs(&octocrab, &actions_filter).await {
-                    Ok((runs, rate_limit)) => {
-                        scheduler.mark_fetched(filter_idx, ViewKind::Actions);
-                        tracing::debug!(
-                            "engine: refresh ActionsFetched[{filter_idx}] count={}",
-                            runs.len()
-                        );
-                        let _ = notify_tx.send(Event::ActionsFetched {
-                            filter_idx,
-                            runs,
-                            rate_limit,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::debug!("engine: refresh FetchActions[{filter_idx}] error: {e}");
-                    }
-                }
-            }
-        }
+        let req = match filter {
+            FilterConfig::Pr(f) => Request::FetchPrs {
+                filter_idx,
+                filter: f,
+                force: true,
+                reply_tx: notify_tx,
+            },
+            FilterConfig::Issue(f) => Request::FetchIssues {
+                filter_idx,
+                filter: f,
+                force: true,
+                reply_tx: notify_tx,
+            },
+            FilterConfig::Notification(f) => Request::FetchNotifications {
+                filter_idx,
+                filter: f,
+                reply_tx: notify_tx,
+            },
+            FilterConfig::Action(f) => Request::FetchActions {
+                filter_idx,
+                filter: f,
+                reply_tx: notify_tx,
+            },
+        };
+        handle_request(req, client, scheduler, refresh_interval).await;
     }
 }
 

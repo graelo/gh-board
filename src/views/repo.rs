@@ -25,7 +25,7 @@ use crate::engine::{EngineHandle, Event};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
-use crate::types::PullRequest;
+use crate::types::{PullRequest, RateLimitInfo};
 
 /// Sidebar tabs available for branches (subset of `SidebarTab`).
 const BRANCH_TABS: &[SidebarTab] = &[SidebarTab::Overview, SidebarTab::Commits, SidebarTab::Files];
@@ -685,6 +685,9 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut pr_map = hooks.use_state(HashMap::<String, PullRequest>::new);
     let mut pr_repos_fetched = hooks.use_state(HashSet::<String>::new);
 
+    // Rate-limit info from engine responses.
+    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+
     // Per-view event channel for engine replies.
     let event_channel = hooks.use_state(|| {
         let (tx, rx) = std::sync::mpsc::channel::<Event>();
@@ -700,7 +703,13 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
                 let rx = rx_for_poll.lock().unwrap();
                 while let Ok(ev) = rx.try_recv() {
-                    if let Event::PrsFetched { prs, .. } = ev {
+                    if let Event::PrsFetched {
+                        prs, rate_limit, ..
+                    } = ev
+                    {
+                        if rate_limit.is_some() {
+                            rate_limit_state.set(rate_limit);
+                        }
                         let mut map = pr_map.read().clone();
                         for pr in prs {
                             if let Some(repo_ref) = &pr.repo {
@@ -1311,7 +1320,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         scope_label,
         context_text,
         updated_text,
-        String::new(),
+        footer::format_rate_limit(rate_limit_state.read().as_ref()),
         action_status.read().as_ref(),
         &theme,
         depth,

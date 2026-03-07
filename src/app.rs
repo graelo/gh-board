@@ -8,7 +8,7 @@ use crate::config::types::{AppConfig, Scope};
 use crate::engine::EngineHandle;
 use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
-use crate::types::RepoRef;
+use crate::types::{RateLimitInfo, RepoRef};
 use crate::views::actions::ActionsView;
 use crate::views::issues::IssuesView;
 use crate::views::notifications::NotificationsView;
@@ -227,6 +227,10 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         system.exit();
     }
 
+    // Shared rate-limit state — updated by whichever view last received a
+    // rate-limit payload, read by the active view's footer.
+    let rate_limit_state: State<Option<RateLimitInfo>> = hooks.use_state(|| None);
+
     let show_count = config.is_none_or(|c| c.theme.ui.filters_show_count.unwrap_or(true));
     let show_separator = config.is_none_or(|c| c.theme.ui.table.show_separator.unwrap_or(true));
     let preview_width_pct = config.map_or(0.45, |c| c.defaults.preview.width);
@@ -274,6 +278,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     auto_clone,
                     nav_target,
                     go_back: go_back_signal,
+                    rate_limit: rate_limit_state,
                 )
             }
             View(
@@ -301,6 +306,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     refetch_interval_minutes: refetch_minutes,
                     nav_target,
                     go_back: go_back_signal,
+                    rate_limit: rate_limit_state,
                 )
             }
             View(
@@ -328,6 +334,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     refetch_interval_minutes: refetch_minutes,
                     nav_target,
                     go_back: go_back_signal,
+                    rate_limit: rate_limit_state,
                 )
             }
             View(
@@ -352,6 +359,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     date_format,
                     is_active: active == ViewKind::Notifications,
                     refetch_interval_minutes: refetch_minutes,
+                    rate_limit: rate_limit_state,
                 )
             }
             View(
@@ -379,6 +387,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     date_format,
                     is_active: active == ViewKind::Repo,
                     refetch_interval_minutes: refetch_minutes,
+                    rate_limit: rate_limit_state,
                 )
             }
         }

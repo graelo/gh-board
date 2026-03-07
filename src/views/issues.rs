@@ -297,6 +297,8 @@ pub struct IssuesViewProps<'a> {
     pub nav_target: Option<State<Option<NavigationTarget>>>,
     /// Go-back signal — set to true to return to previous view.
     pub go_back: Option<State<bool>>,
+    /// Shared rate-limit state (owned by App).
+    pub rate_limit: Option<State<Option<RateLimitInfo>>>,
 }
 
 #[component]
@@ -361,7 +363,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let mut ephemeral_filters = hooks.use_state(Vec::<(IssueFilter, Option<u64>)>::new);
 
     // State: rate limit from last GraphQL response.
-    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+    let fallback_rl = hooks.use_state(|| None);
+    let mut rate_limit_state = props.rate_limit.unwrap_or(fallback_rl);
 
     // State: per-filter fetch tracking (lazy: only fetch the active filter).
     let mut filter_fetch_times =

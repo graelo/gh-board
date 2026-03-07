@@ -217,6 +217,8 @@ pub struct NotificationsViewProps<'a> {
     pub is_active: bool,
     /// Auto-refetch interval in minutes (0 = disabled).
     pub refetch_interval_minutes: u32,
+    /// Shared rate-limit state (owned by App).
+    pub rate_limit: Option<State<Option<RateLimitInfo>>>,
 }
 
 #[component]
@@ -246,7 +248,8 @@ pub fn NotificationsView<'a>(
     let mut help_visible = hooks.use_state(|| false);
     let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
     let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
-    let mut rate_limit_state = hooks.use_state(|| Option::<RateLimitInfo>::None);
+    let fallback_rl = hooks.use_state(|| None);
+    let mut rate_limit_state = props.rate_limit.unwrap_or(fallback_rl);
 
     // Whether RegisterNotificationsRefresh has been sent to the engine yet.
     let mut refresh_registered = hooks.use_state(|| false);

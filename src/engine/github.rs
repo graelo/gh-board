@@ -513,517 +513,168 @@ async fn handle_request(
         // Mutation operations — PR
         // -----------------------------------------------------------------------
         Request::ApprovePr {
-            owner,
-            repo,
-            number,
-            body,
-            reply_tx,
+            owner, repo, number, body, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ApprovePr") else {
-                return;
-            };
-            match pr_actions::approve(&octocrab, &owner, &repo, number, body.as_deref()).await {
-                Ok(()) => {
-                    tracing::debug!("engine: sending MutationOk ApprovePr #{number}");
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Approved PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!("engine: ApprovePr #{number} error: {e}");
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Approve PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ApprovePr") else { return; };
+            let result = pr_actions::approve(&octocrab, &owner, &repo, number, body.as_deref()).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Approved PR #{number}"), format!("Approve PR #{number}"), ck).await;
         }
 
         Request::MergePr {
-            owner,
-            repo,
-            number,
-            reply_tx,
+            owner, repo, number, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MergePr") else {
-                return;
-            };
-            match pr_actions::merge(&octocrab, &owner, &repo, number).await {
-                Ok(()) => {
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Merged PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Merge PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MergePr") else { return; };
+            let result = pr_actions::merge(&octocrab, &owner, &repo, number).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Merged PR #{number}"), format!("Merge PR #{number}"), ck).await;
         }
 
         Request::ClosePr {
-            owner,
-            repo,
-            number,
-            reply_tx,
+            owner, repo, number, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ClosePr") else {
-                return;
-            };
-            match pr_actions::close(&octocrab, &owner, &repo, number).await {
-                Ok(()) => {
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Closed PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Close PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ClosePr") else { return; };
+            let result = pr_actions::close(&octocrab, &owner, &repo, number).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Closed PR #{number}"), format!("Close PR #{number}"), ck).await;
         }
 
         Request::ReopenPr {
-            owner,
-            repo,
-            number,
-            reply_tx,
+            owner, repo, number, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenPr") else {
-                return;
-            };
-            match pr_actions::reopen(&octocrab, &owner, &repo, number).await {
-                Ok(()) => {
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Reopened PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Reopen PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenPr") else { return; };
+            let result = pr_actions::reopen(&octocrab, &owner, &repo, number).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Reopened PR #{number}"), format!("Reopen PR #{number}"), ck).await;
         }
 
         Request::AddPrComment {
-            owner,
-            repo,
-            number,
-            body,
-            reply_tx,
+            owner, repo, number, body, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddPrComment")
-            else {
-                return;
-            };
-            match pr_actions::add_comment(&octocrab, &owner, &repo, number, &body).await {
-                Ok(()) => {
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Added comment to PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Add comment to PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddPrComment") else { return; };
+            let result = pr_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Added comment to PR #{number}"), format!("Add comment to PR #{number}"), ck).await;
         }
 
         Request::UpdateBranch {
-            owner,
-            repo,
-            number,
-            reply_tx,
+            owner, repo, number, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UpdateBranch")
-            else {
-                return;
-            };
-            match pr_actions::update_branch(&octocrab, &owner, &repo, number).await {
-                Ok(()) => {
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Updated branch for PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Update branch for PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UpdateBranch") else { return; };
+            let result = pr_actions::update_branch(&octocrab, &owner, &repo, number).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Updated branch for PR #{number}"), format!("Update branch for PR #{number}"), ck).await;
         }
 
         Request::ReadyForReview {
-            owner,
-            repo,
-            number,
-            reply_tx,
+            owner, repo, number, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReadyForReview")
-            else {
-                return;
-            };
-            match pr_actions::ready_for_review(&octocrab, &owner, &repo, number).await {
-                Ok(()) => {
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Marked PR #{number} as ready for review"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Mark PR #{number} as ready for review"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReadyForReview") else { return; };
+            let result = pr_actions::ready_for_review(&octocrab, &owner, &repo, number).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Marked PR #{number} as ready for review"), format!("Mark PR #{number} as ready for review"), ck).await;
         }
 
         Request::SetPrAssignees {
-            owner,
-            repo,
-            number,
-            logins,
-            reply_tx,
+            owner, repo, number, logins, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrAssignees")
-            else {
-                return;
-            };
-            match issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await {
-                Ok(()) => {
-                    tracing::debug!("engine: sending MutationOk SetPrAssignees #{number}");
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Set assignees on PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!("engine: SetPrAssignees #{number} error: {e}");
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Set assignees on PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrAssignees") else { return; };
+            let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Set assignees on PR #{number}"), format!("Set assignees on PR #{number}"), ck).await;
         }
 
         Request::SetPrLabels {
-            owner,
-            repo,
-            number,
-            labels,
-            reply_tx,
+            owner, repo, number, labels, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrLabels")
-            else {
-                return;
-            };
-            match issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await {
-                Ok(()) => {
-                    tracing::debug!("engine: sending MutationOk SetPrLabels #{number}");
-                    let cache_key = format!("pr:{owner}/{repo}#{number}");
-                    client.cache().remove(&cache_key).await;
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Set labels on PR #{number}"),
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!("engine: SetPrLabels #{number} error: {e}");
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Set labels on PR #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrLabels") else { return; };
+            let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
+            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+            send_mutation_result(client, &reply_tx, result, format!("Set labels on PR #{number}"), format!("Set labels on PR #{number}"), ck).await;
         }
 
         // -----------------------------------------------------------------------
         // Mutation operations — Issue
         // -----------------------------------------------------------------------
         Request::CloseIssue {
-            owner,
-            repo,
-            number,
-            reply_tx,
+            owner, repo, number, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CloseIssue") else {
-                return;
-            };
-            match issue_actions::close(&octocrab, &owner, &repo, number).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Closed issue #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Close issue #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CloseIssue") else { return; };
+            let result = issue_actions::close(&octocrab, &owner, &repo, number).await;
+            send_mutation_result(client, &reply_tx, result, format!("Closed issue #{number}"), format!("Close issue #{number}"), None).await;
         }
 
         Request::ReopenIssue {
-            owner,
-            repo,
-            number,
-            reply_tx,
+            owner, repo, number, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenIssue")
-            else {
-                return;
-            };
-            match issue_actions::reopen(&octocrab, &owner, &repo, number).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Reopened issue #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Reopen issue #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenIssue") else { return; };
+            let result = issue_actions::reopen(&octocrab, &owner, &repo, number).await;
+            send_mutation_result(client, &reply_tx, result, format!("Reopened issue #{number}"), format!("Reopen issue #{number}"), None).await;
         }
 
         Request::AddIssueComment {
-            owner,
-            repo,
-            number,
-            body,
-            reply_tx,
+            owner, repo, number, body, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddIssueComment")
-            else {
-                return;
-            };
-            match issue_actions::add_comment(&octocrab, &owner, &repo, number, &body).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Added comment to issue #{number}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Add comment to issue #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddIssueComment") else { return; };
+            let result = issue_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
+            send_mutation_result(client, &reply_tx, result, format!("Added comment to issue #{number}"), format!("Add comment to issue #{number}"), None).await;
         }
 
         Request::SetIssueLabels {
-            owner,
-            repo,
-            number,
-            labels,
-            reply_tx,
+            owner, repo, number, labels, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueLabels")
-            else {
-                return;
-            };
-            match issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await {
-                Ok(()) => {
-                    tracing::debug!("engine: sending MutationOk SetIssueLabels #{number}");
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Set labels on issue #{number}"),
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!("engine: SetIssueLabels #{number} error: {e}");
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Set labels on issue #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueLabels") else { return; };
+            let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
+            send_mutation_result(client, &reply_tx, result, format!("Set labels on issue #{number}"), format!("Set labels on issue #{number}"), None).await;
         }
 
         Request::SetIssueAssignees {
-            owner,
-            repo,
-            number,
-            logins,
-            reply_tx,
+            owner, repo, number, logins, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueAssignees")
-            else {
-                return;
-            };
-            match issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await {
-                Ok(()) => {
-                    tracing::debug!("engine: sending MutationOk SetIssueAssignees #{number}");
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Set assignees on issue #{number}"),
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!("engine: SetIssueAssignees #{number} error: {e}");
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Set assignees on issue #{number}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueAssignees") else { return; };
+            let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
+            send_mutation_result(client, &reply_tx, result, format!("Set assignees on issue #{number}"), format!("Set assignees on issue #{number}"), None).await;
         }
 
         // -----------------------------------------------------------------------
         // Mutation operations — Actions
         // -----------------------------------------------------------------------
         Request::RerunWorkflowRun {
-            owner,
-            repo,
-            run_id,
-            failed_only,
-            reply_tx,
+            owner, repo, run_id, failed_only, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RerunWorkflowRun")
-            else {
-                return;
-            };
-            match gh_actions::rerun_workflow_run(&octocrab, &owner, &repo, run_id, failed_only)
-                .await
-            {
-                Ok(()) => {
-                    let label = if failed_only {
-                        "failed jobs"
-                    } else {
-                        "all jobs"
-                    };
-                    tracing::debug!("engine: RerunWorkflowRun run_id={run_id} ({label}) ok");
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Re-run {label} queued for run #{run_id}"),
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!("engine: RerunWorkflowRun run_id={run_id} error: {e}");
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Re-run workflow run #{run_id}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RerunWorkflowRun") else { return; };
+            let result = gh_actions::rerun_workflow_run(&octocrab, &owner, &repo, run_id, failed_only).await;
+            let label = if failed_only { "failed jobs" } else { "all jobs" };
+            send_mutation_result(client, &reply_tx, result, format!("Re-run {label} queued for run #{run_id}"), format!("Re-run workflow run #{run_id}"), None).await;
         }
 
         Request::CancelWorkflowRun {
-            owner,
-            repo,
-            run_id,
-            reply_tx,
+            owner, repo, run_id, reply_tx,
         } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CancelWorkflowRun")
-            else {
-                return;
-            };
-            match gh_actions::cancel_workflow_run(&octocrab, &owner, &repo, run_id).await {
-                Ok(()) => {
-                    tracing::debug!("engine: CancelWorkflowRun run_id={run_id} ok");
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Cancelled run #{run_id}"),
-                    });
-                }
-                Err(e) => {
-                    tracing::debug!("engine: CancelWorkflowRun run_id={run_id} error: {e}");
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Cancel workflow run #{run_id}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CancelWorkflowRun") else { return; };
+            let result = gh_actions::cancel_workflow_run(&octocrab, &owner, &repo, run_id).await;
+            send_mutation_result(client, &reply_tx, result, format!("Cancelled run #{run_id}"), format!("Cancel workflow run #{run_id}"), None).await;
         }
 
         // -----------------------------------------------------------------------
         // Mutation operations — Notification
         // -----------------------------------------------------------------------
         Request::MarkNotificationRead { id, reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "MarkNotificationRead")
-            else {
-                return;
-            };
-            match notif::mark_as_read(&octocrab, &id).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Marked notification {id} as read"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Mark notification {id} as read"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MarkNotificationRead") else { return; };
+            let result = notif::mark_as_read(&octocrab, &id).await;
+            send_mutation_result(client, &reply_tx, result, format!("Marked notification {id} as read"), format!("Mark notification {id} as read"), None).await;
         }
 
         Request::MarkAllNotificationsRead { reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "MarkAllNotificationsRead")
-            else {
-                return;
-            };
-            match notif::mark_all_as_read(&octocrab).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: "Marked all notifications as read".to_owned(),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: "Mark all notifications as read".to_owned(),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MarkAllNotificationsRead") else { return; };
+            let result = notif::mark_all_as_read(&octocrab).await;
+            send_mutation_result(client, &reply_tx, result, "Marked all notifications as read".to_owned(), "Mark all notifications as read".to_owned(), None).await;
         }
 
         Request::UnsubscribeNotification { id, reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "UnsubscribeNotification")
-            else {
-                return;
-            };
-            match notif::unsubscribe(&octocrab, &id).await {
-                Ok(()) => {
-                    let _ = reply_tx.send(Event::MutationOk {
-                        description: format!("Unsubscribed from notification {id}"),
-                    });
-                }
-                Err(e) => {
-                    let _ = reply_tx.send(Event::MutationError {
-                        description: format!("Unsubscribe from notification {id}"),
-                        message: e.to_string(),
-                    });
-                }
-            }
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UnsubscribeNotification") else { return; };
+            let result = notif::unsubscribe(&octocrab, &id).await;
+            send_mutation_result(client, &reply_tx, result, format!("Unsubscribed from notification {id}"), format!("Unsubscribe from notification {id}"), None).await;
         }
 
         // --- Fetch Repo Labels ---
@@ -1272,6 +923,34 @@ fn get_octocrab(
                 message: e.to_string(),
             });
             None
+        }
+    }
+}
+
+/// Dispatch a mutation result: on success, optionally invalidate the cache and
+/// send `MutationOk`; on failure, send `MutationError`.
+async fn send_mutation_result(
+    client: &GitHubClient,
+    reply_tx: &Sender<Event>,
+    result: Result<(), anyhow::Error>,
+    ok_desc: String,
+    err_desc: String,
+    cache_key: Option<String>,
+) {
+    match result {
+        Ok(()) => {
+            if let Some(key) = cache_key {
+                client.cache().remove(&key).await;
+            }
+            let _ = reply_tx.send(Event::MutationOk {
+                description: ok_desc,
+            });
+        }
+        Err(e) => {
+            let _ = reply_tx.send(Event::MutationError {
+                description: err_desc,
+                message: e.to_string(),
+            });
         }
     }
 }

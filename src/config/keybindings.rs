@@ -85,6 +85,7 @@ pub enum BuiltinAction {
     CancelRun,
     // Cross-view navigation
     JumpToRun,
+    JumpToPr,
     GoBack,
     CloseTab,
 }
@@ -140,6 +141,7 @@ impl BuiltinAction {
             "rerun_all" => Self::RerunAll,
             "cancel_run" => Self::CancelRun,
             "jump_to_run" => Self::JumpToRun,
+            "jump_to_pr" => Self::JumpToPr,
             "go_back" => Self::GoBack,
             "close_tab" => Self::CloseTab,
             _ => return None,
@@ -195,6 +197,7 @@ impl BuiltinAction {
             Self::RerunAll => "Re-run all jobs",
             Self::CancelRun => "Cancel run",
             Self::JumpToRun => "Jump to Actions run",
+            Self::JumpToPr => "Jump to PR for branch",
             Self::GoBack => "Go back to previous view",
             Self::CloseTab => "Close ephemeral tab",
         }
@@ -340,6 +343,7 @@ pub fn default_prs() -> Vec<Keybinding> {
         kb("m", "merge", "Merge PR"),
         kb("u", "update_from_base", "Update from base"),
         kb("ctrl+]", "jump_to_run", "Jump to Actions run"),
+        kb("ctrl+t", "go_back", "Go back"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("S", "toggle_scope", "Toggle repo scope"),
@@ -390,13 +394,13 @@ pub(crate) fn default_notifications() -> Vec<Keybinding> {
 /// Default Branch view keybindings.
 pub(crate) fn default_branches() -> Vec<Keybinding> {
     vec![
-        kb("enter", "checkout", "Checkout branch"),
-        kb("space", "checkout", "Checkout branch"),
+        kb("c", "checkout", "Checkout branch"),
         kb("delete", "delete_branch", "Delete branch"),
         kb("D", "delete_branch", "Delete branch"),
         kb("+", "new_branch", "Create new branch"),
-        kb("p", "create_pr_from_branch", "Create PR from branch"),
+        kb("P", "create_pr_from_branch", "Create PR from branch"),
         kb("v", "view_prs_for_branch", "View PRs for branch"),
+        kb("ctrl+]", "jump_to_pr", "Jump to PR"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("S", "toggle_scope", "Toggle repo scope"),

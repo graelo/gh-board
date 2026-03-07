@@ -74,9 +74,11 @@ pub struct ResolvedIcons {
     pub update_needed: String,
     pub update_conflict: String,
     pub update_ok: String,
-    // Feedback indicators (2)
+    // Feedback indicators (4)
     pub feedback_ok: String,
     pub feedback_error: String,
+    pub feedback_warning: String,
+    pub feedback_info: String,
     // UI chrome (2)
     pub tab_ephemeral: String,
     pub select_cursor: String,
@@ -164,8 +166,10 @@ impl ResolvedIcons {
             update_conflict: "!".to_owned(),
             update_ok: "\u{2713}".to_owned(), // ✓
             // Feedback indicators
-            feedback_ok: "\u{2713}".to_owned(),    // ✓
-            feedback_error: "\u{2717}".to_owned(), // ✗
+            feedback_ok: "\u{2713}".to_owned(),      // ✓
+            feedback_error: "\u{2717}".to_owned(),   // ✗
+            feedback_warning: "\u{26a0}".to_owned(), // ⚠
+            feedback_info: "\u{2139}".to_owned(),    // ℹ
             // UI chrome
             tab_ephemeral: "\u{25cc}".to_owned(), // ◌
             select_cursor: "\u{25b6}".to_owned(), // ▶
@@ -256,6 +260,8 @@ impl ResolvedIcons {
             // Feedback indicators
             feedback_ok: "\u{f00c}".to_owned(),    //  nf-fa-check
             feedback_error: "\u{f00d}".to_owned(), //  nf-fa-times
+            feedback_warning: "\u{f071}".to_owned(), //  nf-fa-warning
+            feedback_info: "\u{f449}".to_owned(),  //  nf-oct-info
             // UI chrome
             tab_ephemeral: "\u{f4c3}".to_owned(), //  nf-oct-dot
             select_cursor: "\u{ea9c}".to_owned(), //  nf-cod-triangle_right
@@ -345,6 +351,8 @@ impl ResolvedIcons {
             // Feedback indicators
             feedback_ok: "ok".to_owned(),
             feedback_error: "ERR".to_owned(),
+            feedback_warning: "WARN".to_owned(),
+            feedback_info: "INFO".to_owned(),
             // UI chrome
             tab_ephemeral: "*".to_owned(),
             select_cursor: ">".to_owned(),
@@ -462,6 +470,11 @@ impl ResolvedIcons {
             update_ok: config.update_ok.clone().unwrap_or(base.update_ok),
             feedback_ok: config.feedback_ok.clone().unwrap_or(base.feedback_ok),
             feedback_error: config.feedback_error.clone().unwrap_or(base.feedback_error),
+            feedback_warning: config
+                .feedback_warning
+                .clone()
+                .unwrap_or(base.feedback_warning),
+            feedback_info: config.feedback_info.clone().unwrap_or(base.feedback_info),
             tab_ephemeral: config.tab_ephemeral.clone().unwrap_or(base.tab_ephemeral),
             select_cursor: config.select_cursor.clone().unwrap_or(base.select_cursor),
             action_success: config.action_success.clone().unwrap_or(base.action_success),

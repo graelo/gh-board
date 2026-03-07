@@ -5,7 +5,7 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::ColorDepth;
-use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
 use crate::components::sidebar_tabs;
@@ -335,7 +335,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     // Action state.
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut input_buffer = hooks.use_state(String::new);
-    let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
+    let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
     let mut label_candidates = hooks.use_state(Vec::<String>::new);
     let mut label_selection = hooks.use_state(|| 0usize);
     let mut label_selected = hooks.use_state(Vec::<String>::new);
@@ -525,6 +526,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         hooks.use_future(async move {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                // Auto-clear status after 60 seconds.
+                if let Some(t) = status_set_at.get()
+                    && t.elapsed().as_secs() >= 60
+                {
+                    action_status.set(None);
+                    status_set_at.set(None);
+                }
+
                 let events: Vec<Event> = {
                     let rx = rx_for_poll.lock().unwrap();
                     let mut evts = Vec::new();
@@ -615,10 +624,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!(
-                                "{} {description}",
-                                theme_for_poll.icons.feedback_ok
-                            )));
+                            action_status.set(Some(ActionFeedback::Success(description)));
+                            status_set_at.set(Some(std::time::Instant::now()));
                             // Trigger a refetch of the active filter.
                             let mut state = issues_state.read().clone();
                             if current_filter_for_poll < state.filters.len() {
@@ -643,10 +650,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!(
-                                "{} {description}: {message}",
-                                theme_for_poll.icons.feedback_error
-                            )));
+                            action_status.set(Some(ActionFeedback::Error(format!(
+                                "{description}: {message}"
+                            ))));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -797,9 +804,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         preview_scroll.set(0);
                         search_query.set(String::new());
                     } else {
-                        action_status.set(Some(
+                        action_status.set(Some(ActionFeedback::Warning(
                             "Too many ephemeral tabs \u{2014} close one first (d)".to_owned(),
-                        ));
+                        )));
+                        status_set_at.set(Some(std::time::Instant::now()));
                     }
 
                     if let Some(mut nt) = nav_target_prop {
@@ -829,10 +837,11 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             preview_scroll.set(0);
                         }
                     } else {
-                        action_status.set(Some(format!(
+                        action_status.set(Some(ActionFeedback::Warning(format!(
                             "Issue #{target_number} not found in {}",
                             eph_filter.title
-                        )));
+                        ))));
+                        status_set_at.set(Some(std::time::Instant::now()));
                     }
                     let mut eph_mut = ephemeral_filters.read().clone();
                     eph_mut[ei].1 = None;
@@ -964,7 +973,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         }
                         KeyCode::Char('n' | 'N') | KeyCode::Esc => {
                             input_mode.set(InputMode::Normal);
-                            action_status.set(Some("Cancelled".to_owned()));
+                            action_status.set(Some(ActionFeedback::Info("Cancelled".to_owned())));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         _ => {}
                     },
@@ -1112,10 +1122,22 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         if let Some((_, _, number)) = info {
                                             let text = number.to_string();
                                             match clipboard::copy_to_clipboard(&text) {
-                                                Ok(()) => action_status
-                                                    .set(Some(format!("Copied #{number}"))),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Copy failed: {e}"))),
+                                                Ok(()) => {
+                                                    action_status.set(Some(
+                                                        ActionFeedback::Success(format!(
+                                                            "Copied #{number}"
+                                                        )),
+                                                    ));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
+                                                }
+                                                Err(e) => {
+                                                    action_status.set(Some(ActionFeedback::Error(
+                                                        format!("Copy failed: {e}"),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
+                                                }
                                             }
                                         }
                                     }
@@ -1125,10 +1147,22 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                                 "https://github.com/{owner}/{repo}/issues/{number}"
                                             );
                                             match clipboard::copy_to_clipboard(&url) {
-                                                Ok(()) => action_status
-                                                    .set(Some(format!("Copied URL for #{number}"))),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Copy failed: {e}"))),
+                                                Ok(()) => {
+                                                    action_status.set(Some(
+                                                        ActionFeedback::Success(format!(
+                                                            "Copied URL for #{number}"
+                                                        )),
+                                                    ));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
+                                                }
+                                                Err(e) => {
+                                                    action_status.set(Some(ActionFeedback::Error(
+                                                        format!("Copy failed: {e}"),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
+                                                }
                                             }
                                         }
                                     }
@@ -1138,10 +1172,22 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                                 "https://github.com/{owner}/{repo}/issues/{number}"
                                             );
                                             match clipboard::open_in_browser(&url) {
-                                                Ok(()) => action_status
-                                                    .set(Some(format!("Opened #{number}"))),
-                                                Err(e) => action_status
-                                                    .set(Some(format!("Open failed: {e}"))),
+                                                Ok(()) => {
+                                                    action_status.set(Some(
+                                                        ActionFeedback::Success(format!(
+                                                            "Opened #{number}"
+                                                        )),
+                                                    ));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
+                                                }
+                                                Err(e) => {
+                                                    action_status.set(Some(ActionFeedback::Error(
+                                                        format!("Open failed: {e}"),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
+                                                }
                                             }
                                         }
                                     }
@@ -1311,8 +1357,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         } else {
-                                            action_status
-                                                .set(Some("Cannot close config tabs".to_owned()));
+                                            action_status.set(Some(ActionFeedback::Warning(
+                                                "Cannot close config tabs".to_owned(),
+                                            )));
+                                            status_set_at.set(Some(std::time::Instant::now()));
                                         }
                                     }
                                     BuiltinAction::GoBack => {
@@ -1527,6 +1575,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(&theme.icons),
             sidebar_meta,
             Some(ISSUE_TABS),
+            None,
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);
@@ -1647,9 +1696,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         InputMode::Normal => None,
     };
 
-    let context_text = if let Some(msg) = action_status.read().as_ref() {
-        msg.clone()
-    } else if current_data.is_some_and(|d| d.loading) {
+    let context_text = if current_data.is_some_and(|d| d.loading) {
         "Fetching issues...".to_owned()
     } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
         format!("Error: {err}")
@@ -1682,6 +1729,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         context_text,
         updated_text,
         rate_limit_text,
+        action_status.read().as_ref(),
+        &theme,
         depth,
         [
             Some(theme.footer_prs),
@@ -1887,7 +1936,7 @@ fn handle_text_input(
     current_mode: &InputMode,
     mut input_mode: State<InputMode>,
     mut input_buffer: State<String>,
-    _action_status: State<Option<String>>,
+    _action_status: State<Option<ActionFeedback>>,
     issues_state: &State<IssuesState>,
     filter_idx: usize,
     cursor: usize,

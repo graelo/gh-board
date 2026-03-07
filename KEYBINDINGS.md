@@ -101,11 +101,12 @@ any of them — or add custom shell commands — in your `config.toml`.
 
 | Key | Action | Description |
 |---|---|---|
-| `Enter` / `Space` | `checkout` | Checkout branch |
+| `c` | `checkout` | Checkout branch |
 | `Delete` / `D` | `delete_branch` | Delete branch |
 | `+` | `new_branch` | Create new branch |
-| `p` | `create_pr_from_branch` | Create PR from branch |
+| `P` | `create_pr_from_branch` | Create PR from branch |
 | `v` | `view_prs_for_branch` | View PRs for branch |
+| `ctrl+]` | `jump_to_pr` | Jump to PR |
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
 | `S` | `toggle_scope` | Toggle repo scope |
 

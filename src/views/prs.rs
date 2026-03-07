@@ -5,7 +5,7 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, Footer, RenderedFooter};
+use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::selection_overlay::{
     RenderedSelectionOverlay, SelectionOverlay, SelectionOverlayBuildConfig, SelectionOverlayItem,
@@ -553,7 +553,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // State: input mode for actions.
     let mut input_mode = hooks.use_state(|| InputMode::Normal);
     let mut input_buffer = hooks.use_state(String::new);
-    let mut action_status = hooks.use_state(|| Option::<String>::None);
+    let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
+    let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
 
     // State: search query.
     let mut search_query = hooks.use_state(String::new);
@@ -700,6 +701,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         .copied()
         .unwrap_or(false);
 
+    tracing::debug!(
+        "prs: lazy-fetch check: needs={active_needs_fetch} in_flight={active_in_flight} \
+         is_active={is_active} filter_idx={current_filter_idx} \
+         filter_count={filter_count} eph_count={ephemeral_count}"
+    );
+
     // Register all filters for background refresh once at mount (or after scope change).
     if !refresh_registered.get()
         && let Some(ref eng) = engine
@@ -724,6 +731,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         && let Some(ref engine) = engine
     {
         // 'R' was pressed: reset the flag and eagerly fetch every filter.
+        tracing::debug!("prs: refresh_all FIRING for {} filters", all_filters.len());
         refresh_all.set(false);
         let mut in_flight = filter_in_flight.read().clone();
         for (filter_idx, (cfg, _is_eph)) in all_filters.iter().enumerate() {
@@ -760,6 +768,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
             // Consume the force flag: bypass cache for `r`-key and post-mutation fetches.
             let force = force_refresh.get();
+            tracing::debug!("prs: lazy-fetch FIRING for filter_idx={filter_idx} force={force}");
             if force {
                 force_refresh.set(false);
             }
@@ -791,8 +800,22 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 {
                     let rx = local_rx_for_poll.lock().unwrap();
                     while let Ok(msg) = rx.try_recv() {
-                        action_status.set(Some(msg));
+                        let feedback = if msg.contains("error:") || msg.contains("failed:") {
+                            ActionFeedback::Error(msg)
+                        } else {
+                            ActionFeedback::Success(msg)
+                        };
+                        action_status.set(Some(feedback));
+                        status_set_at.set(Some(std::time::Instant::now()));
                     }
+                }
+
+                // Auto-clear status after 60 seconds.
+                if let Some(t) = status_set_at.get()
+                    && t.elapsed().as_secs() >= 60
+                {
+                    action_status.set(None);
+                    status_set_at.set(None);
                 }
 
                 let events: Vec<Event> = {
@@ -810,6 +833,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             prs,
                             rate_limit,
                         } => {
+                            tracing::debug!(
+                                "prs: PrsFetched received: filter_idx={filter_idx} count={}",
+                                prs.len()
+                            );
                             if rate_limit.is_some() {
                                 rate_limit_state.set(rate_limit);
                             }
@@ -939,10 +966,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             }
                         }
                         Event::MutationOk { description } => {
-                            action_status.set(Some(format!(
-                                "{} {description}",
-                                theme_for_poll.icons.feedback_ok
-                            )));
+                            action_status.set(Some(ActionFeedback::Success(description)));
+                            status_set_at.set(Some(std::time::Instant::now()));
                             // Invalidate detail state so activity sidebar refreshes.
                             detail_cache.set(HashMap::new());
                             pending_detail.set(None);
@@ -971,10 +996,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             description,
                             message,
                         } => {
-                            action_status.set(Some(format!(
-                                "{} {description}: {message}",
-                                theme_for_poll.icons.feedback_error
-                            )));
+                            action_status.set(Some(ActionFeedback::Error(format!(
+                                "{description}: {message}"
+                            ))));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         Event::RateLimitUpdated { info } => {
                             rate_limit_state.set(Some(info));
@@ -1044,6 +1069,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             } else {
                 // 2. Check if any filter is still loading — wait.
                 let any_in_flight = filter_in_flight.read().iter().any(|&f| f);
+                tracing::debug!("prs: deep-link: any_in_flight={any_in_flight}");
                 if !any_in_flight {
                     // 3. All loaded, PR not found.
                     let full_repo = format!("{owner}/{repo}");
@@ -1134,9 +1160,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         // logic on the next render cycle (the new FilterData has
                         // loading: true by default).
                     } else {
-                        action_status.set(Some(
+                        action_status.set(Some(ActionFeedback::Warning(
                             "Too many ephemeral tabs \u{2014} close one first (d)".to_owned(),
-                        ));
+                        )));
+                        status_set_at.set(Some(std::time::Instant::now()));
                     }
 
                     if let Some(mut nt) = nav_target_prop {
@@ -1167,10 +1194,11 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             preview_scroll.set(0);
                         }
                     } else {
-                        action_status.set(Some(format!(
+                        action_status.set(Some(ActionFeedback::Warning(format!(
                             "PR #{target_number} not found in {}",
                             eph_filter.title
-                        )));
+                        ))));
+                        status_set_at.set(Some(std::time::Instant::now()));
                     }
                     // Clear pending number.
                     let mut eph_mut = ephemeral_filters.read().clone();
@@ -1372,7 +1400,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             .as_deref()
                                             .unwrap_or("github.com")
                                             .to_owned();
-                                        action_status.set(Some(format!("Cloning {repo_name}…")));
+                                        action_status.set(Some(ActionFeedback::Info(format!("Cloning {repo_name}…"))));
+                                        status_set_at.set(Some(std::time::Instant::now()));
                                         crate::actions::local::spawn_checkout(
                                             pr.head_ref.clone(),
                                             repo_name,
@@ -1396,18 +1425,53 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             .as_ref()
                                             .map(crate::github::types::RepoRef::full_name)
                                             .unwrap_or_default();
-                                        let host = filter_host_for_kb
-                                            .as_deref()
-                                            .unwrap_or("github.com")
-                                            .to_owned();
-                                        action_status.set(Some(format!("Cloning {repo_name}…")));
-                                        crate::actions::local::spawn_worktree(
-                                            pr.head_ref.clone(),
-                                            repo_name,
-                                            repo_paths.clone(),
-                                            host,
-                                            local_action_tx.clone(),
-                                        );
+                                        let needs_clone = crate::actions::local::repo_needs_clone(&repo_name, &repo_paths);
+                                        if needs_clone {
+                                            let host = filter_host_for_kb
+                                                .as_deref()
+                                                .unwrap_or("github.com")
+                                                .to_owned();
+                                            action_status.set(Some(ActionFeedback::Info(format!("Cloning {repo_name}…"))));
+                                            status_set_at.set(Some(std::time::Instant::now()));
+                                            crate::actions::local::spawn_worktree(
+                                                pr.head_ref.clone(),
+                                                repo_name,
+                                                repo_paths.clone(),
+                                                host,
+                                                local_action_tx.clone(),
+                                            );
+                                        } else {
+                                            let host = filter_host_for_kb
+                                                .as_deref()
+                                                .unwrap_or("github.com");
+                                            match crate::actions::local::create_or_open_worktree(
+                                                &pr.head_ref,
+                                                &repo_name,
+                                                &repo_paths,
+                                                host,
+                                            ) {
+                                                Ok(path) => {
+                                                    match clipboard::copy_to_clipboard(&path) {
+                                                        Ok(()) => {
+                                                            action_status.set(Some(ActionFeedback::Success(
+                                                                format!("Worktree ready (copied): {path}"),
+                                                            )));
+                                                            status_set_at.set(Some(std::time::Instant::now()));
+                                                        }
+                                                        Err(e) => {
+                                                            action_status.set(Some(ActionFeedback::Success(
+                                                                format!("Worktree ready: {path} (clipboard: {e})"),
+                                                            )));
+                                                            status_set_at.set(Some(std::time::Instant::now()));
+                                                        }
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    action_status.set(Some(ActionFeedback::Error(format!("Worktree error: {e:#}"))));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                                 _ => {
@@ -1478,7 +1542,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         KeyCode::Char('n' | 'N') | KeyCode::Esc => {
                             input_mode.set(InputMode::Normal);
-                            action_status.set(Some("Cancelled".to_owned()));
+                            action_status.set(Some(ActionFeedback::Info("Cancelled".to_owned())));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         _ => {}
                     },
@@ -1610,15 +1675,17 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         });
                                         match effective {
                                             Some(MergeStateStatus::Clean) => {
-                                                action_status.set(Some(
+                                                action_status.set(Some(ActionFeedback::Info(
                                                     "Branch is already up-to-date".into(),
-                                                ));
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                             Some(MergeStateStatus::Dirty) => {
-                                                action_status.set(Some(
+                                                action_status.set(Some(ActionFeedback::Warning(
                                                     "Cannot auto-update: branch has conflicts"
                                                         .into(),
-                                                ));
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                             Some(MergeStateStatus::Behind) => {
                                                 input_mode.set(InputMode::UpdateBranchMethod);
@@ -1626,10 +1693,11 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             }
                                             _ => match coarse {
                                                 Some(BranchUpdateStatus::HasConflicts) => {
-                                                    action_status.set(Some(
+                                                    action_status.set(Some(ActionFeedback::Warning(
                                                         "Cannot auto-update: branch has conflicts"
                                                             .into(),
-                                                    ));
+                                                    )));
+                                                    status_set_at.set(Some(std::time::Instant::now()));
                                                 }
                                                 Some(BranchUpdateStatus::NeedsUpdate) => {
                                                     input_mode.set(InputMode::UpdateBranchMethod);
@@ -1653,9 +1721,13 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         match crate::actions::local::open_diff(
                                             &pr_owner, &pr_repo, pr_number,
                                         ) {
-                                            Ok(msg) => action_status.set(Some(msg)),
+                                            Ok(msg) => {
+                                                action_status.set(Some(ActionFeedback::Success(msg)));
+                                                status_set_at.set(Some(std::time::Instant::now()));
+                                            }
                                             Err(e) => {
-                                                action_status.set(Some(format!("Diff error: {e:#}")));
+                                                action_status.set(Some(ActionFeedback::Error(format!("Diff error: {e:#}"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
@@ -1683,7 +1755,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                     .as_deref()
                                                     .unwrap_or("github.com")
                                                     .to_owned();
-                                                action_status.set(Some(format!("Cloning {repo_name}…")));
+                                                action_status.set(Some(ActionFeedback::Info(format!("Cloning {repo_name}…"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                                 crate::actions::local::spawn_checkout(
                                                     pr.head_ref.clone(),
                                                     repo_name,
@@ -1701,70 +1774,21 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                     &repo_paths,
                                                     host,
                                                 ) {
-                                                    Ok(msg) => action_status.set(Some(msg)),
-                                                    Err(e) => action_status
-                                                        .set(Some(format!("Checkout error: {e:#}"))),
+                                                    Ok(msg) => {
+                                                        action_status.set(Some(ActionFeedback::Success(msg)));
+                                                        status_set_at.set(Some(std::time::Instant::now()));
+                                                    }
+                                                    Err(e) => {
+                                                        action_status.set(Some(ActionFeedback::Error(format!("Checkout error: {e:#}"))));
+                                                        status_set_at.set(Some(std::time::Instant::now()));
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                     BuiltinAction::Worktree => {
-                                        let current_data = prs_state
-                                            .read()
-                                            .filters
-                                            .get(current_filter_idx)
-                                            .cloned();
-                                        if let Some(data) = current_data
-                                            && let Some(pr) = data.prs.get(cursor.get())
-                                        {
-                                            let repo_name = pr
-                                                .repo
-                                                .as_ref()
-                                                .map(crate::github::types::RepoRef::full_name)
-                                                .unwrap_or_default();
-                                            let needs_clone = crate::actions::local::repo_needs_clone(&repo_name, &repo_paths);
-                                            if needs_clone && !auto_clone {
-                                                input_mode.set(InputMode::Confirm(BuiltinAction::Worktree));
-                                                action_status.set(None);
-                                            } else if needs_clone {
-                                                // auto_clone: spawn background thread so UI stays responsive.
-                                                let host = filter_host_for_kb
-                                                    .as_deref()
-                                                    .unwrap_or("github.com")
-                                                    .to_owned();
-                                                action_status.set(Some(format!("Cloning {repo_name}…")));
-                                                crate::actions::local::spawn_worktree(
-                                                    pr.head_ref.clone(),
-                                                    repo_name,
-                                                    repo_paths.clone(),
-                                                    host,
-                                                    local_action_tx.clone(),
-                                                );
-                                            } else {
-                                                let host = filter_host_for_kb
-                                                    .as_deref()
-                                                    .unwrap_or("github.com");
-                                                match crate::actions::local::create_or_open_worktree(
-                                                    &pr.head_ref,
-                                                    &repo_name,
-                                                    &repo_paths,
-                                                    host,
-                                                ) {
-                                                    Ok(path) => {
-                                                        match clipboard::copy_to_clipboard(&path) {
-                                                            Ok(()) => action_status.set(Some(
-                                                                format!("Worktree ready (copied): {path}"),
-                                                            )),
-                                                            Err(e) => action_status.set(Some(
-                                                                format!("Worktree ready: {path} (clipboard: {e})"),
-                                                            )),
-                                                        }
-                                                    }
-                                                    Err(e) => action_status
-                                                        .set(Some(format!("Worktree error: {e:#}"))),
-                                                }
-                                            }
-                                        }
+                                        input_mode.set(InputMode::Confirm(BuiltinAction::Worktree));
+                                        action_status.set(None);
                                     }
                                     BuiltinAction::Assign | BuiltinAction::Unassign => {
                                         input_mode.set(InputMode::Assign);
@@ -1830,31 +1854,37 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     BuiltinAction::CopyNumber if pr_number > 0 => {
                                         let text = pr_number.to_string();
                                         match clipboard::copy_to_clipboard(&text) {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Copied #{pr_number}"))),
+                                            Ok(()) => {
+                                                action_status.set(Some(ActionFeedback::Success(format!("Copied #{pr_number}"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
+                                            }
                                             Err(e) => {
-                                                action_status
-                                                    .set(Some(format!("Copy failed: {e}")));
+                                                action_status.set(Some(ActionFeedback::Error(format!("Copy failed: {e}"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
                                     BuiltinAction::CopyUrl if !pr_url.is_empty() => {
                                         match clipboard::copy_to_clipboard(&pr_url) {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Copied URL for #{pr_number}"))),
+                                            Ok(()) => {
+                                                action_status.set(Some(ActionFeedback::Success(format!("Copied URL for #{pr_number}"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
+                                            }
                                             Err(e) => {
-                                                action_status
-                                                    .set(Some(format!("Copy failed: {e}")));
+                                                action_status.set(Some(ActionFeedback::Error(format!("Copy failed: {e}"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
                                     BuiltinAction::OpenBrowser if !pr_url.is_empty() => {
                                         match clipboard::open_in_browser(&pr_url) {
-                                            Ok(()) => action_status
-                                                .set(Some(format!("Opened #{pr_number}"))),
+                                            Ok(()) => {
+                                                action_status.set(Some(ActionFeedback::Success(format!("Opened #{pr_number}"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
+                                            }
                                             Err(e) => {
-                                                action_status
-                                                    .set(Some(format!("Open failed: {e}")));
+                                                action_status.set(Some(ActionFeedback::Error(format!("Open failed: {e}"))));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                         }
                                     }
@@ -1866,6 +1896,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             state.filters[idx] = FilterData::default();
                                         }
                                         prs_state.set(state);
+                                        tracing::debug!("prs: Refresh handler: idx={idx} force_refresh=true");
                                         let mut times = filter_fetch_times.read().clone();
                                         if idx < times.len() {
                                             times[idx] = None;
@@ -1878,6 +1909,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         scroll_offset.set(0);
                                     }
                                     BuiltinAction::RefreshAll => {
+                                        tracing::debug!("prs: RefreshAll handler: refresh_all=true");
                                         let mut state = prs_state.read().clone();
                                         for filter in &mut state.filters {
                                             *filter = FilterData::default();
@@ -2030,8 +2062,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             cursor.set(0);
                                             scroll_offset.set(0);
                                         } else {
-                                            action_status
-                                                .set(Some("Cannot close config tabs".to_owned()));
+                                            action_status.set(Some(ActionFeedback::Warning("Cannot close config tabs".to_owned())));
+                                            status_set_at.set(Some(std::time::Instant::now()));
                                         }
                                     }
                                     BuiltinAction::GoBack => {
@@ -2081,10 +2113,11 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         };
                                         match entries.len() {
                                             0 => {
-                                                action_status.set(Some(
+                                                action_status.set(Some(ActionFeedback::Info(
                                                     "No Actions run linked to this PR's checks"
                                                         .to_owned(),
-                                                ));
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
                                             }
                                             1 => {
                                                 if let (Some(mut nt), Some((target, _))) =
@@ -2136,7 +2169,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         }
                         KeyCode::Esc => {
                             input_mode.set(InputMode::Normal);
-                            action_status.set(Some("Cancelled".to_owned()));
+                            action_status.set(Some(ActionFeedback::Info("Cancelled".to_owned())));
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         _ => {}
                     },
@@ -2345,6 +2379,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(&theme.icons),
             sidebar_meta,
             None, // Show all tabs for PRs
+            None, // No tab label overrides
         );
         // Store the clamped offset so ctrl+u works immediately.
         if preview_scroll.get() != sidebar.clamped_scroll {
@@ -2450,7 +2485,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 BuiltinAction::UpdateFromBase => "Update branch from base? (y/n)",
                 BuiltinAction::MarkReady => "Mark this draft PR ready for review? (y/n)",
                 BuiltinAction::Checkout => "Clone repo and checkout branch? (y/n)",
-                BuiltinAction::Worktree => "Clone repo and create worktree? (y/n)",
+                BuiltinAction::Worktree => "Create worktree for this branch? (y/n)",
                 _ => "(y/n)",
             };
             Some(RenderedTextInput::build(
@@ -2481,9 +2516,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         )),
     };
 
-    let context_text = if let Some(msg) = action_status.read().as_ref() {
-        msg.clone()
-    } else if current_data.is_some_and(|d| d.loading) {
+    let context_text = if current_data.is_some_and(|d| d.loading) {
         "Fetching PRs...".to_owned()
     } else if let Some(err) = current_data.and_then(|d| d.error.as_ref()) {
         format!("Error: {err}")
@@ -2516,6 +2549,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         context_text,
         updated_text,
         rate_limit_text,
+        action_status.read().as_ref(),
+        &theme,
         depth,
         [
             Some(theme.footer_prs),

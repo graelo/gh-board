@@ -5,7 +5,40 @@ use iocraft::prelude::*;
 use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::icons::ResolvedIcons;
+use crate::theme::ResolvedTheme;
 use crate::types::RateLimitInfo;
+
+// ---------------------------------------------------------------------------
+// ActionFeedback — typed status messages with icon + color
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+pub enum ActionFeedback {
+    Success(String),
+    Warning(String),
+    Error(String),
+    Info(String),
+}
+
+impl ActionFeedback {
+    pub fn render(&self, icons: &ResolvedIcons) -> String {
+        match self {
+            Self::Success(msg) => format!("{} {msg}", icons.feedback_ok),
+            Self::Warning(msg) => format!("{} {msg}", icons.feedback_warning),
+            Self::Error(msg) => format!("{} {msg}", icons.feedback_error),
+            Self::Info(msg) => format!("{} {msg}", icons.feedback_info),
+        }
+    }
+
+    pub fn color(&self, theme: &ResolvedTheme, depth: ColorDepth) -> Color {
+        match self {
+            Self::Success(_) => theme.text_success.to_crossterm_color(depth),
+            Self::Warning(_) => theme.text_warning.to_crossterm_color(depth),
+            Self::Error(_) => theme.text_error.to_crossterm_color(depth),
+            Self::Info(_) => theme.text_primary.to_crossterm_color(depth),
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Footer component — structured status bar
@@ -24,6 +57,8 @@ pub struct RenderedFooter {
     pub context_text: String,
     pub updated_text: String,
     pub rate_limit_text: String,
+    pub status_text: Option<String>,
+    pub status_fg: Color,
     pub help_hint: String,
     pub text_fg: Color,
     pub border_fg: Color,
@@ -39,6 +74,8 @@ impl RenderedFooter {
         context_text: String,
         updated_text: String,
         rate_limit_text: String,
+        status: Option<&ActionFeedback>,
+        theme: &ResolvedTheme,
         depth: ColorDepth,
         view_colors: [Option<AppColor>; 5],
         inactive_color: Option<AppColor>,
@@ -49,6 +86,11 @@ impl RenderedFooter {
         let text_fg = text_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let separator_fg = text_fg;
+
+        let (status_text, status_fg) = match status {
+            Some(fb) => (Some(fb.render(icons)), fb.color(theme, depth)),
+            None => (None, Color::Reset),
+        };
 
         let views = ViewKind::ALL
             .iter()
@@ -67,6 +109,8 @@ impl RenderedFooter {
             context_text,
             updated_text,
             rate_limit_text,
+            status_text,
+            status_fg,
             help_hint: "? help".to_owned(),
             text_fg,
             border_fg,
@@ -113,6 +157,7 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
     let has_context = !f.context_text.is_empty();
     let has_updated = !f.updated_text.is_empty();
     let has_rate_limit = !f.rate_limit_text.is_empty();
+    let has_status = f.status_text.is_some();
 
     // Pre-build context area contents for MixedText.
     let mut context_contents = Vec::new();
@@ -136,6 +181,12 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
     }
     if has_rate_limit {
         context_contents.push(MixedTextContent::new(&f.rate_limit_text).color(f.text_fg));
+    }
+
+    // Status slot contents.
+    let mut status_contents = Vec::new();
+    if let Some(ref status) = f.status_text {
+        status_contents.push(MixedTextContent::new(status).color(f.status_fg));
     }
 
     element! {
@@ -165,6 +216,17 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
             View(flex_grow: 1.0) {
                 MixedText(contents: context_contents, wrap: TextWrap::NoWrap)
             }
+            // Status slot (only when present)
+            #(if has_status {
+                Some(element! {
+                    View {
+                        Text(content: " \u{2502} ", color: f.separator_fg, wrap: TextWrap::NoWrap)
+                        MixedText(contents: status_contents, wrap: TextWrap::NoWrap)
+                    }
+                })
+            } else {
+                None
+            })
             // Pipe separator
             Text(content: " \u{2502} ", color: f.separator_fg, wrap: TextWrap::NoWrap)
             // Right: help hint

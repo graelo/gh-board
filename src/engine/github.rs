@@ -40,6 +40,12 @@ impl Engine for GitHubEngine {
     }
 }
 
+/// Maximum time a single request handler may run before being cancelled.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// Maximum time the periodic background refresh may run before being cancelled.
+const TICK_REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
+
 impl GitHubEngine {
     async fn run_loop(self, mut rx: UnboundedReceiver<Request>) {
         let mut client = GitHubClient::new(self.config.github.refetch_interval_minutes);
@@ -62,12 +68,44 @@ impl GitHubEngine {
                             break;
                         }
                         Some(req) => {
-                            handle_request(req, &mut client, &mut scheduler, refresh_interval).await;
+                            let label = req.label();
+                            let reply_tx = req.reply_tx();
+                            if tokio::time::timeout(
+                                REQUEST_TIMEOUT,
+                                handle_request(req, &mut client, &mut scheduler, refresh_interval),
+                            )
+                            .await
+                            .is_err()
+                            {
+                                tracing::warn!(
+                                    "engine: {label} timed out after {REQUEST_TIMEOUT:?}, \
+                                     cancelling to unblock engine"
+                                );
+                                if let Some(tx) = reply_tx {
+                                    let _ = tx.send(Event::FetchError {
+                                        context: label.to_owned(),
+                                        message: format!(
+                                            "Request timed out after {}s",
+                                            REQUEST_TIMEOUT.as_secs()
+                                        ),
+                                    });
+                                }
+                            }
                         }
                     }
                 }
                 _ = refresh_tick.tick() => {
-                    tick_refresh(&mut client, &mut scheduler).await;
+                    if tokio::time::timeout(
+                        TICK_REFRESH_TIMEOUT,
+                        tick_refresh(&mut client, &mut scheduler),
+                    )
+                    .await
+                    .is_err()
+                    {
+                        tracing::warn!(
+                            "engine: tick_refresh timed out after {TICK_REFRESH_TIMEOUT:?}"
+                        );
+                    }
                 }
             }
         }
@@ -85,7 +123,8 @@ async fn handle_request(
     scheduler: &mut RefreshScheduler,
     refresh_interval: Duration,
 ) {
-    tracing::debug!("engine: received request");
+    let label = req.label();
+    tracing::debug!("engine: received request: {label}");
     match req {
         // --- Fetch PRs ---
         Request::FetchPrs {

@@ -37,7 +37,10 @@ Enterprise hosts.
 ### Work with branches
 
 Checkout, delete, create new branches, and open PRs — without leaving the
-terminal.
+terminal. The Branches view shows a worktree column, a sidebar with Overview,
+Commits, and Files tabs, and supports all-repos mode (a flat list across all
+configured repositories, toggled with `S`). Press `ctrl+]` to jump to the
+matching PR in the PRs view.
 
 ### Worktree workflow
 

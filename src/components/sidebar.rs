@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use iocraft::prelude::*;
 
 use crate::color::{Color as AppColor, ColorDepth};
@@ -10,7 +12,7 @@ use crate::markdown::renderer::StyledLine;
 // Sidebar tab enum (T072 — FR-014)
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SidebarTab {
     Overview,
     Activity,
@@ -214,6 +216,7 @@ impl RenderedSidebar {
             None,
             None,
             None,
+            None,
         )
     }
 
@@ -234,6 +237,7 @@ impl RenderedSidebar {
         icons: Option<&ResolvedIcons>,
         meta: Option<SidebarMeta>,
         visible_tabs: Option<&[SidebarTab]>,
+        tab_label_overrides: Option<&HashMap<SidebarTab, String>>,
     ) -> Self {
         let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
         let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
@@ -303,11 +307,15 @@ impl RenderedSidebar {
             tabs_to_show
                 .iter()
                 .map(|&t| {
-                    let label = if let Some(ic) = icons {
-                        t.icon_label(ic)
-                    } else {
-                        t.label().to_owned()
-                    };
+                    let label = tab_label_overrides
+                        .and_then(|m| m.get(&t).cloned())
+                        .unwrap_or_else(|| {
+                            if let Some(ic) = icons {
+                                t.icon_label(ic)
+                            } else {
+                                t.label().to_owned()
+                            }
+                        });
                     (label, t == current)
                 })
                 .collect()

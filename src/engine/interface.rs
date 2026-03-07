@@ -383,6 +383,7 @@ pub enum Event {
     IssueDetailFetched {
         number: u64,
         detail: IssueDetail,
+        rate_limit: Option<RateLimitInfo>,
     },
     RepoLabelsFetched {
         labels: Vec<String>,

@@ -387,9 +387,9 @@ async fn handle_request(
             let cache = client.cache();
             match graphql::fetch_issue_detail(&octocrab, &owner, &repo, number, Some(&cache)).await
             {
-                Ok((detail, _rate_limit)) => {
+                Ok((detail, rate_limit)) => {
                     tracing::debug!("engine: sending IssueDetailFetched #{number}");
-                    let _ = reply_tx.send(Event::IssueDetailFetched { number, detail });
+                    let _ = reply_tx.send(Event::IssueDetailFetched { number, detail, rate_limit });
                 }
                 Err(e) => {
                     tracing::debug!("engine: FetchIssueDetail #{number} error: {e}");

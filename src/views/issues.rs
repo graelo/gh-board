@@ -590,10 +590,13 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             }
                             filter_in_flight.set(ifl);
                         }
-                        Event::IssueDetailFetched { number, detail } => {
+                        Event::IssueDetailFetched { number, detail, rate_limit } => {
                             let mut cache = detail_cache.read().clone();
                             cache.insert(number, detail);
                             detail_cache.set(cache);
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
+                            }
                         }
                         Event::FetchError {
                             context: _,

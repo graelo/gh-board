@@ -79,12 +79,7 @@ pub enum Request {
         reply_tx: Sender<Event>,
     },
     FetchPrDetail {
-        owner: String,
-        repo: String,
-        number: u64,
-        base_ref: String,
-        head_repo_owner: Option<String>,
-        head_ref: String,
+        pr_ref: PrRef,
         /// Skip the moka cache and fetch fresh data from the GitHub API.
         force: bool,
         reply_tx: Sender<Event>,
@@ -114,20 +109,8 @@ pub enum Request {
     // -----------------------------------------------------------------------
     // Background refresh registration (UI registers once per view)
     // -----------------------------------------------------------------------
-    RegisterPrsRefresh {
-        filter_configs: Vec<PrFilter>,
-        notify_tx: Sender<Event>,
-    },
-    RegisterIssuesRefresh {
-        filter_configs: Vec<IssueFilter>,
-        notify_tx: Sender<Event>,
-    },
-    RegisterActionsRefresh {
-        filter_configs: Vec<ActionsFilter>,
-        notify_tx: Sender<Event>,
-    },
-    RegisterNotificationsRefresh {
-        filter_configs: Vec<NotificationFilter>,
+    RegisterRefresh {
+        configs: Vec<crate::engine::refresh::FilterConfig>,
         notify_tx: Sender<Event>,
     },
 
@@ -319,11 +302,7 @@ impl Request {
             | Self::MarkAllNotificationsRead { reply_tx, .. }
             | Self::UnsubscribeNotification { reply_tx, .. }
             | Self::FetchRunById { reply_tx, .. } => Some(reply_tx.clone()),
-            Self::RegisterPrsRefresh { .. }
-            | Self::RegisterIssuesRefresh { .. }
-            | Self::RegisterActionsRefresh { .. }
-            | Self::RegisterNotificationsRefresh { .. }
-            | Self::Shutdown => None,
+            Self::RegisterRefresh { .. } | Self::Shutdown => None,
         }
     }
 
@@ -360,10 +339,7 @@ impl Request {
             Self::MarkAllNotificationsRead { .. } => "MarkAllNotificationsRead",
             Self::UnsubscribeNotification { .. } => "UnsubscribeNotification",
             Self::FetchRunById { .. } => "FetchRunById",
-            Self::RegisterPrsRefresh { .. } => "RegisterPrsRefresh",
-            Self::RegisterIssuesRefresh { .. } => "RegisterIssuesRefresh",
-            Self::RegisterActionsRefresh { .. } => "RegisterActionsRefresh",
-            Self::RegisterNotificationsRefresh { .. } => "RegisterNotificationsRefresh",
+            Self::RegisterRefresh { .. } => "RegisterRefresh",
             Self::Shutdown => "Shutdown",
         }
     }

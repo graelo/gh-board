@@ -18,7 +18,7 @@ use crate::config::keybindings::{
     execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::ActionsFilter;
-use crate::engine::{EngineHandle, Event, Request};
+use crate::engine::{EngineHandle, Event, FilterConfig, Request};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::{RateLimitInfo, RunConclusion, RunStatus, WorkflowJob, WorkflowRun};
@@ -465,8 +465,8 @@ pub fn ActionsView<'a>(
                 f.clone()
             })
             .collect();
-        eng.send(Request::RegisterActionsRefresh {
-            filter_configs: resolved_for_refresh,
+        eng.send(Request::RegisterRefresh {
+            configs: resolved_for_refresh.into_iter().map(FilterConfig::Action).collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

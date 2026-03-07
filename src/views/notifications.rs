@@ -17,7 +17,7 @@ use crate::config::keybindings::{
     execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::NotificationFilter;
-use crate::engine::{EngineHandle, Event, Request};
+use crate::engine::{EngineHandle, Event, FilterConfig, Request};
 use crate::filter::{self, apply_scope};
 use crate::theme::ResolvedTheme;
 use crate::types::{Notification, RateLimitInfo, SubjectType};
@@ -311,8 +311,8 @@ pub fn NotificationsView<'a>(
                 modified
             })
             .collect();
-        eng.send(Request::RegisterNotificationsRefresh {
-            filter_configs: scoped_configs,
+        eng.send(Request::RegisterRefresh {
+            configs: scoped_configs.into_iter().map(FilterConfig::Notification).collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

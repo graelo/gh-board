@@ -22,7 +22,7 @@ use crate::config::keybindings::{
     execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::PrFilter;
-use crate::engine::{EngineHandle, Event, PrRef, Request};
+use crate::engine::{EngineHandle, Event, FilterConfig, PrRef, Request};
 use crate::filter::{self, apply_scope};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine};
@@ -667,12 +667,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                     spawned_gen = current_gen;
                     if let Some(ref eng) = engine_for_debounce {
                         eng.send(Request::FetchPrDetail {
-                            owner: owner.clone(),
-                            repo: repo.clone(),
-                            number: pr_number,
-                            base_ref,
-                            head_repo_owner,
-                            head_ref,
+                            pr_ref: PrRef {
+                                owner: owner.clone(),
+                                repo: repo.clone(),
+                                number: pr_number,
+                                base_ref,
+                                head_repo_owner,
+                                head_ref,
+                            },
                             force,
                             reply_tx: event_tx_for_debounce.clone(),
                         });
@@ -719,8 +721,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 modified
             })
             .collect();
-        eng.send(Request::RegisterPrsRefresh {
-            filter_configs: scoped_configs,
+        eng.send(Request::RegisterRefresh {
+            configs: scoped_configs.into_iter().map(FilterConfig::Pr).collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

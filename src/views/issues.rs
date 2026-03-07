@@ -19,7 +19,7 @@ use crate::config::keybindings::{
     execute_shell_command, expand_template, key_event_to_string,
 };
 use crate::config::types::IssueFilter;
-use crate::engine::{EngineHandle, Event, Request};
+use crate::engine::{EngineHandle, Event, FilterConfig, Request};
 use crate::filter::{self, apply_scope};
 use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::{self, StyledLine, StyledSpan};
@@ -459,8 +459,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 modified
             })
             .collect();
-        eng.send(Request::RegisterIssuesRefresh {
-            filter_configs: scoped_configs,
+        eng.send(Request::RegisterRefresh {
+            configs: scoped_configs.into_iter().map(FilterConfig::Issue).collect(),
             notify_tx: event_tx.clone(),
         });
         refresh_registered.set(true);

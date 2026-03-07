@@ -125,10 +125,7 @@ impl StubEngine {
                 }
 
                 // Refresh registration — ignored by stub
-                Request::RegisterPrsRefresh { .. }
-                | Request::RegisterIssuesRefresh { .. }
-                | Request::RegisterActionsRefresh { .. }
-                | Request::RegisterNotificationsRefresh { .. } => {}
+                Request::RegisterRefresh { .. } => {}
 
                 // All mutations succeed instantly
                 Request::ApprovePr { reply_tx, .. }

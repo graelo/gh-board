@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use gh_board::config::types::PrFilter;
-use gh_board::engine::{Engine, Event, Request, StubEngine};
+use gh_board::engine::{Engine, Event, PrRef, Request, StubEngine};
 use gh_board::types::PullRequest;
 
 fn load_fixture_prs() -> Vec<PullRequest> {
@@ -96,12 +96,14 @@ fn stub_engine_detail_returns_fetch_error() {
     let (tx, rx) = std::sync::mpsc::channel::<Event>();
 
     handle.send(Request::FetchPrDetail {
-        owner: "example".into(),
-        repo: "repo".into(),
-        number: 1,
-        base_ref: "main".into(),
-        head_repo_owner: None,
-        head_ref: "feature".into(),
+        pr_ref: PrRef {
+            owner: "example".into(),
+            repo: "repo".into(),
+            number: 1,
+            base_ref: "main".into(),
+            head_repo_owner: None,
+            head_ref: "feature".into(),
+        },
         force: false,
         reply_tx: tx,
     });

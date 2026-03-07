@@ -12,7 +12,7 @@ use crate::github::{
     rate_limit::{format_rate_limit_message, is_rate_limited},
 };
 
-use super::interface::{Engine, EngineHandle, Event, Request};
+use super::interface::{Engine, EngineHandle, Event, PrRef, Request};
 use super::refresh::{DueEntry, FilterConfig, RefreshScheduler, ViewKind};
 
 /// The real GitHub backend engine.
@@ -322,15 +322,11 @@ async fn handle_request(
 
         // --- Fetch PR Detail ---
         Request::FetchPrDetail {
-            owner,
-            repo,
-            number,
-            base_ref,
-            head_repo_owner,
-            head_ref,
+            pr_ref,
             force,
             reply_tx,
         } => {
+            let PrRef { owner, repo, number, base_ref, head_repo_owner, head_ref } = pr_ref;
             let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchPrDetail")
             else {
                 return;
@@ -459,54 +455,11 @@ async fn handle_request(
         }
 
         // --- Register refresh ---
-        Request::RegisterPrsRefresh {
-            filter_configs,
+        Request::RegisterRefresh {
+            configs,
             notify_tx,
         } => {
-            scheduler.register(
-                filter_configs.into_iter().map(FilterConfig::Pr).collect(),
-                refresh_interval,
-                &notify_tx,
-            );
-        }
-        Request::RegisterIssuesRefresh {
-            filter_configs,
-            notify_tx,
-        } => {
-            scheduler.register(
-                filter_configs
-                    .into_iter()
-                    .map(FilterConfig::Issue)
-                    .collect(),
-                refresh_interval,
-                &notify_tx,
-            );
-        }
-        Request::RegisterActionsRefresh {
-            filter_configs,
-            notify_tx,
-        } => {
-            scheduler.register(
-                filter_configs
-                    .into_iter()
-                    .map(FilterConfig::Action)
-                    .collect(),
-                refresh_interval,
-                &notify_tx,
-            );
-        }
-        Request::RegisterNotificationsRefresh {
-            filter_configs,
-            notify_tx,
-        } => {
-            scheduler.register(
-                filter_configs
-                    .into_iter()
-                    .map(FilterConfig::Notification)
-                    .collect(),
-                refresh_interval,
-                &notify_tx,
-            );
+            scheduler.register(configs, refresh_interval, &notify_tx);
         }
 
         // -----------------------------------------------------------------------

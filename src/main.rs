@@ -20,7 +20,7 @@ struct Cli {
     #[arg(short, long)]
     config: Option<PathBuf>,
 
-    /// Enable debug logging to debug.log.
+    /// Enable verbose debug logging to ./debug.log (default: warn+ to ~/.cache/gh-board/).
     #[arg(long)]
     debug: bool,
 
@@ -125,14 +125,33 @@ fn main() -> Result<()> {
         open_url.as_deref().map(nav_target_from_url).transpose()?;
 
     // Set up tracing.
-    if cli.debug {
-        let file = std::fs::File::create("debug.log")?;
+    //
+    // Always log warn+ to a well-known file so users can troubleshoot without
+    // needing to reproduce with `--debug`. The `--debug` flag lowers the filter
+    // to `debug` and writes to `./debug.log` instead (same behavior as before).
+    {
+        let (log_file, default_level) = if cli.debug {
+            (std::fs::File::create("debug.log")?, "debug")
+        } else {
+            let cache_dir = std::env::var("XDG_CACHE_HOME")
+                .map_or_else(
+                    |_| {
+                        PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()))
+                            .join(".cache")
+                    },
+                    PathBuf::from,
+                )
+                .join("gh-board");
+            std::fs::create_dir_all(&cache_dir)?;
+            let path = cache_dir.join("gh-board.log");
+            (std::fs::File::create(path)?, "warn")
+        };
         tracing_subscriber::fmt()
-            .with_writer(file)
+            .with_writer(log_file)
             .with_ansi(false)
             .with_env_filter(
                 tracing_subscriber::EnvFilter::try_from_env("RUST_LOG")
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")),
+                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new(default_level)),
             )
             .init();
     }

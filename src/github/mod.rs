@@ -1,7 +1,7 @@
-pub mod actions;
-pub mod auth;
-pub mod client;
-pub mod graphql;
-pub mod notifications;
-pub mod rate_limit;
-pub mod types;
+pub(crate) mod actions;
+pub(crate) mod auth;
+pub(crate) mod client;
+pub(crate) mod graphql;
+pub(crate) mod notifications;
+pub(crate) mod rate_limit;
+pub(crate) mod types;

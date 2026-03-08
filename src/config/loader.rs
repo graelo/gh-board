@@ -82,24 +82,18 @@ fn apply_theme_file(config: &mut AppConfig) -> Result<()> {
         return Ok(());
     };
 
-    let toml_src = if let Some(name) = theme_file.strip_prefix("builtin:") {
-        builtin_themes::get(name).with_context(|| {
+    let file_theme: ThemeFile = if let Some(name) = theme_file.strip_prefix("builtin:") {
+        let toml_src = builtin_themes::get(name).with_context(|| {
             let names = builtin_themes::list().join(", ");
             format!("unknown built-in theme {name:?}; available: {names}")
-        })?
+        })?;
+        toml::from_str(toml_src).with_context(|| format!("parsing theme file {theme_file:?}"))?
     } else {
-        // Filesystem path — expand leading `~`.
         let path = expand_tilde(theme_file);
-        // We need a static str but we have a runtime String — store it in
-        // a Box and leak it so we can treat it as `&'static str`.
-        // This happens at most once per run so the tiny leak is acceptable.
         let contents = std::fs::read_to_string(&path)
             .with_context(|| format!("reading theme file {}", path.display()))?;
-        Box::leak(contents.into_boxed_str())
+        toml::from_str(&contents).with_context(|| format!("parsing theme file {theme_file:?}"))?
     };
-
-    let file_theme: ThemeFile =
-        toml::from_str(toml_src).with_context(|| format!("parsing theme file {theme_file:?}"))?;
 
     // The file provides the base; inline [theme.*] is the overlay.
     let inline = std::mem::take(&mut config.theme);

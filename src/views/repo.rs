@@ -595,6 +595,7 @@ fn branch_to_row(
 enum InputMode {
     Normal,
     ConfirmDelete,
+    ConfirmWorktree,
     CreateBranch,
 }
 
@@ -917,6 +918,46 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                         }
                         _ => {}
                     },
+                    InputMode::ConfirmWorktree => match code {
+                        KeyCode::Char('y' | 'Y') => {
+                            input_mode.set(InputMode::Normal);
+                            if let Some(branch) = filtered_branch_at(
+                                &branches_state, scope_repo_owned.as_deref(), cursor.get()
+                            ) {
+                                let path = if branch.repo_label == cwd_label_owned {
+                                    repo_path_owned.clone()
+                                } else {
+                                    repo_paths_owned.as_ref()
+                                        .and_then(|m| m.get(&branch.repo_label))
+                                        .cloned()
+                                };
+                                if let Some(repo_path) = path {
+                                    match crate::actions::local::create_worktree_at(&branch.name, &repo_path) {
+                                        Ok(wt_path) => {
+                                            let msg = match crate::actions::clipboard::copy_to_clipboard(&wt_path) {
+                                                Ok(()) => format!("Worktree ready (copied): {wt_path}"),
+                                                Err(e) => format!("Worktree ready: {wt_path} (clipboard: {e})"),
+                                            };
+                                            action_status.set(Some(ActionFeedback::Success(msg)));
+                                            status_set_at.set(Some(std::time::Instant::now()));
+                                            reload(&mut branches_state);
+                                        }
+                                        Err(e) => {
+                                            action_status.set(Some(ActionFeedback::Error(
+                                                format!("Worktree error: {e:#}")
+                                            )));
+                                            status_set_at.set(Some(std::time::Instant::now()));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        KeyCode::Char('n' | 'N') | KeyCode::Esc => {
+                            input_mode.set(InputMode::Normal);
+                            action_status.set(None);
+                        }
+                        _ => {}
+                    },
                     InputMode::CreateBranch => match code {
                         KeyCode::Enter => {
                             let name = input_buffer.read().clone();
@@ -1008,6 +1049,29 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                                         status_set_at.set(Some(std::time::Instant::now()));
                                                     }
                                                 }
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::Worktree => {
+                                        if let Some(branch) = filtered_branch_at(
+                                            &branches_state, scope_repo_owned.as_deref(), cursor.get()
+                                        ) {
+                                            if branch.is_current {
+                                                action_status.set(Some(ActionFeedback::Warning(
+                                                    "Cannot create worktree for the checked-out branch".into()
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
+                                            } else if let Some(ref wt) = branch.worktree_path {
+                                                let path = wt.to_string_lossy().to_string();
+                                                let msg = match crate::actions::clipboard::copy_to_clipboard(&path) {
+                                                    Ok(()) => format!("Worktree exists (copied): {path}"),
+                                                    Err(_) => format!("Worktree exists: {path}"),
+                                                };
+                                                action_status.set(Some(ActionFeedback::Info(msg)));
+                                                status_set_at.set(Some(std::time::Instant::now()));
+                                            } else {
+                                                input_mode.set(InputMode::ConfirmWorktree);
+                                                action_status.set(None);
                                             }
                                         }
                                     }
@@ -1303,6 +1367,18 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                 depth,
                 Some(theme.text_primary),
                 Some(theme.text_warning),
+                Some(theme.border_faint),
+            ))
+        }
+        InputMode::ConfirmWorktree => {
+            let branch_name = branches.get(cursor.get()).map_or("?", |b| b.name.as_str());
+            let prompt = format!("Create worktree for '{branch_name}'? (y/n)");
+            Some(crate::components::text_input::RenderedTextInput::build(
+                &prompt,
+                "",
+                depth,
+                Some(theme.text_primary),
+                Some(theme.text_secondary),
                 Some(theme.border_faint),
             ))
         }

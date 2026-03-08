@@ -1107,13 +1107,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         files_cache.set(HashMap::new());
                                         pr_repos_fetched.set(HashSet::new());
                                         pr_map.set(HashMap::new());
-                                        action_status.set(Some(
-                                            ActionFeedback::Info(
-                                                "Refreshing branches…".to_owned(),
-                                            ),
-                                        ));
-                                        status_set_at
-                                            .set(Some(std::time::Instant::now()));
+                                        action_status.set(None);
                                     }
                                     BuiltinAction::ToggleHelp => {
                                         help_visible.set(true);

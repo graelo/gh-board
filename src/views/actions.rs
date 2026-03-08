@@ -1309,12 +1309,15 @@ pub fn ActionsView<'a>(
                                                     reply_tx: event_tx_for_keys.clone(),
                                                 });
                                             }
-                                            // Clear cached jobs for this run.
+                                            // Clear cached jobs so the response
+                                            // replaces stale data, but mark
+                                            // in-flight so the sidebar lazy-fetch
+                                            // doesn't fire a duplicate request.
                                             let mut jc = jobs_cache.read().clone();
                                             jc.remove(&run.id);
                                             jobs_cache.set(jc);
                                             let mut ifl = jobs_in_flight.read().clone();
-                                            ifl.remove(&run.id);
+                                            ifl.insert(run.id);
                                             jobs_in_flight.set(ifl);
                                         }
                                     }

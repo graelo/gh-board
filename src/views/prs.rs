@@ -1036,6 +1036,26 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
     let nav_target_prop = props.nav_target;
 
+    // When a deep-link is pending and some config tabs were never fetched,
+    // trigger a full refresh so the search doesn't wait forever.
+    if is_active
+        && nav_target_prop
+            .as_ref()
+            .is_some_and(|nt| nt.read().is_some())
+    {
+        let any_never_loaded = {
+            let state = prs_state.read();
+            let in_flight = filter_in_flight.read();
+            (0..filter_count).any(|fi| {
+                state.filters.get(fi).is_some_and(|fd| fd.loading)
+                    && !in_flight.get(fi).copied().unwrap_or(false)
+            })
+        };
+        if any_never_loaded {
+            refresh_all.set(true);
+        }
+    }
+
     if is_active && let Some(ref nt_state) = nav_target_prop {
         let target = nt_state.read().clone();
         if let Some(NavigationTarget::PullRequest {
@@ -1078,8 +1098,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             } else {
                 // 2. Check if any filter is still loading — wait.
                 let any_in_flight = filter_in_flight.read().iter().any(|&f| f);
-                tracing::debug!("prs: deep-link: any_in_flight={any_in_flight}");
-                if !any_in_flight {
+                let any_never_loaded = prs_state
+                    .read()
+                    .filters
+                    .iter()
+                    .take(filter_count)
+                    .any(|fd| fd.loading);
+                tracing::debug!(
+                    "prs: deep-link: any_in_flight={any_in_flight}, any_never_loaded={any_never_loaded}"
+                );
+                if !any_in_flight && !any_never_loaded {
                     // 3. All loaded, PR not found.
                     let full_repo = format!("{owner}/{repo}");
 

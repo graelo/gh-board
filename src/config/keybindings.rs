@@ -405,6 +405,7 @@ pub(crate) fn default_branches() -> Vec<Keybinding> {
         kb("P", "create_pr_from_branch", "Create PR from branch"),
         kb("v", "view_prs_for_branch", "View PRs for branch"),
         kb("ctrl+]", "jump_to_pr", "Jump to PR"),
+        kb("w", "worktree", "Create/open worktree"),
         kb("n", "switch_view", "Switch view"),
         kb("N", "switch_view_back", "Switch view back"),
         kb("S", "toggle_scope", "Toggle repo scope"),

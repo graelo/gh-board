@@ -108,6 +108,7 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `P` | `create_pr_from_branch` | Create PR from branch |
 | `v` | `view_prs_for_branch` | View PRs for branch |
 | `ctrl+]` | `jump_to_pr` | Jump to PR |
+| `w` | `worktree` | Create/open worktree |
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
 | `S` | `toggle_scope` | Toggle repo scope |
 

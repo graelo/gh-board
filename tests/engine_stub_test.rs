@@ -14,11 +14,7 @@ fn stub_engine_fetch_prs_returns_fixture_data() {
     let prs = load_fixture_prs();
     assert_eq!(prs.len(), 1, "fixture should have exactly one PR");
 
-    let stub = StubEngine {
-        prs: prs.clone(),
-        issues: vec![],
-        notifications: vec![],
-    };
+    let stub = StubEngine::new(prs.clone(), vec![], vec![]);
 
     let handle = stub.start();
     let (tx, rx) = std::sync::mpsc::channel::<Event>();
@@ -58,11 +54,7 @@ fn stub_engine_fetch_prs_returns_fixture_data() {
 
 #[test]
 fn stub_engine_mutations_succeed_instantly() {
-    let stub = StubEngine {
-        prs: vec![],
-        issues: vec![],
-        notifications: vec![],
-    };
+    let stub = StubEngine::default();
 
     let handle = stub.start();
     let (tx, rx) = std::sync::mpsc::channel::<Event>();
@@ -86,11 +78,7 @@ fn stub_engine_mutations_succeed_instantly() {
 
 #[test]
 fn stub_engine_detail_returns_fetch_error() {
-    let stub = StubEngine {
-        prs: vec![],
-        issues: vec![],
-        notifications: vec![],
-    };
+    let stub = StubEngine::default();
 
     let handle = stub.start();
     let (tx, rx) = std::sync::mpsc::channel::<Event>();
@@ -120,11 +108,7 @@ fn stub_engine_detail_returns_fetch_error() {
 
 #[test]
 fn stub_engine_fetch_run_by_id_returns_not_found() {
-    let stub = StubEngine {
-        prs: vec![],
-        issues: vec![],
-        notifications: vec![],
-    };
+    let stub = StubEngine::default();
 
     let handle = stub.start();
     let (tx, rx) = std::sync::mpsc::channel::<Event>();

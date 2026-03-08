@@ -21,8 +21,6 @@ pub struct RenderedSuggestion {
     pub is_selected: bool,
     pub fg: Color,
     pub selected_fg: Color,
-    #[allow(dead_code)]
-    pub selected_bg: Color,
 }
 
 impl RenderedTextInput {
@@ -80,7 +78,6 @@ impl RenderedTextInput {
                     is_selected,
                     fg: suggestion_fg,
                     selected_fg: highlight_fg,
-                    selected_bg: Color::Reset,
                 }
             })
             .collect();

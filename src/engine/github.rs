@@ -156,7 +156,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchPrs[{filter_idx}] error: {e}");
+                    tracing::warn!("engine: FetchPrs[{filter_idx}] error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchPrs[{filter_idx}]"),
                         message: if is_rate_limited(&e) {
@@ -197,7 +197,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchIssues[{filter_idx}] error: {e}");
+                    tracing::warn!("engine: FetchIssues[{filter_idx}] error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchIssues[{filter_idx}]"),
                         message: if is_rate_limited(&e) {
@@ -234,7 +234,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchActions[{filter_idx}] error: {e}");
+                    tracing::warn!("engine: FetchActions[{filter_idx}] error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchActions[{filter_idx}]"),
                         message: if is_rate_limited(&e) {
@@ -272,7 +272,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchRunJobs run_id={run_id} error: {e}");
+                    tracing::warn!("engine: FetchRunJobs run_id={run_id} error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchRunJobs[{run_id}]"),
                         message: e.to_string(),
@@ -307,7 +307,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchNotifications[{filter_idx}] error: {e}");
+                    tracing::warn!("engine: FetchNotifications[{filter_idx}] error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchNotifications[{filter_idx}]"),
                         message: if is_rate_limited(&e) {
@@ -355,7 +355,7 @@ async fn handle_request(
                         {
                             Ok(n) => detail.behind_by = n,
                             Err(e) => {
-                                tracing::debug!("engine: compare API failed for #{number}: {e:#}");
+                                tracing::warn!("engine: compare API failed for #{number}: {e:#}");
                             }
                         }
                     }
@@ -367,7 +367,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchPrDetail #{number} error: {e}");
+                    tracing::warn!("engine: FetchPrDetail #{number} error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchPrDetail #{number}"),
                         message: if is_rate_limited(&e) {
@@ -403,7 +403,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchIssueDetail #{number} error: {e}");
+                    tracing::warn!("engine: FetchIssueDetail #{number} error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchIssueDetail #{number}"),
                         message: if is_rate_limited(&e) {
@@ -458,7 +458,7 @@ async fn handle_request(
                         });
                     }
                     Err(e) => {
-                        tracing::debug!("engine: PrefetchPrDetails #{number} error: {e}");
+                        tracing::warn!("engine: PrefetchPrDetails #{number} error: {e}");
                         // Continue prefetching remaining PRs even if one fails.
                     }
                 }
@@ -932,7 +932,7 @@ async fn handle_request(
                     });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchRepoLabels {owner}/{repo} error: {e}");
+                    tracing::warn!("engine: FetchRepoLabels {owner}/{repo} error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchRepoLabels {owner}/{repo}"),
                         message: if is_rate_limited(&e) {
@@ -966,7 +966,7 @@ async fn handle_request(
                     let _ = reply_tx.send(Event::RepoCollaboratorsFetched { logins, rate_limit });
                 }
                 Err(e) => {
-                    tracing::debug!("engine: FetchRepoCollaborators {owner}/{repo} error: {e}");
+                    tracing::warn!("engine: FetchRepoCollaborators {owner}/{repo} error: {e}");
                     let _ = reply_tx.send(Event::FetchError {
                         context: format!("FetchRepoCollaborators {owner}/{repo}"),
                         message: if is_rate_limited(&e) {
@@ -1072,7 +1072,7 @@ fn get_octocrab(
     match client.octocrab_for(host) {
         Ok(o) => Some(o),
         Err(e) => {
-            tracing::debug!("engine: {context} — octocrab_for({host}) failed: {e}");
+            tracing::warn!("engine: {context} — octocrab_for({host}) failed: {e}");
             let _ = reply_tx.send(Event::FetchError {
                 context: context.to_owned(),
                 message: e.to_string(),

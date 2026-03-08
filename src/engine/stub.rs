@@ -7,10 +7,25 @@ use super::interface::{Engine, EngineHandle, Event, Request};
 /// A stub engine that serves pre-loaded fixture data without any network calls.
 ///
 /// Useful for integration tests and UI demos that must not require a `GITHUB_TOKEN`.
+#[derive(Default)]
 pub struct StubEngine {
-    pub prs: Vec<PullRequest>,
-    pub issues: Vec<Issue>,
-    pub notifications: Vec<Notification>,
+    prs: Vec<PullRequest>,
+    issues: Vec<Issue>,
+    notifications: Vec<Notification>,
+}
+
+impl StubEngine {
+    pub fn new(
+        prs: Vec<PullRequest>,
+        issues: Vec<Issue>,
+        notifications: Vec<Notification>,
+    ) -> Self {
+        Self {
+            prs,
+            issues,
+            notifications,
+        }
+    }
 }
 
 impl Engine for StubEngine {

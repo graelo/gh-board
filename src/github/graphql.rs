@@ -288,7 +288,7 @@ struct IssueSearchResult {
 
 /// Pagination info from GraphQL.
 #[derive(Debug, Clone, Deserialize)]
-pub struct PageInfo {
+pub(crate) struct PageInfo {
     #[serde(rename = "hasNextPage")]
     pub has_next_page: bool,
     #[serde(rename = "endCursor")]
@@ -881,7 +881,7 @@ fn parse_reaction_groups(groups: &[RawReactionGroup]) -> ReactionGroups {
 // ---------------------------------------------------------------------------
 
 /// Result of a single page of PR search results.
-pub struct SearchPrPage {
+pub(crate) struct SearchPrPage {
     pub pull_requests: Vec<PullRequest>,
     pub page_info: PageInfo,
     pub rate_limit: Option<RateLimitInfo>,
@@ -1000,7 +1000,7 @@ pub async fn search_pull_requests_all(
 // ---------------------------------------------------------------------------
 
 /// Result of a single page of Issue search results.
-pub struct SearchIssuePage {
+pub(crate) struct SearchIssuePage {
     pub issues: Vec<Issue>,
     pub page_info: PageInfo,
     pub rate_limit: Option<RateLimitInfo>,
@@ -1510,7 +1510,7 @@ struct RawRepoLabel {
 
 /// A repository label with name, color, and optional description.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RepoLabel {
+pub(crate) struct RepoLabel {
     pub name: String,
     pub color: String,
     pub description: Option<String>,

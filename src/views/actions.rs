@@ -835,12 +835,68 @@ pub fn ActionsView<'a>(
                     nt.set(None);
                 }
             } else {
-                // 2. Check if any filter is still loading — wait.
-                let any_in_flight = filter_in_flight.read().iter().any(|&f| f);
-                if !any_in_flight {
-                    // 3. All loaded, run not found.
-                    let full_repo = format!("{owner}/{repo}");
-
+                // 2. Check if any config filter for the same repo is still
+                //    pending (in-flight or never-fetched). Only wait for
+                //    those — don't block on unrelated filters.
+                let full_repo = format!("{owner}/{repo}");
+                let repo_matches = |fi: usize| {
+                    all_filters.get(fi).is_some_and(|(cfg, _)| {
+                        resolve_filter_repo(
+                            &cfg.repo,
+                            scope_repo.as_deref(),
+                            detected_repo.as_deref(),
+                        )
+                        .is_some_and(|r| r == full_repo)
+                    })
+                };
+                let (matching_still_pending, needs_fetch) = {
+                    let state = actions_state.read();
+                    let in_flight = filter_in_flight.read();
+                    let mut any_pending = false;
+                    let mut to_fetch = Vec::new();
+                    for fi in 0..filter_count {
+                        if !repo_matches(fi) {
+                            continue;
+                        }
+                        let is_loading = state.filters.get(fi).is_some_and(|fd| fd.loading);
+                        let is_in_flight = in_flight.get(fi).copied().unwrap_or(false);
+                        if is_in_flight || is_loading {
+                            any_pending = true;
+                        }
+                        if is_loading && !is_in_flight {
+                            to_fetch.push(fi);
+                        }
+                    }
+                    (any_pending, to_fetch)
+                };
+                // Eagerly fetch matching config tabs that were never loaded.
+                if let Some(ref eng) = engine {
+                    for fi in needs_fetch {
+                        if let Some((cfg, _)) = all_filters.get(fi) {
+                            let resolved = resolve_filter_repo(
+                                &cfg.repo,
+                                scope_repo.as_deref(),
+                                detected_repo.as_deref(),
+                            )
+                            .unwrap();
+                            let filter = if resolved == cfg.repo.as_str() {
+                                (*cfg).clone()
+                            } else {
+                                ActionsFilter {
+                                    repo: resolved.to_owned(),
+                                    ..(*cfg).clone()
+                                }
+                            };
+                            super::common::set_in_flight(&mut filter_in_flight, fi, true);
+                            eng.send(Request::FetchActions {
+                                filter_idx: fi,
+                                filter,
+                                reply_tx: event_tx.clone(),
+                            });
+                        }
+                    }
+                }
+                if !matching_still_pending {
                     // Check if an ephemeral tab for this repo already exists.
                     let existing_eph = {
                         let eph = ephemeral_filters.read();

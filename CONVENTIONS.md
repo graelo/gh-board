@@ -7,7 +7,7 @@ descriptions live in `ARCHITECTURE.md`.
 
 ## 1. View component structure
 
-Each view file (`prs.rs`, `issues.rs`, `notifications.rs`, `repo.rs`) follows
+Each view file (`prs.rs`, `issues.rs`, `actions.rs`, `notifications.rs`, `repo.rs`) follows
 the same internal layout:
 
 ```text
@@ -149,13 +149,10 @@ Do **not** use `async_compat::Compat` anywhere in the UI layer.
 ## 5. Engine → UI reply channel
 
 Each view owns exactly one `std::sync::mpsc` channel for engine replies,
-created in a `use_state` initialiser so it survives re-renders:
+created via the helper in `views/common.rs`:
 
 ```rust
-let event_channel = hooks.use_state(|| {
-    let (tx, rx) = std::sync::mpsc::channel::<Event>();
-    (tx, Arc::new(Mutex::new(rx)))
-});
+let event_channel = hooks.use_state(super::common::new_event_channel);
 let (event_tx, event_rx_arc) = event_channel.read().clone();
 ```
 

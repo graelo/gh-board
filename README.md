@@ -146,7 +146,7 @@ gh-board [COMMAND] [OPTIONS] [URL]
 **Options:**
 
 - `-c, --config <PATH>`: Use a specific config file
-- `--debug`: Enable debug logging to `debug.log`
+- `--debug`: Enable verbose debug logging to `./debug.log` (default: warn+ to `~/.cache/gh-board/`)
 - `-h, --help`: Show help
 - `-v`: Show version
 

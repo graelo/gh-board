@@ -74,7 +74,7 @@ view resets its filter and triggers a fresh fetch.
 graph TD
     main["main.rs / lib.rs"]
     app["app.rs"]
-    views["views/\nprs · issues · notifications · repo"]
+    views["views/\nprs · issues · actions · notifications · repo"]
     components["components/\nTabBar · Table · Sidebar · Footer · …"]
     engine_iface["engine/interface.rs\nEngineHandle · Request · Event"]
     engine_impl["engine/github.rs\nengine/refresh.rs"]

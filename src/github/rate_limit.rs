@@ -1,9 +1,9 @@
 //! Rate-limit detection utilities for GitHub API responses.
 //!
-//! GitHub signals rate limits through:
-//! - HTTP 403 with "API rate limit exceeded" in the body
-//! - HTTP 429 (secondary rate limit)
-//! - GraphQL errors containing "rate limit"
+//! Detection is text-based (matching against the formatted error chain):
+//! - "rate limit" or "api rate limit exceeded" in the message
+//! - "secondary rate limit" (abuse detection)
+//! - HTTP 429 status code
 
 /// Check whether an error message indicates a GitHub rate limit.
 pub(crate) fn is_rate_limited(error: &anyhow::Error) -> bool {

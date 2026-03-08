@@ -979,6 +979,104 @@ async fn handle_request(
             }
         }
 
+        // --- Refresh single PR (combined search-row + detail) ---
+        Request::RefreshPr {
+            owner,
+            repo,
+            number,
+            base_ref,
+            head_repo_owner,
+            head_ref,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RefreshPr") else {
+                return;
+            };
+            let cache = client.cache();
+            // Evict both cache keys so subsequent fetches also get fresh data.
+            let full_key = format!("full_pr:{owner}/{repo}#{number}");
+            let detail_key = format!("pr:{owner}/{repo}#{number}");
+            cache.remove(&full_key).await;
+            cache.remove(&detail_key).await;
+            match graphql::fetch_single_pr(&octocrab, &owner, &repo, number, Some(&cache)).await {
+                Ok((pr, mut detail, rate_limit)) => {
+                    if detail.behind_by.is_none()
+                        && let Some(ref head_owner) = head_repo_owner
+                    {
+                        match graphql::fetch_compare(
+                            &octocrab, &owner, &repo, &base_ref, head_owner, &head_ref,
+                        )
+                        .await
+                        {
+                            Ok(n) => detail.behind_by = n,
+                            Err(e) => {
+                                tracing::warn!("engine: compare API failed for #{number}: {e:#}");
+                            }
+                        }
+                    }
+                    tracing::debug!("engine: sending PrRefreshed #{number}");
+                    let _ = reply_tx.send(Event::PrRefreshed {
+                        number,
+                        pr: Box::new(pr),
+                        detail,
+                        rate_limit,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("engine: RefreshPr #{number} error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("RefreshPr #{number}"),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
+                    });
+                }
+            }
+        }
+
+        // --- Refresh single Issue (combined search-row + detail) ---
+        Request::RefreshIssue {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => {
+            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RefreshIssue")
+            else {
+                return;
+            };
+            let cache = client.cache();
+            let full_key = format!("full_issue:{owner}/{repo}#{number}");
+            let detail_key = format!("issue:{owner}/{repo}#{number}");
+            cache.remove(&full_key).await;
+            cache.remove(&detail_key).await;
+            match graphql::fetch_single_issue(&octocrab, &owner, &repo, number, Some(&cache)).await
+            {
+                Ok((issue, detail, rate_limit)) => {
+                    tracing::debug!("engine: sending IssueRefreshed #{number}");
+                    let _ = reply_tx.send(Event::IssueRefreshed {
+                        number,
+                        issue: Box::new(issue),
+                        detail,
+                        rate_limit,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("engine: RefreshIssue #{number} error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("RefreshIssue #{number}"),
+                        message: if is_rate_limited(&e) {
+                            format_rate_limit_message(&e)
+                        } else {
+                            e.to_string()
+                        },
+                    });
+                }
+            }
+        }
+
         // --- Fetch single run by ID (deep-link navigation) ---
         Request::FetchRunById {
             owner,

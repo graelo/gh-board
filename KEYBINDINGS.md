@@ -23,8 +23,9 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `l` / `→` | `next_filter` | Next filter tab |
 | `p` | `toggle_preview` | Toggle preview pane |
 | `o` | `open_browser` | Open item in browser |
-| `r` | `refresh` | Refresh current filter |
-| `R` | `refresh_all` | Refresh all filters (clear cache) |
+| `r` | `refresh_item` | Refresh selected item |
+| `R` | `refresh` | Refresh current filter |
+| `ctrl+r` | `refresh_all` | Refresh all filters (clear cache) |
 | `/` | `search` | Search / filter |
 | `y` | `copy_number` | Copy number to clipboard |
 | `Y` | `copy_url` | Copy URL to clipboard |
@@ -212,6 +213,7 @@ The full list of names accepted by the `builtin` field:
 | `next_filter` | Next filter tab |
 | `toggle_preview` | Toggle preview pane |
 | `open_browser` | Open in browser |
+| `refresh_item` | Refresh selected item |
 | `refresh` | Refresh current filter |
 | `refresh_all` | Refresh all filters |
 | `search` | Search / filter |

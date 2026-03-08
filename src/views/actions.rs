@@ -696,11 +696,21 @@ pub fn ActionsView<'a>(
                                 let eph_idx = eph.iter().position(|(_, pending)| {
                                     pending.is_some_and(|id| id == run_id)
                                 });
+                                // Update run in-place across ALL filters.
+                                let mut state = actions_state.read().clone();
+                                for fd in &mut state.filters {
+                                    if let Some(existing_idx) =
+                                        fd.runs.iter().position(|r| r.id == fetched.id)
+                                    {
+                                        fd.rows[existing_idx] =
+                                            run_to_row(&fetched, &theme_for_poll);
+                                        fd.runs[existing_idx] = fetched.clone();
+                                    }
+                                }
                                 if let Some(ei) = eph_idx {
                                     let tab_idx = filter_count + ei;
-                                    let mut state = actions_state.read().clone();
                                     if let Some(fd) = state.filters.get_mut(tab_idx) {
-                                        // Prepend if not already present.
+                                        // Prepend if not already present (new run in ephemeral tab).
                                         if !fd.runs.iter().any(|r| r.id == fetched.id) {
                                             fd.rows
                                                 .insert(0, run_to_row(&fetched, &theme_for_poll));
@@ -708,7 +718,6 @@ pub fn ActionsView<'a>(
                                             fd.run_count = fd.runs.len();
                                         }
                                     }
-                                    actions_state.set(state);
                                     // Clear the pending run_id.
                                     let mut eph_mut = eph;
                                     eph_mut[ei].1 = None;
@@ -719,6 +728,7 @@ pub fn ActionsView<'a>(
                                     detail_open.set(true);
                                     detail_scroll.set(0);
                                 }
+                                actions_state.set(state);
                             } else {
                                 action_status.set(Some(ActionFeedback::Warning(format!(
                                     "Run #{run_id} not found (deleted or inaccessible)"
@@ -1268,6 +1278,47 @@ pub fn ActionsView<'a>(
                                             && !run.html_url.is_empty()
                                         {
                                             let _ = clipboard::copy_to_clipboard(&run.html_url);
+                                        }
+                                    }
+                                    BuiltinAction::RefreshItem => {
+                                        if let Some(run) = get_run_at_cursor(
+                                            &actions_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                            &filtered_run_indices_for_kb,
+                                        ) && let Some((owner, repo)) = owner_repo_for_run(
+                                            &run,
+                                            current_filter_cfg_for_kb.as_ref(),
+                                        ) {
+                                            let host = current_filter_cfg_for_kb
+                                                .as_ref()
+                                                .and_then(|f| f.host.clone());
+                                            if let Some(ref eng) = engine_for_keys {
+                                                eng.send(Request::FetchRunById {
+                                                    owner: owner.clone(),
+                                                    repo: repo.clone(),
+                                                    run_id: run.id,
+                                                    host: host.clone(),
+                                                    reply_tx: event_tx_for_keys.clone(),
+                                                });
+                                                eng.send(Request::FetchRunJobs {
+                                                    owner,
+                                                    repo,
+                                                    run_id: run.id,
+                                                    host,
+                                                    reply_tx: event_tx_for_keys.clone(),
+                                                });
+                                            }
+                                            // Clear cached jobs so the response
+                                            // replaces stale data, but mark
+                                            // in-flight so the sidebar lazy-fetch
+                                            // doesn't fire a duplicate request.
+                                            let mut jc = jobs_cache.read().clone();
+                                            jc.remove(&run.id);
+                                            jobs_cache.set(jc);
+                                            let mut ifl = jobs_in_flight.read().clone();
+                                            ifl.insert(run.id);
+                                            jobs_in_flight.set(ifl);
                                         }
                                     }
                                     BuiltinAction::Refresh => {

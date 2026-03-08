@@ -100,6 +100,24 @@ pub enum Request {
         repo: String,
         reply_tx: Sender<Event>,
     },
+    /// Refresh a single PR (table row + sidebar detail in one combined query).
+    RefreshPr {
+        owner: String,
+        repo: String,
+        number: u64,
+        base_ref: String,
+        head_repo_owner: Option<String>,
+        head_ref: String,
+        reply_tx: Sender<Event>,
+    },
+    /// Refresh a single Issue (table row + sidebar detail in one combined query).
+    RefreshIssue {
+        owner: String,
+        repo: String,
+        number: u64,
+        reply_tx: Sender<Event>,
+    },
+
     /// Prefetch PR details for a list of PRs (includes branch refs for the compare call).
     PrefetchPrDetails {
         prs: Vec<PrRef>,
@@ -301,7 +319,9 @@ impl Request {
             | Self::MarkNotificationRead { reply_tx, .. }
             | Self::MarkAllNotificationsRead { reply_tx, .. }
             | Self::UnsubscribeNotification { reply_tx, .. }
-            | Self::FetchRunById { reply_tx, .. } => Some(reply_tx.clone()),
+            | Self::FetchRunById { reply_tx, .. }
+            | Self::RefreshPr { reply_tx, .. }
+            | Self::RefreshIssue { reply_tx, .. } => Some(reply_tx.clone()),
             Self::RegisterRefresh { .. } | Self::Shutdown => None,
         }
     }
@@ -339,6 +359,8 @@ impl Request {
             Self::MarkAllNotificationsRead { .. } => "MarkAllNotificationsRead",
             Self::UnsubscribeNotification { .. } => "UnsubscribeNotification",
             Self::FetchRunById { .. } => "FetchRunById",
+            Self::RefreshPr { .. } => "RefreshPr",
+            Self::RefreshIssue { .. } => "RefreshIssue",
             Self::RegisterRefresh { .. } => "RegisterRefresh",
             Self::Shutdown => "Shutdown",
         }
@@ -396,6 +418,18 @@ pub enum Event {
     SingleRunFetched {
         run_id: u64,
         run: Option<WorkflowRun>,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    PrRefreshed {
+        number: u64,
+        pr: Box<PullRequest>,
+        detail: PrDetail,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    IssueRefreshed {
+        number: u64,
+        issue: Box<Issue>,
+        detail: IssueDetail,
         rate_limit: Option<RateLimitInfo>,
     },
 

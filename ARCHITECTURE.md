@@ -52,7 +52,7 @@ sequenceDiagram
     participant E as Engine (tokio thread)
     participant G as GitHub API
 
-    K->>V: key event (e.g. 'r')
+    K->>V: key event (e.g. 'R' — tab refresh)
     V->>V: force_refresh.set(true)<br/>issues_state reset to loading
     V->>E: Request::FetchIssues { filter, force: true, reply_tx }
     E->>G: GraphQL query (cache bypassed)
@@ -61,6 +61,16 @@ sequenceDiagram
     E-->>V: Event::IssuesFetched { filter_idx, issues, rate_limit }
     V->>V: 100 ms poll wakes, try_recv()<br/>issues_state updated → re-render
 ```
+
+Three refresh levels exist (`r` / `R` / `ctrl+r`):
+
+- **`r` — `RefreshItem`**: refreshes only the selected item. For PRs and Issues
+  the engine runs a single combined GraphQL query (`RefreshPr` / `RefreshIssue`)
+  that returns both table-row and detail data, updating the row in-place across
+  all filters. For Actions it pairs `FetchRunById` + `FetchRunJobs`. Notifications
+  and Repo fall through to tab-level refresh.
+- **`R` — `Refresh`**: resets the active filter tab and re-fetches all items.
+- **`ctrl+r` — `RefreshAll`**: resets every filter tab.
 
 The same shape applies to every mutation (`CloseIssue`, `AssignIssue`, …):
 engine replies with `Event::MutationOk` or `Event::MutationError`, then the

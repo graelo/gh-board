@@ -925,6 +925,33 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             cache.insert(number, detail);
                             detail_cache.set(cache);
                         }
+                        Event::PrRefreshed {
+                            number,
+                            pr,
+                            detail,
+                            rate_limit,
+                        } => {
+                            if rate_limit.is_some() {
+                                rate_limit_state.set(rate_limit);
+                            }
+                            // Update table row in ALL filters.
+                            let mut state = prs_state.read().clone();
+                            for fd in &mut state.filters {
+                                if let Some(idx) = fd.prs.iter().position(|p| p.number == number) {
+                                    fd.rows[idx] = pr_to_row(
+                                        &pr,
+                                        &theme_for_poll,
+                                        &date_format_for_poll,
+                                        Some(&detail),
+                                    );
+                                    fd.prs[idx] = (*pr).clone();
+                                }
+                            }
+                            prs_state.set(state);
+                            let mut cache = detail_cache.read().clone();
+                            cache.insert(number, detail);
+                            detail_cache.set(cache);
+                        }
                         Event::FetchError {
                             context: _,
                             message,
@@ -1867,6 +1894,41 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             Err(e) => {
                                                 action_status.set(Some(ActionFeedback::Error(format!("Open failed: {e}"))));
                                                 status_set_at.set(Some(std::time::Instant::now()));
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::RefreshItem => {
+                                        if let Some((owner, repo, number)) =
+                                            get_current_pr_info(
+                                                &prs_state,
+                                                active_filter.get(),
+                                                cursor.get(),
+                                            )
+                                        {
+                                            let state = prs_state.read();
+                                            let fd =
+                                                &state.filters[active_filter.get()];
+                                            if let Some(pr) = fd
+                                                .prs
+                                                .iter()
+                                                .find(|p| p.number == number)
+                                            {
+                                                let req = Request::RefreshPr {
+                                                    owner,
+                                                    repo,
+                                                    number,
+                                                    base_ref: pr.base_ref.clone(),
+                                                    head_repo_owner: pr
+                                                        .head_repo_owner
+                                                        .clone(),
+                                                    head_ref: pr
+                                                        .head_ref
+                                                        .clone(),
+                                                    reply_tx: event_tx.clone(),
+                                                };
+                                                if let Some(ref eng) = engine {
+                                                    eng.send(req);
+                                                }
                                             }
                                         }
                                     }

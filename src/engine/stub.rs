@@ -120,7 +120,9 @@ impl StubEngine {
                         message: "no detail in stub".into(),
                     });
                 }
-                Request::FetchIssueDetail { reply_tx, .. } => {
+                Request::FetchIssueDetail { reply_tx, .. }
+                | Request::RefreshPr { reply_tx, .. }
+                | Request::RefreshIssue { reply_tx, .. } => {
                     let _ = reply_tx.send(Event::FetchError {
                         context: "stub".into(),
                         message: "no detail in stub".into(),

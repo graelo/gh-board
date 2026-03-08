@@ -652,7 +652,7 @@ pub fn NotificationsView<'a>(
                                             let _ = clipboard::open_in_browser(&n.url);
                                         }
                                     }
-                                    BuiltinAction::Refresh => {
+                                    BuiltinAction::RefreshItem | BuiltinAction::Refresh => {
                                         let idx = active_filter.get();
                                         let mut state = notif_state.read().clone();
                                         if idx < state.filters.len() {

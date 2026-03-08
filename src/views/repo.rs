@@ -1099,7 +1099,9 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                             preview_scroll.set(0);
                                         }
                                     }
-                                    BuiltinAction::Refresh | BuiltinAction::RefreshAll => {
+                                    BuiltinAction::RefreshItem
+                                    | BuiltinAction::Refresh
+                                    | BuiltinAction::RefreshAll => {
                                         loaded.set(false);
                                         commits_cache.set(HashMap::new());
                                         files_cache.set(HashMap::new());

@@ -593,6 +593,32 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 rate_limit_state.set(Some(rl));
                             }
                         }
+                        Event::IssueRefreshed {
+                            number,
+                            issue,
+                            detail,
+                            rate_limit,
+                        } => {
+                            if rate_limit.is_some() {
+                                rate_limit_state.set(rate_limit);
+                            }
+                            let mut state = issues_state.read().clone();
+                            for fd in &mut state.filters {
+                                if let Some(idx) = fd.issues.iter().position(|i| i.number == number)
+                                {
+                                    fd.rows[idx] = issue_to_row(
+                                        &issue,
+                                        &theme_for_poll,
+                                        &date_format_for_poll,
+                                    );
+                                    fd.issues[idx] = (*issue).clone();
+                                }
+                            }
+                            issues_state.set(state);
+                            let mut cache = detail_cache.read().clone();
+                            cache.insert(number, detail);
+                            detail_cache.set(cache);
+                        }
                         Event::FetchError {
                             context: _,
                             message,
@@ -1180,6 +1206,21 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                                         .set(Some(std::time::Instant::now()));
                                                 }
                                             }
+                                        }
+                                    }
+                                    BuiltinAction::RefreshItem => {
+                                        if let Some((owner, repo, number)) = get_current_issue_info(
+                                            &issues_state,
+                                            active_filter.get(),
+                                            cursor.get(),
+                                        ) && let Some(eng) = engine.as_ref()
+                                        {
+                                            eng.send(Request::RefreshIssue {
+                                                owner,
+                                                repo,
+                                                number,
+                                                reply_tx: event_tx.clone(),
+                                            });
                                         }
                                     }
                                     BuiltinAction::Refresh => {

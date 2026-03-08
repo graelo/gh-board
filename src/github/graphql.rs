@@ -1683,3 +1683,734 @@ pub async fn fetch_repo_collaborators(
 
     Ok((logins, rate_limit))
 }
+
+// ---------------------------------------------------------------------------
+// Single-item combined queries (RefreshItem)
+// ---------------------------------------------------------------------------
+
+/// Combined query that returns all search-row fields AND detail fields for a
+/// single PR, so one API call can update both the table row and the sidebar.
+const SINGLE_PR_QUERY: &str = r"
+query SinglePullRequest($owner: String!, $repo: String!, $number: Int!) {
+  rateLimit { limit remaining cost }
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      number
+      title
+      body
+      state
+      isDraft
+      mergeable
+      reviewDecision
+      additions
+      deletions
+      headRefName
+      baseRefName
+      mergeStateStatus
+      headRepository { owner { login } name }
+      url
+      updatedAt
+      createdAt
+      author { login avatarUrl }
+      authorAssociation
+      labels(first: 10) { nodes { name color } }
+      assignees(first: 10) { nodes { login } }
+      comments { totalCount }
+      latestReviews(first: 10) {
+        nodes {
+          state
+          author { login }
+        }
+      }
+      reviewRequests(first: 10) {
+        nodes {
+          requestedReviewer {
+            ... on User { login }
+          }
+        }
+      }
+      lastCommit: commits(last: 1) {
+        nodes {
+          commit {
+            statusCheckRollup {
+              contexts(first: 50) {
+                nodes {
+                  ... on CheckRun {
+                    name status conclusion detailsUrl startedAt completedAt
+                    checkSuite {
+                      workflowRun {
+                        databaseId
+                        workflow { name }
+                      }
+                    }
+                  }
+                  ... on StatusContext { context state targetUrl }
+                }
+              }
+            }
+          }
+        }
+      }
+      participants(first: 30) { nodes { login } }
+      repository { nameWithOwner }
+      reviews(last: 50) {
+        nodes { author { login } state body submittedAt }
+      }
+      reviewThreads(first: 50) {
+        nodes { isResolved comments(first: 10) { nodes { author { login } body createdAt } } }
+      }
+      timelineItems(last: 100) {
+        nodes {
+          __typename
+          ... on IssueComment { author { login } body createdAt }
+          ... on PullRequestReview { author { login } state body submittedAt }
+          ... on MergedEvent { actor { login } createdAt }
+          ... on ClosedEvent { actor { login } createdAt }
+          ... on ReopenedEvent { actor { login } createdAt }
+          ... on HeadRefForcePushedEvent { actor { login } createdAt }
+        }
+      }
+      allCommits: commits(first: 100) {
+        nodes { commit { oid messageHeadline author { name } committedDate statusCheckRollup { state } } }
+      }
+      files(first: 100) {
+        nodes { path additions deletions changeType }
+      }
+    }
+  }
+}
+";
+
+/// Combined query that returns all search-row fields AND detail fields for a
+/// single Issue.
+const SINGLE_ISSUE_QUERY: &str = r"
+query SingleIssue($owner: String!, $repo: String!, $number: Int!) {
+  rateLimit { limit remaining cost }
+  repository(owner: $owner, name: $repo) {
+    issue(number: $number) {
+      number
+      title
+      body
+      state
+      url
+      updatedAt
+      createdAt
+      author { login avatarUrl }
+      assignees(first: 10) { nodes { login } }
+      labels(first: 10) { nodes { name color } }
+      comments { totalCount }
+      reactionGroups { content users { totalCount } }
+      participants(first: 30) { nodes { login } }
+      repository { nameWithOwner }
+      timelineItems(last: 100) {
+        nodes {
+          __typename
+          ... on IssueComment { author { login } body createdAt }
+          ... on ClosedEvent { actor { login } createdAt }
+          ... on ReopenedEvent { actor { login } createdAt }
+        }
+      }
+    }
+  }
+}
+";
+
+// ---------------------------------------------------------------------------
+// Response types for single-item queries
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+struct SinglePrData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RateLimitInfo>,
+    repository: Option<SinglePrRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SinglePrRepo {
+    #[serde(rename = "pullRequest")]
+    pull_request: Option<RawFullPullRequest>,
+}
+
+/// Full PR response containing both search-row and detail fields.
+#[derive(Debug, Deserialize)]
+struct RawFullPullRequest {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    state: PrState,
+    #[serde(rename = "isDraft", default)]
+    is_draft: bool,
+    mergeable: Option<MergeableState>,
+    #[serde(rename = "reviewDecision")]
+    review_decision: Option<ReviewDecision>,
+    #[serde(default)]
+    additions: u32,
+    #[serde(default)]
+    deletions: u32,
+    #[serde(rename = "headRefName", default)]
+    head_ref_name: String,
+    #[serde(rename = "baseRefName", default)]
+    base_ref_name: String,
+    #[serde(rename = "mergeStateStatus")]
+    merge_state_status: Option<MergeStateStatus>,
+    #[serde(rename = "headRepository")]
+    head_repository: Option<RawHeadRepository>,
+    url: String,
+    #[serde(rename = "updatedAt")]
+    updated_at: DateTime<Utc>,
+    #[serde(rename = "createdAt")]
+    created_at: DateTime<Utc>,
+    author: Option<RawActor>,
+    #[serde(rename = "authorAssociation")]
+    author_association: Option<AuthorAssociation>,
+    labels: Option<Connection<RawLabel>>,
+    assignees: Option<Connection<RawAssignee>>,
+    comments: Option<TotalCount>,
+    #[serde(rename = "latestReviews")]
+    latest_reviews: Option<Connection<RawLatestReview>>,
+    #[serde(rename = "reviewRequests")]
+    review_requests: Option<Connection<RawReviewRequest>>,
+    /// Aliased: `lastCommit: commits(last: 1)` — for `check_runs` on the search row.
+    #[serde(rename = "lastCommit")]
+    last_commit: Option<Connection<RawCommitNode>>,
+    participants: Option<Connection<RawAssignee>>,
+    repository: Option<RawRepository>,
+    // Detail fields
+    reviews: Option<Connection<RawReview>>,
+    #[serde(rename = "reviewThreads")]
+    review_threads: Option<Connection<RawReviewThread>>,
+    #[serde(rename = "timelineItems")]
+    timeline_items: Option<Connection<RawTimelineItem>>,
+    /// Aliased: `allCommits: commits(first: 100)` — for detail commits.
+    #[serde(rename = "allCommits")]
+    all_commits: Option<Connection<RawDetailCommitNode>>,
+    files: Option<Connection<RawFile>>,
+}
+
+impl RawFullPullRequest {
+    /// Split the combined response into a search-row `PullRequest` and a `PrDetail`.
+    #[allow(clippy::too_many_lines)]
+    fn into_domain(self) -> (PullRequest, PrDetail) {
+        // --- Build PullRequest (search-row) ---
+        let author = self.author.map(|a| Actor {
+            login: a.login,
+            avatar_url: a.avatar_url,
+        });
+
+        let labels: Vec<Label> = self
+            .labels
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|l| Label {
+                        name: l.name,
+                        color: l.color,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let assignees: Vec<Actor> = self
+            .assignees
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|a| Actor {
+                        login: a.login,
+                        avatar_url: String::new(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let comment_count = self.comments.map_or(0, |c| c.total_count);
+
+        let review_requests: Vec<Actor> = self
+            .review_requests
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|rr| {
+                        rr.requested_reviewer.and_then(|r| {
+                            r.login.map(|login| Actor {
+                                login,
+                                avatar_url: String::new(),
+                            })
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let check_runs = self
+            .last_commit
+            .and_then(|c| c.nodes.into_iter().flatten().next())
+            .and_then(|cn| cn.commit)
+            .and_then(|c| c.status_check_rollup)
+            .and_then(|sr| sr.contexts)
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|ctx| {
+                        let name = ctx
+                            .name
+                            .or(ctx.context)
+                            .unwrap_or_else(|| "<unknown>".to_owned());
+                        let url = ctx.details_url.or(ctx.target_url);
+                        let (status, conclusion) = if ctx.status.is_some() {
+                            (ctx.status, ctx.conclusion)
+                        } else if let Some(ref state) = ctx.state {
+                            match state.as_str() {
+                                "success" => {
+                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Success))
+                                }
+                                "failure" | "error" => {
+                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Failure))
+                                }
+                                "pending" => (Some(CheckStatus::InProgress), None),
+                                _ => (None, None),
+                            }
+                        } else {
+                            (None, None)
+                        };
+                        let (workflow_run_id, workflow_name) = ctx
+                            .check_suite
+                            .and_then(|cs| cs.workflow_run)
+                            .map_or((None, None), |wr| {
+                                (wr.database_id, wr.workflow.and_then(|w| w.name))
+                            });
+                        CheckRun {
+                            name,
+                            status,
+                            conclusion,
+                            url,
+                            workflow_run_id,
+                            workflow_name,
+                            started_at: ctx.started_at,
+                            completed_at: ctx.completed_at,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let repo = self
+            .repository
+            .and_then(|r| RepoRef::from_full_name(&r.name_with_owner));
+
+        let latest_reviews_for_row: Vec<Review> = self
+            .latest_reviews
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|r| Review {
+                        author: r.author.map(|a| Actor {
+                            login: a.login,
+                            avatar_url: a.avatar_url,
+                        }),
+                        state: r.state.unwrap_or(ReviewState::Unknown),
+                        body: String::new(),
+                        submitted_at: None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let pr = PullRequest {
+            number: self.number,
+            title: self.title,
+            body: self.body.clone(),
+            author,
+            state: self.state,
+            is_draft: self.is_draft,
+            mergeable: self.mergeable,
+            review_decision: self.review_decision,
+            additions: self.additions,
+            deletions: self.deletions,
+            head_ref: self.head_ref_name,
+            base_ref: self.base_ref_name,
+            labels,
+            assignees,
+            commits: Vec::new(),
+            comments: Vec::new(),
+            review_threads: Vec::new(),
+            review_requests,
+            reviews: latest_reviews_for_row,
+            timeline_events: Vec::new(),
+            files: Vec::new(),
+            check_runs,
+            updated_at: self.updated_at,
+            created_at: self.created_at,
+            url: self.url,
+            repo,
+            comment_count,
+            author_association: self.author_association,
+            participants: self
+                .participants
+                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
+                .unwrap_or_default(),
+            merge_state_status: self.merge_state_status,
+            head_repo_owner: self.head_repository.as_ref().map(|r| r.owner.login.clone()),
+            head_repo_name: self.head_repository.map(|r| r.name),
+        };
+
+        // --- Build PrDetail ---
+        let detail_reviews = self
+            .reviews
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|r| Review {
+                        author: r.author.map(raw_actor_to_actor),
+                        state: r.state,
+                        body: r.body,
+                        submitted_at: r.submitted_at,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let detail_review_threads = self
+            .review_threads
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|rt| ReviewThread {
+                        is_resolved: rt.is_resolved,
+                        comments: rt
+                            .comments
+                            .map(|cc| {
+                                cc.nodes
+                                    .into_iter()
+                                    .flatten()
+                                    .map(|rc| crate::github::types::Comment {
+                                        author: rc.author.map(raw_actor_to_actor),
+                                        body: rc.body,
+                                        created_at: rc.created_at,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let timeline_events = self
+            .timeline_items
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .filter_map(convert_timeline_item)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let commits = self
+            .all_commits
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|cn| {
+                        let c = cn.commit?;
+                        Some(Commit {
+                            sha: c.oid,
+                            message: c.message_headline,
+                            author: c.author.and_then(|a| a.name),
+                            committed_date: c.committed_date,
+                            check_state: c.status_check_rollup.and_then(|r| r.state),
+                        })
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let files = self
+            .files
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|f| File {
+                        path: f.path,
+                        additions: f.additions,
+                        deletions: f.deletions,
+                        status: f.change_type,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let detail = PrDetail {
+            body: self.body,
+            reviews: detail_reviews,
+            review_threads: detail_review_threads,
+            timeline_events,
+            commits,
+            files,
+            mergeable: self.mergeable,
+            behind_by: None,
+        };
+
+        (pr, detail)
+    }
+}
+
+// Response types for single issue query
+
+#[derive(Debug, Deserialize)]
+struct SingleIssueData {
+    #[serde(rename = "rateLimit", default)]
+    rate_limit: Option<RateLimitInfo>,
+    repository: Option<SingleIssueRepo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SingleIssueRepo {
+    issue: Option<RawFullIssue>,
+}
+
+/// Full Issue response containing both search-row and detail fields.
+#[derive(Debug, Deserialize)]
+struct RawFullIssue {
+    number: u64,
+    title: String,
+    #[serde(default)]
+    body: String,
+    state: IssueState,
+    url: String,
+    #[serde(rename = "updatedAt")]
+    updated_at: DateTime<Utc>,
+    #[serde(rename = "createdAt")]
+    created_at: DateTime<Utc>,
+    author: Option<RawActor>,
+    assignees: Option<Connection<RawAssignee>>,
+    labels: Option<Connection<RawLabel>>,
+    comments: Option<TotalCount>,
+    #[serde(rename = "reactionGroups", default)]
+    reaction_groups: Vec<RawReactionGroup>,
+    participants: Option<Connection<RawAssignee>>,
+    repository: Option<RawRepository>,
+    #[serde(rename = "timelineItems")]
+    timeline_items: Option<Connection<RawTimelineItem>>,
+}
+
+impl RawFullIssue {
+    fn into_domain(self) -> (Issue, IssueDetail) {
+        let author = self.author.map(|a| Actor {
+            login: a.login,
+            avatar_url: a.avatar_url,
+        });
+
+        let labels = self
+            .labels
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|l| Label {
+                        name: l.name,
+                        color: l.color,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let assignees = self
+            .assignees
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .map(|a| Actor {
+                        login: a.login,
+                        avatar_url: String::new(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let comment_count = self.comments.map_or(0, |c| c.total_count);
+        let reactions = parse_reaction_groups(&self.reaction_groups);
+
+        let repo = self
+            .repository
+            .and_then(|r| RepoRef::from_full_name(&r.name_with_owner));
+
+        let timeline_events = self
+            .timeline_items
+            .map(|c| {
+                c.nodes
+                    .into_iter()
+                    .flatten()
+                    .filter_map(convert_timeline_item)
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let issue = Issue {
+            number: self.number,
+            title: self.title,
+            body: self.body.clone(),
+            author,
+            state: self.state,
+            assignees,
+            comments: Vec::new(),
+            reactions,
+            labels,
+            updated_at: self.updated_at,
+            created_at: self.created_at,
+            url: self.url,
+            repo,
+            comment_count,
+            participants: self
+                .participants
+                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
+                .unwrap_or_default(),
+        };
+
+        let detail = IssueDetail {
+            body: self.body,
+            timeline_events,
+        };
+
+        (issue, detail)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Public API for single-item refresh
+// ---------------------------------------------------------------------------
+
+/// Fetch a single PR with combined search-row + detail fields in one query.
+///
+/// Returns `(pull_request, pr_detail, rate_limit)`.
+pub async fn fetch_single_pr(
+    octocrab: &Arc<Octocrab>,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    cache: Option<&Cache<String, String>>,
+) -> Result<(PullRequest, PrDetail, Option<RateLimitInfo>)> {
+    let cache_key = format!("full_pr:{owner}/{repo}#{number}");
+
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok((pr, detail)) = serde_json::from_str::<(PullRequest, PrDetail)>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((pr, detail, None));
+    }
+
+    let payload = GraphQLPayload {
+        query: SINGLE_PR_QUERY,
+        variables: PrDetailVariables {
+            owner: owner.to_owned(),
+            repo: repo.to_owned(),
+            number: i64::try_from(number).context("PR number too large")?,
+        },
+    };
+
+    let response: GraphQLResponse<SinglePrData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL single PR request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    let rate_limit = data.rate_limit;
+
+    let raw = data
+        .repository
+        .and_then(|r| r.pull_request)
+        .context("PR not found")?;
+
+    let (pr, detail) = raw.into_domain();
+
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&(&pr, &detail))
+    {
+        c.insert(cache_key, json).await;
+    }
+
+    Ok((pr, detail, rate_limit))
+}
+
+/// Fetch a single Issue with combined search-row + detail fields in one query.
+///
+/// Returns `(issue, issue_detail, rate_limit)`.
+pub async fn fetch_single_issue(
+    octocrab: &Arc<Octocrab>,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    cache: Option<&Cache<String, String>>,
+) -> Result<(Issue, IssueDetail, Option<RateLimitInfo>)> {
+    let cache_key = format!("full_issue:{owner}/{repo}#{number}");
+
+    if let Some(c) = cache
+        && let Some(cached) = c.get(&cache_key).await
+        && let Ok((issue, detail)) = serde_json::from_str::<(Issue, IssueDetail)>(&cached)
+    {
+        tracing::debug!("cache hit for {cache_key}");
+        return Ok((issue, detail, None));
+    }
+
+    let payload = GraphQLPayload {
+        query: SINGLE_ISSUE_QUERY,
+        variables: PrDetailVariables {
+            owner: owner.to_owned(),
+            repo: repo.to_owned(),
+            number: i64::try_from(number).context("Issue number too large")?,
+        },
+    };
+
+    let response: GraphQLResponse<SingleIssueData> = octocrab
+        .graphql(&payload)
+        .await
+        .context("GraphQL single issue request failed")?;
+
+    if let Some(errors) = response.errors {
+        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
+        bail!("GraphQL errors: {}", messages.join("; "));
+    }
+
+    let data = response
+        .data
+        .context("GraphQL response missing data field")?;
+
+    let rate_limit = data.rate_limit;
+
+    let raw = data
+        .repository
+        .and_then(|r| r.issue)
+        .context("Issue not found")?;
+
+    let (issue, detail) = raw.into_domain();
+
+    if let Some(c) = cache
+        && let Ok(json) = serde_json::to_string(&(&issue, &detail))
+    {
+        c.insert(cache_key, json).await;
+    }
+
+    Ok((issue, detail, rate_limit))
+}

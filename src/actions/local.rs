@@ -48,7 +48,7 @@ pub fn checkout_branch<S: std::hash::BuildHasher>(
 ) -> Result<String> {
     let repo_path = repo_paths
         .get(repo_full_name)
-        .context(format!("no local path configured for {repo_full_name}"))?;
+        .with_context(|| format!("no local path configured for {repo_full_name}"))?;
 
     let cloned = ensure_repo_cloned(repo_full_name, repo_path, host)?;
 
@@ -101,7 +101,7 @@ pub fn create_or_open_worktree<S: std::hash::BuildHasher>(
 ) -> Result<String> {
     let repo_path = repo_paths
         .get(repo_full_name)
-        .context(format!("no local path configured for {repo_full_name}"))?;
+        .with_context(|| format!("no local path configured for {repo_full_name}"))?;
 
     ensure_repo_cloned(repo_full_name, repo_path, host)?;
 

@@ -12,7 +12,6 @@ pub(crate) fn is_rate_limited(error: &anyhow::Error) -> bool {
         || msg.contains("api rate limit exceeded")
         || msg.contains("secondary rate limit")
         || msg.contains("status code: 429")
-        || msg.contains("status code: 403")
 }
 
 /// Format a user-friendly message for a rate-limit error.

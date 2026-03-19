@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::config::builtin_themes;
-use crate::config::types::{AppConfig, Theme};
+use crate::config::types::{AppConfig, Defaults, GitHubConfig, PreviewDefaults, Theme};
 
 /// Wrapper used to parse a theme-only TOML file (contains only `[theme.*]`).
 #[derive(Deserialize, Default)]
@@ -149,91 +149,65 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
 }
 
 /// Merge two GitHub configs, with local values overriding global.
-fn merge_github_config(
-    global: &crate::config::types::GitHubConfig,
-    local: &crate::config::types::GitHubConfig,
-) -> crate::config::types::GitHubConfig {
-    use crate::config::types::Scope;
+///
+/// Fields are compared against their `Default` values; a non-default local
+/// value wins, otherwise the global value is used. Note: because primitive
+/// fields cannot distinguish "absent" from "explicitly set to default", a
+/// local value that matches the default will fall through to global.
+fn merge_github_config(global: &GitHubConfig, local: &GitHubConfig) -> GitHubConfig {
+    let defaults = GitHubConfig::default();
 
-    let default_scope = Scope::Auto;
-    let default_refetch_interval = 10;
-    let default_prefetch_count = 0;
-
-    crate::config::types::GitHubConfig {
-        scope: if local.scope == default_scope && global.scope == default_scope {
-            default_scope
-        } else if local.scope != default_scope {
-            local.scope
-        } else {
+    GitHubConfig {
+        scope: if local.scope == defaults.scope {
             global.scope
-        },
-        refetch_interval_minutes: if local.refetch_interval_minutes == default_refetch_interval
-            && global.refetch_interval_minutes == default_refetch_interval
-        {
-            default_refetch_interval
-        } else if local.refetch_interval_minutes != default_refetch_interval {
-            local.refetch_interval_minutes
         } else {
+            local.scope
+        },
+        refetch_interval_minutes: if local.refetch_interval_minutes
+            == defaults.refetch_interval_minutes
+        {
             global.refetch_interval_minutes
-        },
-        prefetch_pr_details: if local.prefetch_pr_details == default_prefetch_count
-            && global.prefetch_pr_details == default_prefetch_count
-        {
-            default_prefetch_count
-        } else if local.prefetch_pr_details != default_prefetch_count {
-            local.prefetch_pr_details
         } else {
+            local.refetch_interval_minutes
+        },
+        prefetch_pr_details: if local.prefetch_pr_details == defaults.prefetch_pr_details {
             global.prefetch_pr_details
-        },
-        auto_clone: if local.auto_clone {
-            local.auto_clone
-        } else if global.auto_clone {
-            global.auto_clone
         } else {
-            false
+            local.prefetch_pr_details
         },
+        // Bool fields cannot distinguish "absent" from "explicitly false",
+        // so local can only turn this on, never override a global `true`.
+        auto_clone: local.auto_clone || global.auto_clone,
     }
 }
 
 /// Merge two Defaults configs, with local values overriding global.
-fn merge_defaults(
-    global: &crate::config::types::Defaults,
-    local: &crate::config::types::Defaults,
-) -> crate::config::types::Defaults {
-    use crate::config::types::{PreviewDefaults, View};
+///
+/// Same caveat as `merge_github_config`: primitive fields that match their
+/// `Default` value are treated as "not set".
+#[allow(clippy::float_cmp)] // TOML-parsed f64 vs compile-time constant: exact comparison is safe
+fn merge_defaults(global: &Defaults, local: &Defaults) -> Defaults {
+    let defaults = Defaults::default();
 
-    let default_view = View::Prs;
-    let default_preview_width = 0.45;
-
-    crate::config::types::Defaults {
-        view: if local.view == default_view && global.view == default_view {
-            default_view
-        } else if local.view != default_view {
-            local.view
-        } else {
+    Defaults {
+        view: if local.view == defaults.view {
             global.view
-        },
-        preview: if (local.preview.width - default_preview_width).abs() > f64::EPSILON
-            || (global.preview.width - default_preview_width).abs() > f64::EPSILON
-        {
-            PreviewDefaults {
-                width: if (local.preview.width - default_preview_width).abs() > f64::EPSILON {
-                    local.preview.width
-                } else {
-                    global.preview.width
-                },
-            }
         } else {
-            PreviewDefaults {
-                width: default_preview_width,
-            }
+            local.view
         },
-        date_format: if local.date_format.is_empty() && global.date_format.is_empty() {
-            "relative".to_string()
-        } else if !local.date_format.is_empty() {
+        preview: PreviewDefaults {
+            width: if local.preview.width == defaults.preview.width {
+                global.preview.width
+            } else {
+                local.preview.width
+            },
+        },
+        date_format: if !local.date_format.is_empty() {
             local.date_format.clone()
-        } else {
+        } else if !global.date_format.is_empty() {
             global.date_format.clone()
+        } else {
+            defaults.date_format
         },
     }
 }
@@ -244,11 +218,12 @@ fn merge_keybindings(
     global: &crate::config::keybindings::KeybindingsConfig,
     local: &crate::config::keybindings::KeybindingsConfig,
 ) -> crate::config::keybindings::KeybindingsConfig {
+    use std::collections::HashMap;
+
     use crate::config::keybindings::{
         Keybinding, default_actions, default_branches, default_issues, default_prs,
         default_universal, merge_lists,
     };
-    use std::collections::HashMap;
 
     // Helper to merge two binding lists, with local overriding global
     fn merge_binding_lists(global: &[Keybinding], local: &[Keybinding]) -> Vec<Keybinding> {
@@ -372,8 +347,7 @@ fn expand_repo_paths(
 mod tests {
     use super::*;
     use crate::config::keybindings::Keybinding;
-    use crate::config::types::AppConfig;
-    use crate::config::types::IconConfig;
+    use crate::config::types::{AppConfig, IconConfig};
 
     #[test]
     fn merge_configs_preserves_global_theme_with_empty_local() {
@@ -387,14 +361,31 @@ mod tests {
     }
 
     #[test]
-    fn merge_configs_overrides_specific_theme_fields() {
-        let mut global = AppConfig::default();
-        global.theme.icons.preset = Some("nerdfont".to_string());
+    fn merge_configs_local_overrides_global_theme_preset() {
+        let global = AppConfig {
+            theme: Theme {
+                icons: IconConfig {
+                    preset: Some("nerdfont".to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        let local = AppConfig::default(); // Local config doesn't set preset, so it should be preserved from global
+        let local = AppConfig {
+            theme: Theme {
+                icons: IconConfig {
+                    preset: Some("unicode".to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-        let merged = merge_configs(global.clone(), local);
-        assert_eq!(merged.theme.icons.preset, Some("nerdfont".to_string()));
+        let merged = merge_configs(global, local);
+        assert_eq!(merged.theme.icons.preset, Some("unicode".to_string()));
     }
 
     #[test]

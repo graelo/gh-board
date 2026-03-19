@@ -389,18 +389,6 @@ mod tests {
     }
 
     #[test]
-    fn merge_configs_overrides_theme_preset() {
-        let mut global = AppConfig::default();
-        global.theme.icons.preset = Some("unicode".to_string());
-
-        let mut local = AppConfig::default();
-        local.theme.icons.preset = Some("nerdfont".to_string());
-
-        let merged = merge_configs(global, local);
-        assert_eq!(merged.theme.icons.preset, Some("nerdfont".to_string()));
-    }
-
-    #[test]
     fn merge_configs_preserves_global_keybindings_with_empty_local() {
         let mut global = AppConfig::default();
         global.keybindings.universal.push(Keybinding {

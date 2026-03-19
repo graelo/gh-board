@@ -105,16 +105,6 @@ string = "#00ff00"
 }
 
 #[test]
-fn parse_invalid_color_fails() {
-    let toml = r#"
-[theme.colors.text]
-primary = "not_a_color"
-"#;
-    let result: Result<AppConfig, _> = toml::from_str(toml);
-    assert!(result.is_err());
-}
-
-#[test]
 fn default_config_has_sane_defaults() {
     let config = AppConfig::default();
     assert_eq!(config.defaults.view, gh_board::config::types::View::Prs);

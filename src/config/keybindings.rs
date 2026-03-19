@@ -489,7 +489,7 @@ pub enum ViewContext {
 
 /// Merge user overrides on top of defaults. User bindings for the same key
 /// replace the default; additional user bindings are appended.
-fn merge_lists(defaults: &[Keybinding], overrides: &[Keybinding]) -> Vec<Keybinding> {
+pub(crate) fn merge_lists(defaults: &[Keybinding], overrides: &[Keybinding]) -> Vec<Keybinding> {
     let override_keys: std::collections::HashSet<&str> =
         overrides.iter().map(|b| b.key.as_str()).collect();
 

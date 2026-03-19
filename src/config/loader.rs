@@ -109,8 +109,9 @@ fn apply_theme_file(config: &mut AppConfig) -> Result<()> {
 /// missing keys in local config fall back to global config. This applies to:
 /// - `github` config fields
 /// - `defaults` fields
-/// - `theme` (using Theme::merge)
+/// - `theme` (using `Theme::merge`)
 /// - `keybindings` (merged by context: universal, prs, issues, actions, branches)
+///
 /// Repo paths are merged (local entries override matching global keys).
 fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
     AppConfig {
@@ -134,10 +135,10 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
         } else {
             local.notifications_filters
         },
-        github: merge_github_config(global.github, local.github),
-        defaults: merge_defaults(global.defaults, local.defaults),
+        github: merge_github_config(&global.github, &local.github),
+        defaults: merge_defaults(&global.defaults, &local.defaults),
         theme: Theme::merge(global.theme, local.theme),
-        keybindings: merge_keybindings(global.keybindings, local.keybindings),
+        keybindings: merge_keybindings(&global.keybindings, &local.keybindings),
         repo_paths: {
             let mut paths = global.repo_paths;
             paths.extend(local.repo_paths);
@@ -149,55 +150,45 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
 
 /// Merge two GitHub configs, with local values overriding global.
 fn merge_github_config(
-    global: crate::config::types::GitHubConfig,
-    local: crate::config::types::GitHubConfig,
+    global: &crate::config::types::GitHubConfig,
+    local: &crate::config::types::GitHubConfig,
 ) -> crate::config::types::GitHubConfig {
     use crate::config::types::Scope;
 
     let default_scope = Scope::Auto;
-    let default_refetch = 10;
-    let default_prefetch = 0;
+    let default_refetch_interval = 10;
+    let default_prefetch_count = 0;
 
     crate::config::types::GitHubConfig {
-        scope: if local.scope != default_scope || global.scope != default_scope {
-            // Use local if explicitly set, otherwise use global
-            if local.scope != default_scope {
-                local.scope
-            } else {
-                global.scope
-            }
-        } else {
+        scope: if local.scope == default_scope && global.scope == default_scope {
             default_scope
-        },
-        refetch_interval_minutes: if local.refetch_interval_minutes != default_refetch
-            || global.refetch_interval_minutes != default_refetch
-        {
-            if local.refetch_interval_minutes != default_refetch {
-                local.refetch_interval_minutes
-            } else {
-                global.refetch_interval_minutes
-            }
+        } else if local.scope != default_scope {
+            local.scope
         } else {
-            default_refetch
+            global.scope
         },
-        prefetch_pr_details: if local.prefetch_pr_details != default_prefetch
-            || global.prefetch_pr_details != default_prefetch
+        refetch_interval_minutes: if local.refetch_interval_minutes == default_refetch_interval
+            && global.refetch_interval_minutes == default_refetch_interval
         {
-            if local.prefetch_pr_details != default_prefetch {
-                local.prefetch_pr_details
-            } else {
-                global.prefetch_pr_details
-            }
+            default_refetch_interval
+        } else if local.refetch_interval_minutes != default_refetch_interval {
+            local.refetch_interval_minutes
         } else {
-            default_prefetch
+            global.refetch_interval_minutes
         },
-        auto_clone: if local.auto_clone || global.auto_clone {
-            // Use local if explicitly set, otherwise use global
-            if local.auto_clone {
-                local.auto_clone
-            } else {
-                global.auto_clone
-            }
+        prefetch_pr_details: if local.prefetch_pr_details == default_prefetch_count
+            && global.prefetch_pr_details == default_prefetch_count
+        {
+            default_prefetch_count
+        } else if local.prefetch_pr_details != default_prefetch_count {
+            local.prefetch_pr_details
+        } else {
+            global.prefetch_pr_details
+        },
+        auto_clone: if local.auto_clone {
+            local.auto_clone
+        } else if global.auto_clone {
+            global.auto_clone
         } else {
             false
         },
@@ -206,8 +197,8 @@ fn merge_github_config(
 
 /// Merge two Defaults configs, with local values overriding global.
 fn merge_defaults(
-    global: crate::config::types::Defaults,
-    local: crate::config::types::Defaults,
+    global: &crate::config::types::Defaults,
+    local: &crate::config::types::Defaults,
 ) -> crate::config::types::Defaults {
     use crate::config::types::{PreviewDefaults, View};
 
@@ -215,22 +206,18 @@ fn merge_defaults(
     let default_preview_width = 0.45;
 
     crate::config::types::Defaults {
-        view: if local.view != default_view || global.view != default_view {
-            // Use local if explicitly set, otherwise use global
-            if local.view != default_view {
-                local.view
-            } else {
-                global.view
-            }
-        } else {
+        view: if local.view == default_view && global.view == default_view {
             default_view
+        } else if local.view != default_view {
+            local.view
+        } else {
+            global.view
         },
-        preview: if local.preview.width != default_preview_width
-            || global.preview.width != default_preview_width
+        preview: if (local.preview.width - default_preview_width).abs() > f64::EPSILON
+            || (global.preview.width - default_preview_width).abs() > f64::EPSILON
         {
-            // Use local if explicitly set, otherwise use global
             PreviewDefaults {
-                width: if local.preview.width != default_preview_width {
+                width: if (local.preview.width - default_preview_width).abs() > f64::EPSILON {
                     local.preview.width
                 } else {
                     global.preview.width
@@ -241,15 +228,12 @@ fn merge_defaults(
                 width: default_preview_width,
             }
         },
-        date_format: if !local.date_format.is_empty() || !global.date_format.is_empty() {
-            // Use local if explicitly set, otherwise use global
-            if !local.date_format.is_empty() {
-                local.date_format
-            } else {
-                global.date_format
-            }
-        } else {
+        date_format: if local.date_format.is_empty() && global.date_format.is_empty() {
             "relative".to_string()
+        } else if !local.date_format.is_empty() {
+            local.date_format.clone()
+        } else {
+            global.date_format.clone()
         },
     }
 }
@@ -257,8 +241,8 @@ fn merge_defaults(
 /// Merge two Keybindings configs by context.
 /// Local bindings for a given key replace global bindings for that key within each context.
 fn merge_keybindings(
-    global: crate::config::keybindings::KeybindingsConfig,
-    local: crate::config::keybindings::KeybindingsConfig,
+    global: &crate::config::keybindings::KeybindingsConfig,
+    local: &crate::config::keybindings::KeybindingsConfig,
 ) -> crate::config::keybindings::KeybindingsConfig {
     use crate::config::keybindings::{
         Keybinding, default_actions, default_branches, default_issues, default_prs,
@@ -389,6 +373,7 @@ mod tests {
     use super::*;
     use crate::config::keybindings::Keybinding;
     use crate::config::types::AppConfig;
+    use crate::config::types::IconConfig;
 
     #[test]
     fn merge_configs_preserves_global_theme_with_empty_local() {
@@ -602,8 +587,10 @@ mod tests {
     fn merge_configs_theme_file_from_local() {
         let global = AppConfig::default();
 
-        let mut local = AppConfig::default();
-        local.theme_file = Some("builtin:catppuccin-mocha".to_string());
+        let local = AppConfig {
+            theme_file: Some("builtin:catppuccin-mocha".to_string()),
+            ..Default::default()
+        };
 
         let merged = merge_configs(global, local);
         assert_eq!(
@@ -616,8 +603,16 @@ mod tests {
     fn merge_configs_local_repo_paths_only_preserves_global_theme() {
         // This test simulates the issue: user has global config with nerdfont icons,
         // but only sets repo_paths in local .gh-board.toml
-        let mut global = AppConfig::default();
-        global.theme.icons.preset = Some("nerdfont".to_string());
+        let global = AppConfig {
+            theme: Theme {
+                icons: IconConfig {
+                    preset: Some("nerdfont".to_string()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         let mut local = AppConfig::default();
         // Local config only has repo_paths, no theme settings
@@ -671,8 +666,10 @@ mod tests {
     fn merge_configs_local_repo_paths_only_preserves_global_theme_file() {
         // This test simulates the issue: user has theme_file in global config,
         // but only sets repo_paths in local .gh-board.toml
-        let mut global = AppConfig::default();
-        global.theme_file = Some("builtin:catppuccin-mocha".to_string());
+        let global = AppConfig {
+            theme_file: Some("builtin:catppuccin-mocha".to_string()),
+            ..Default::default()
+        };
 
         let mut local = AppConfig::default();
         // Local config only has repo_paths, no theme_file override

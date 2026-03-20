@@ -125,6 +125,18 @@ repo  = "@current"
 # status = "failure"
 
 # ==============================================================================
+# ACTIONS
+# ==============================================================================
+
+[actions]
+# Polling interval in seconds when watching a workflow run (default: 30)
+# watch_poll_interval_seconds = 30
+
+# Shell command to run when a watched run completes. Template variables:
+# {{.RunName}}, {{.Conclusion}}, {{.RepoName}}
+# watch_complete_command = "osascript -e 'display notification \"{{.RunName}} — {{.Conclusion}}\" with title \"gh-board: {{.RepoName}}\"'"
+
+# ==============================================================================
 # NOTIFICATION FILTERS
 # ==============================================================================
 

@@ -169,6 +169,32 @@ impl StubEngine {
                     });
                 }
 
+                // Watch/Unwatch — stub immediately reports completed
+                Request::WatchRun {
+                    run_id, reply_tx, ..
+                } => {
+                    let _ = reply_tx.send(Event::WatchedRunUpdated {
+                        run_id,
+                        run: crate::types::WorkflowRun {
+                            id: run_id,
+                            name: "stub-workflow".into(),
+                            display_title: "stub run".into(),
+                            status: crate::types::RunStatus::Completed,
+                            conclusion: Some(crate::types::RunConclusion::Success),
+                            event: "push".into(),
+                            head_branch: None,
+                            actor: None,
+                            run_number: 1,
+                            html_url: String::new(),
+                            created_at: chrono::Utc::now(),
+                            updated_at: chrono::Utc::now(),
+                        },
+                        completed: true,
+                        rate_limit: None,
+                    });
+                }
+                Request::UnwatchRun { .. } => {}
+
                 Request::Shutdown => break,
             }
         }

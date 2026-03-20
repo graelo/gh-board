@@ -14,6 +14,7 @@ use crate::github::{
 
 use super::interface::{Engine, EngineHandle, Event, PrRef, Request};
 use super::refresh::{DueEntry, FilterConfig, RefreshScheduler, ViewKind};
+use super::watch::WatchScheduler;
 
 /// The real GitHub backend engine.
 pub struct GitHubEngine {
@@ -52,12 +53,24 @@ impl GitHubEngine {
         let mut client = GitHubClient::new(refetch_mins);
         let mut scheduler = RefreshScheduler::new();
 
+        let watch_poll_secs = u64::from(
+            self.config
+                .actions
+                .watch_poll_interval_seconds
+                .unwrap_or(30),
+        );
+        let mut watch_scheduler = WatchScheduler::new(Duration::from_secs(watch_poll_secs));
+        let complete_command = self.config.actions.watch_complete_command.clone();
+
         let interval_mins = u64::from(refetch_mins);
         let refresh_interval = Duration::from_secs((interval_mins * 60).max(60));
         let poll_dur = Duration::from_secs(30);
         let mut refresh_tick = tokio::time::interval(poll_dur);
         // Consume the first immediate tick so refresh fires after one full interval.
         refresh_tick.tick().await;
+
+        let mut watch_tick = tokio::time::interval(Duration::from_secs(10));
+        watch_tick.tick().await;
 
         loop {
             tokio::select! {
@@ -73,7 +86,14 @@ impl GitHubEngine {
                             let reply_tx = req.reply_tx();
                             if tokio::time::timeout(
                                 REQUEST_TIMEOUT,
-                                handle_request(req, &mut client, &mut scheduler, refresh_interval),
+                                handle_request(
+                                    req,
+                                    &mut client,
+                                    &mut scheduler,
+                                    &mut watch_scheduler,
+                                    complete_command.as_ref(),
+                                    refresh_interval,
+                                ),
                             )
                             .await
                             .is_err()
@@ -108,6 +128,9 @@ impl GitHubEngine {
                         );
                     }
                 }
+                _ = watch_tick.tick(), if !watch_scheduler.is_empty() => {
+                    tick_watches(&mut client, &mut watch_scheduler, complete_command.as_ref()).await;
+                }
             }
         }
     }
@@ -122,6 +145,8 @@ async fn handle_request(
     req: Request,
     client: &mut GitHubClient,
     scheduler: &mut RefreshScheduler,
+    watch_scheduler: &mut WatchScheduler,
+    complete_command: Option<&String>,
     refresh_interval: Duration,
 ) {
     let label = req.label();
@@ -1110,6 +1135,52 @@ async fn handle_request(
             }
         }
 
+        // --- Watch/Unwatch workflow run ---
+        Request::WatchRun {
+            owner,
+            repo,
+            run_id,
+            host,
+            reply_tx,
+        } => {
+            watch_scheduler.add(
+                owner.clone(),
+                repo.clone(),
+                run_id,
+                host.clone(),
+                reply_tx.clone(),
+            );
+            // Immediately fetch the run to catch already-completed runs.
+            let api_host = host.as_deref().unwrap_or("github.com");
+            let Some(octocrab) = get_octocrab(client, api_host, &reply_tx, "WatchRun") else {
+                return;
+            };
+            match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
+                Ok((run, rate_limit)) => {
+                    let completed = run.status == crate::types::RunStatus::Completed;
+                    let _ = reply_tx.send(Event::WatchedRunUpdated {
+                        run_id,
+                        run: run.clone(),
+                        completed,
+                        rate_limit,
+                    });
+                    watch_scheduler.mark_polled(run_id);
+                    if completed {
+                        fire_watch_hook(complete_command, &run, &owner, &repo, &reply_tx);
+                        watch_scheduler.complete(run_id);
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("engine: WatchRun initial fetch run_id={run_id} error: {e}");
+                }
+            }
+        }
+
+        Request::UnwatchRun { run_id } => {
+            watch_scheduler.remove(run_id);
+            tracing::debug!("engine: unwatched run_id={run_id}");
+        }
+
         Request::Shutdown => unreachable!("handled at run_loop level"),
     }
 }
@@ -1153,8 +1224,131 @@ async fn tick_refresh(
                 reply_tx: notify_tx,
             },
         };
-        handle_request(req, client, scheduler, refresh_interval).await;
+        // Watch scheduler and complete_command are not used during tick_refresh,
+        // but handle_request requires them for WatchRun/UnwatchRun arms.
+        let mut noop_watch = WatchScheduler::new(Duration::from_secs(30));
+        let no_cmd: Option<String> = None;
+        handle_request(
+            req,
+            client,
+            scheduler,
+            &mut noop_watch,
+            no_cmd.as_ref(),
+            refresh_interval,
+        )
+        .await;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Watch polling
+// ---------------------------------------------------------------------------
+
+async fn tick_watches(
+    client: &mut GitHubClient,
+    watch_scheduler: &mut WatchScheduler,
+    complete_command: Option<&String>,
+) {
+    let due: Vec<_> = watch_scheduler.due_entries();
+    for entry in due {
+        let host = entry.host.as_deref().unwrap_or("github.com");
+        let octocrab = match client.octocrab_for(host) {
+            Ok(o) => o,
+            Err(e) => {
+                tracing::warn!(
+                    "engine: watch poll for run_id={} — octocrab_for({host}) failed: {e}",
+                    entry.run_id
+                );
+                continue;
+            }
+        };
+        match gh_actions::fetch_run_by_id(&octocrab, &entry.owner, &entry.repo, entry.run_id).await
+        {
+            Ok((run, rate_limit)) => {
+                let completed = run.status == crate::types::RunStatus::Completed;
+                let send_ok = entry
+                    .reply_tx
+                    .send(Event::WatchedRunUpdated {
+                        run_id: entry.run_id,
+                        run: run.clone(),
+                        completed,
+                        rate_limit,
+                    })
+                    .is_ok();
+                watch_scheduler.mark_polled(entry.run_id);
+                if !send_ok {
+                    // Channel closed — UI view dropped.
+                    tracing::debug!(
+                        "engine: watch poll channel closed for run_id={}, evicting",
+                        entry.run_id
+                    );
+                    watch_scheduler.complete(entry.run_id);
+                    continue;
+                }
+                if completed {
+                    fire_watch_hook(
+                        complete_command,
+                        &run,
+                        &entry.owner,
+                        &entry.repo,
+                        &entry.reply_tx,
+                    );
+                    watch_scheduler.complete(entry.run_id);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("engine: watch poll for run_id={} error: {e}", entry.run_id);
+                watch_scheduler.mark_polled(entry.run_id);
+            }
+        }
+    }
+}
+
+fn fire_watch_hook(
+    complete_command: Option<&String>,
+    run: &crate::types::WorkflowRun,
+    owner: &str,
+    repo: &str,
+    reply_tx: &Sender<Event>,
+) {
+    let Some(cmd_template) = complete_command else {
+        return;
+    };
+    let conclusion_str = run
+        .conclusion
+        .map_or_else(|| "unknown".to_owned(), |c| format!("{c:?}").to_lowercase());
+    let vars = crate::config::keybindings::TemplateVars {
+        url: run.html_url.clone(),
+        repo_name: format!("{owner}/{repo}"),
+        head_branch: run.head_branch.clone().unwrap_or_default(),
+        run_id: run.id.to_string(),
+        run_name: run.name.clone(),
+        run_number: run.run_number.to_string(),
+        conclusion: conclusion_str,
+        ..Default::default()
+    };
+    let expanded = crate::config::keybindings::expand_template(cmd_template, &vars);
+    let run_id = run.id;
+    let reply = reply_tx.clone();
+    tokio::task::spawn_blocking(move || {
+        let result = crate::config::keybindings::execute_shell_command(&expanded);
+        match result {
+            Ok(output) => {
+                let _ = reply.send(Event::WatchHookResult {
+                    run_id,
+                    success: true,
+                    message: output,
+                });
+            }
+            Err(e) => {
+                let _ = reply.send(Event::WatchHookResult {
+                    run_id,
+                    success: false,
+                    message: e.to_string(),
+                });
+            }
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------

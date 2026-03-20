@@ -104,6 +104,8 @@ pub enum BuiltinAction {
     JumpToPr,
     GoBack,
     CloseTab,
+    // Watch workflow run
+    WatchRun,
 }
 
 impl BuiltinAction {
@@ -161,6 +163,7 @@ impl BuiltinAction {
             "jump_to_pr" => Self::JumpToPr,
             "go_back" => Self::GoBack,
             "close_tab" => Self::CloseTab,
+            "watch_run" => Self::WatchRun,
             _ => return None,
         })
     }
@@ -218,6 +221,7 @@ impl BuiltinAction {
             Self::JumpToPr => "Jump to PR for branch",
             Self::GoBack => "Go back to previous view",
             Self::CloseTab => "Close ephemeral tab",
+            Self::WatchRun => "Watch/unwatch run",
         }
     }
 }
@@ -394,6 +398,7 @@ pub(crate) fn default_actions() -> Vec<Keybinding> {
         kb("e", "rerun_failed", "Re-run failed jobs"),
         kb("E", "rerun_all", "Re-run all jobs"),
         kb("ctrl+x", "cancel_run", "Cancel run"),
+        kb("W", "watch_run", "Watch/unwatch run"),
         kb("S", "toggle_scope", "Toggle repo scope"),
     ]
 }
@@ -600,6 +605,10 @@ pub struct TemplateVars {
     pub repo_name: String,
     pub head_branch: String,
     pub base_branch: String,
+    pub run_id: String,
+    pub run_name: String,
+    pub run_number: String,
+    pub conclusion: String,
 }
 
 /// Expand `{{.Var}}` template variables in a command string.
@@ -610,6 +619,10 @@ pub fn expand_template(template: &str, vars: &TemplateVars) -> String {
         .replace("{{.RepoName}}", &vars.repo_name)
         .replace("{{.HeadBranch}}", &vars.head_branch)
         .replace("{{.BaseBranch}}", &vars.base_branch)
+        .replace("{{.RunId}}", &vars.run_id)
+        .replace("{{.RunName}}", &vars.run_name)
+        .replace("{{.RunNumber}}", &vars.run_number)
+        .replace("{{.Conclusion}}", &vars.conclusion)
 }
 
 // ---------------------------------------------------------------------------
@@ -739,6 +752,7 @@ mod tests {
             repo_name: "org/repo".to_owned(),
             head_branch: "feature-x".to_owned(),
             base_branch: "main".to_owned(),
+            ..Default::default()
         };
         let result = expand_template(
             "echo {{.Number}} {{.Url}} {{.RepoName}} {{.HeadBranch}} {{.BaseBranch}}",
@@ -840,6 +854,22 @@ mod tests {
     fn execute_shell_echo() {
         let result = execute_shell_command("echo hello");
         assert_eq!(result.unwrap(), "hello");
+    }
+
+    #[test]
+    fn expand_template_run_vars() {
+        let vars = TemplateVars {
+            run_id: "12345".to_owned(),
+            run_name: "CI".to_owned(),
+            run_number: "78".to_owned(),
+            conclusion: "success".to_owned(),
+            ..Default::default()
+        };
+        let result = expand_template(
+            "run {{.RunId}} ({{.RunName}} #{{.RunNumber}}) — {{.Conclusion}}",
+            &vars,
+        );
+        assert_eq!(result, "run 12345 (CI #78) — success");
     }
 
     #[test]

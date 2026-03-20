@@ -117,12 +117,17 @@ fn run_status_icon_color(
 }
 
 /// Convert a `WorkflowRun` into a table `Row`.
-fn run_to_row(run: &WorkflowRun, theme: &ResolvedTheme) -> Row {
+fn run_to_row(run: &WorkflowRun, theme: &ResolvedTheme, watched_ids: &HashSet<u64>) -> Row {
     let mut row = HashMap::new();
     let (status_icon, status_color) = run_status_icon_color(run.status, run.conclusion, theme);
+    let status_text = if watched_ids.contains(&run.id) {
+        format!("{status_icon} {}", theme.icons.action_watched)
+    } else {
+        status_icon
+    };
     row.insert(
         "status".to_owned(),
-        Cell::colored(status_icon, status_color),
+        Cell::colored(status_text, status_color),
     );
     row.insert(
         "run".to_owned(),
@@ -396,6 +401,7 @@ pub fn ActionsView<'a>(
     // path picks it up and sends FetchRunById.
     let mut pending_run_fetch = hooks.use_state(|| Option::<PendingRunFetch>::None);
 
+    let mut watched_run_ids = hooks.use_state(HashSet::<u64>::new);
     let mut action_status = hooks.use_state(|| Option::<ActionFeedback>::None);
     let mut status_set_at = hooks.use_state(|| Option::<std::time::Instant>::None);
     let fallback_rl = hooks.use_state(|| None);
@@ -577,7 +583,7 @@ pub fn ActionsView<'a>(
                         } => {
                             let rows: Vec<Row> = runs
                                 .iter()
-                                .map(|r| run_to_row(r, &theme_for_poll))
+                                .map(|r| run_to_row(r, &theme_for_poll, &watched_run_ids.read()))
                                 .collect();
                             let run_count = runs.len();
                             let filter_data = FilterData {
@@ -702,8 +708,11 @@ pub fn ActionsView<'a>(
                                     if let Some(existing_idx) =
                                         fd.runs.iter().position(|r| r.id == fetched.id)
                                     {
-                                        fd.rows[existing_idx] =
-                                            run_to_row(&fetched, &theme_for_poll);
+                                        fd.rows[existing_idx] = run_to_row(
+                                            &fetched,
+                                            &theme_for_poll,
+                                            &watched_run_ids.read(),
+                                        );
                                         fd.runs[existing_idx] = fetched.clone();
                                     }
                                 }
@@ -712,8 +721,14 @@ pub fn ActionsView<'a>(
                                     if let Some(fd) = state.filters.get_mut(tab_idx) {
                                         // Prepend if not already present (new run in ephemeral tab).
                                         if !fd.runs.iter().any(|r| r.id == fetched.id) {
-                                            fd.rows
-                                                .insert(0, run_to_row(&fetched, &theme_for_poll));
+                                            fd.rows.insert(
+                                                0,
+                                                run_to_row(
+                                                    &fetched,
+                                                    &theme_for_poll,
+                                                    &watched_run_ids.read(),
+                                                ),
+                                            );
                                             fd.runs.insert(0, fetched);
                                             fd.run_count = fd.runs.len();
                                         }
@@ -759,6 +774,47 @@ pub fn ActionsView<'a>(
                                 filter_fetch_times.set(times);
                                 super::common::set_in_flight(&mut filter_in_flight, fi, false);
                             }
+                        }
+                        Event::WatchedRunUpdated {
+                            run_id,
+                            run,
+                            completed,
+                            rate_limit,
+                        } => {
+                            // Update the run in-place across ALL filters.
+                            let mut state = actions_state.read().clone();
+                            for fd in &mut state.filters {
+                                if let Some(idx) = fd.runs.iter().position(|r| r.id == run_id) {
+                                    fd.rows[idx] =
+                                        run_to_row(&run, &theme_for_poll, &watched_run_ids.read());
+                                    fd.runs[idx] = run.clone();
+                                }
+                            }
+                            actions_state.set(state);
+                            if completed {
+                                let mut ids = watched_run_ids.read().clone();
+                                ids.remove(&run_id);
+                                watched_run_ids.set(ids);
+                            }
+                            if let Some(rl) = rate_limit {
+                                rate_limit_state.set(Some(rl));
+                            }
+                        }
+                        Event::WatchHookResult {
+                            run_id,
+                            success,
+                            message,
+                        } => {
+                            if success {
+                                action_status.set(Some(ActionFeedback::Success(format!(
+                                    "Watch hook for #{run_id}: {message}"
+                                ))));
+                            } else {
+                                action_status.set(Some(ActionFeedback::Error(format!(
+                                    "Watch hook for #{run_id}: {message}"
+                                ))));
+                            }
+                            status_set_at.set(Some(std::time::Instant::now()));
                         }
                         _ => {}
                     }
@@ -1124,6 +1180,7 @@ pub fn ActionsView<'a>(
     hooks.use_terminal_events({
         let engine_for_keys = engine.clone();
         let event_tx_for_keys = event_tx.clone();
+        let theme_for_keys = theme.clone();
         move |event| match event {
             TerminalEvent::Key(KeyEvent {
                 code,
@@ -1268,7 +1325,16 @@ pub fn ActionsView<'a>(
                                     .as_ref()
                                     .and_then(|r| r.head_branch.clone())
                                     .unwrap_or_default(),
-                                base_branch: String::new(),
+                                run_id: current_run
+                                    .as_ref()
+                                    .map_or_else(String::new, |r| r.id.to_string()),
+                                run_name: current_run
+                                    .as_ref()
+                                    .map_or_else(String::new, |r| r.name.clone()),
+                                run_number: current_run
+                                    .as_ref()
+                                    .map_or_else(String::new, |r| r.run_number.to_string()),
+                                ..Default::default()
                             };
                             match keybindings
                                 .as_ref()
@@ -1488,6 +1554,106 @@ pub fn ActionsView<'a>(
                                                         .to_owned(),
                                                 )));
                                                 status_set_at.set(Some(std::time::Instant::now()));
+                                            }
+                                        }
+                                    }
+                                    BuiltinAction::WatchRun => {
+                                        if let Some(run) = get_run_at_cursor(
+                                            &actions_state,
+                                            current_filter_idx,
+                                            cursor.get(),
+                                            &filtered_run_indices_for_kb,
+                                        ) {
+                                            if run.status == RunStatus::Completed {
+                                                action_status.set(Some(ActionFeedback::Warning(
+                                                    "Run already completed".to_owned(),
+                                                )));
+                                                status_set_at.set(Some(std::time::Instant::now()));
+                                            } else {
+                                                let mut ids = watched_run_ids.read().clone();
+                                                if ids.contains(&run.id) {
+                                                    // Unwatch
+                                                    ids.remove(&run.id);
+                                                    watched_run_ids.set(ids);
+                                                    if let Some(ref eng) = engine_for_keys {
+                                                        eng.send(Request::UnwatchRun {
+                                                            run_id: run.id,
+                                                        });
+                                                    }
+                                                    action_status.set(Some(ActionFeedback::Info(
+                                                        format!(
+                                                            "Unwatched run #{}",
+                                                            run.run_number
+                                                        ),
+                                                    )));
+                                                    status_set_at
+                                                        .set(Some(std::time::Instant::now()));
+                                                    // Rebuild current row to remove the icon.
+                                                    let mut state = actions_state.read().clone();
+                                                    if let Some(fd) =
+                                                        state.filters.get_mut(current_filter_idx)
+                                                        && let Some(orig_idx) =
+                                                            filtered_run_indices_for_kb
+                                                                .get(cursor.get())
+                                                                .copied()
+                                                        && let Some(r) = fd.runs.get(orig_idx)
+                                                    {
+                                                        fd.rows[orig_idx] = run_to_row(
+                                                            r,
+                                                            &theme_for_keys,
+                                                            &watched_run_ids.read(),
+                                                        );
+                                                    }
+                                                    actions_state.set(state);
+                                                } else {
+                                                    // Watch
+                                                    if let Some((owner, repo)) = owner_repo_for_run(
+                                                        &run,
+                                                        current_filter_cfg_for_kb.as_ref(),
+                                                    ) {
+                                                        ids.insert(run.id);
+                                                        watched_run_ids.set(ids);
+                                                        let host = current_filter_cfg_for_kb
+                                                            .as_ref()
+                                                            .and_then(|f| f.host.clone());
+                                                        if let Some(ref eng) = engine_for_keys {
+                                                            eng.send(Request::WatchRun {
+                                                                owner,
+                                                                repo,
+                                                                run_id: run.id,
+                                                                host,
+                                                                reply_tx: event_tx_for_keys.clone(),
+                                                            });
+                                                        }
+                                                        action_status.set(Some(
+                                                            ActionFeedback::Success(format!(
+                                                                "Watching run #{}",
+                                                                run.run_number
+                                                            )),
+                                                        ));
+                                                        status_set_at
+                                                            .set(Some(std::time::Instant::now()));
+                                                        // Rebuild current row to show the icon.
+                                                        let mut state =
+                                                            actions_state.read().clone();
+                                                        if let Some(fd) = state
+                                                            .filters
+                                                            .get_mut(current_filter_idx)
+                                                            && let Some(orig_idx) =
+                                                                filtered_run_indices_for_kb
+                                                                    .get(cursor.get())
+                                                                    .copied()
+                                                            && let Some(r) = fd.runs.get(orig_idx)
+                                                        {
+                                                            fd.rows[orig_idx] = run_to_row(
+                                                                r,
+                                                                &theme_for_keys,
+                                                                &watched_run_ids.read(),
+                                                            );
+                                                        }
+                                                        actions_state.set(state);
+                                                    }
+                                                }
                                             }
                                         }
                                     }

@@ -97,6 +97,7 @@ pub struct ResolvedIcons {
     pub action_skipped: String,
     pub action_running: String,
     pub action_queued: String,
+    pub action_watched: String,
 }
 
 impl ResolvedIcons {
@@ -194,8 +195,9 @@ impl ResolvedIcons {
             action_failure: "\u{2716}".to_owned(),   // ✖
             action_cancelled: "\u{2715}".to_owned(), // ✕
             action_skipped: "-".to_owned(),
-            action_running: "\u{21ba}".to_owned(), // ↺
-            action_queued: "\u{25cb}".to_owned(),  // ○
+            action_running: "\u{21ba}".to_owned(),  // ↺
+            action_queued: "\u{25cb}".to_owned(),   // ○
+            action_watched: "\u{1f441}".to_owned(), // 👁 (U+1F441 EYE)
         }
     }
 
@@ -296,6 +298,7 @@ impl ResolvedIcons {
             action_skipped: "-".to_owned(),
             action_running: "\u{ea77}".to_owned(), //  nf-cod-sync
             action_queued: "\u{e641}".to_owned(),  //  nf-seti-clock
+            action_watched: "\u{f06e}".to_owned(), //  nf-fa-eye
         }
     }
 
@@ -395,6 +398,7 @@ impl ResolvedIcons {
             action_skipped: "-".to_owned(),
             action_running: "~".to_owned(),
             action_queued: "o".to_owned(),
+            action_watched: "O".to_owned(),
         }
     }
 
@@ -535,6 +539,7 @@ impl ResolvedIcons {
             action_skipped: config.action_skipped.clone().unwrap_or(base.action_skipped),
             action_running: config.action_running.clone().unwrap_or(base.action_running),
             action_queued: config.action_queued.clone().unwrap_or(base.action_queued),
+            action_watched: config.action_watched.clone().unwrap_or(base.action_watched),
         }
     }
 }
@@ -594,6 +599,7 @@ mod tests {
         assert_eq!(icons.action_skipped, "-");
         assert_eq!(icons.action_running, "\u{21ba}");
         assert_eq!(icons.action_queued, "\u{25cb}");
+        assert_eq!(icons.action_watched, "\u{1f441}");
     }
 
     #[test]
@@ -609,6 +615,7 @@ mod tests {
         assert_eq!(icons.action_skipped, "-");
         assert_eq!(icons.action_running, "\u{ea77}");
         assert_eq!(icons.action_queued, "\u{e641}");
+        assert_eq!(icons.action_watched, "\u{f06e}");
     }
 
     #[test]
@@ -624,6 +631,7 @@ mod tests {
         assert_eq!(icons.action_skipped, "-");
         assert_eq!(icons.action_running, "~");
         assert_eq!(icons.action_queued, "o");
+        assert_eq!(icons.action_watched, "O");
     }
 
     #[test]
@@ -636,6 +644,7 @@ mod tests {
         assert_eq!(icons.action_success, "OK");
         // Others stay at unicode defaults.
         assert_eq!(icons.action_failure, "\u{2716}");
+        assert_eq!(icons.action_watched, "\u{1f441}");
     }
 
     #[test]

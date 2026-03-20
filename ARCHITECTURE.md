@@ -22,6 +22,7 @@ graph LR
         E[octocrab / GraphQL]
         F[moka LRU cache]
         G[RefreshScheduler]
+        H[WatchScheduler]
     end
 
     C -->|"tokio::sync::mpsc (Request)"| D
@@ -30,6 +31,7 @@ graph LR
     D --- E
     D --- F
     D --- G
+    D --- H
 ```
 
 - **UI → Engine**: `tokio::sync::mpsc::UnboundedSender<Request>` inside
@@ -87,7 +89,7 @@ graph TD
     views["views/\nprs · issues · actions · notifications · repo"]
     components["components/\nTabBar · Table · Sidebar · Footer · …"]
     engine_iface["engine/interface.rs\nEngineHandle · Request · Event"]
-    engine_impl["engine/github.rs\nengine/refresh.rs"]
+    engine_impl["engine/github.rs\nengine/refresh.rs\nengine/watch.rs"]
     github["github/  ⟨pub crate⟩\nclient · graphql · notifications · auth"]
     types["types/\nPullRequest · Issue · Notification · …"]
     config["config/\ntypes · loader · keybindings · builtin_themes"]

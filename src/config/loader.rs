@@ -146,6 +146,23 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
             paths
         },
         theme_file: local.theme_file.or(global.theme_file),
+        actions: merge_actions_config(&global.actions, &local.actions),
+    }
+}
+
+/// Merge two Actions configs, with local values overriding global.
+fn merge_actions_config(
+    global: &crate::config::types::ActionsConfig,
+    local: &crate::config::types::ActionsConfig,
+) -> crate::config::types::ActionsConfig {
+    crate::config::types::ActionsConfig {
+        watch_poll_interval_seconds: local
+            .watch_poll_interval_seconds
+            .or(global.watch_poll_interval_seconds),
+        watch_complete_command: local
+            .watch_complete_command
+            .clone()
+            .or_else(|| global.watch_complete_command.clone()),
     }
 }
 

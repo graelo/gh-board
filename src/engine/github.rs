@@ -4,6 +4,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::actions::{issue_actions, pr_actions};
+use crate::config::keybindings::{TemplateVars, execute_shell_command, expand_template};
 use crate::config::types::AppConfig;
 use crate::github::{
     actions as gh_actions,
@@ -11,6 +12,7 @@ use crate::github::{
     graphql, notifications as notif,
     rate_limit::{format_rate_limit_message, is_rate_limited},
 };
+use crate::types::{RunStatus, WorkflowRun};
 
 use super::interface::{Engine, EngineHandle, Event, PrRef, Request};
 use super::refresh::{DueEntry, FilterConfig, RefreshScheduler, ViewKind};
@@ -118,7 +120,7 @@ impl GitHubEngine {
                 _ = refresh_tick.tick() => {
                     if tokio::time::timeout(
                         TICK_REFRESH_TIMEOUT,
-                        tick_refresh(&mut client, &mut scheduler, refresh_interval),
+                        tick_refresh(&mut client, &mut scheduler, &mut watch_scheduler, complete_command.as_ref(), refresh_interval),
                     )
                     .await
                     .is_err()
@@ -1157,17 +1159,18 @@ async fn handle_request(
             };
             match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
                 Ok((run, rate_limit)) => {
-                    let completed = run.status == crate::types::RunStatus::Completed;
+                    let completed = run.status == RunStatus::Completed;
                     let _ = reply_tx.send(Event::WatchedRunUpdated {
                         run_id,
                         run: run.clone(),
                         completed,
                         rate_limit,
                     });
-                    watch_scheduler.mark_polled(run_id);
                     if completed {
                         fire_watch_hook(complete_command, &run, &owner, &repo, &reply_tx);
                         watch_scheduler.complete(run_id);
+                    } else {
+                        watch_scheduler.mark_polled(run_id);
                     }
                 }
                 Err(e) => {
@@ -1192,6 +1195,8 @@ async fn handle_request(
 async fn tick_refresh(
     client: &mut GitHubClient,
     scheduler: &mut RefreshScheduler,
+    watch_scheduler: &mut WatchScheduler,
+    complete_command: Option<&String>,
     refresh_interval: Duration,
 ) {
     for DueEntry {
@@ -1224,16 +1229,12 @@ async fn tick_refresh(
                 reply_tx: notify_tx,
             },
         };
-        // Watch scheduler and complete_command are not used during tick_refresh,
-        // but handle_request requires them for WatchRun/UnwatchRun arms.
-        let mut noop_watch = WatchScheduler::new(Duration::from_secs(30));
-        let no_cmd: Option<String> = None;
         handle_request(
             req,
             client,
             scheduler,
-            &mut noop_watch,
-            no_cmd.as_ref(),
+            watch_scheduler,
+            complete_command,
             refresh_interval,
         )
         .await;
@@ -1265,7 +1266,7 @@ async fn tick_watches(
         match gh_actions::fetch_run_by_id(&octocrab, &entry.owner, &entry.repo, entry.run_id).await
         {
             Ok((run, rate_limit)) => {
-                let completed = run.status == crate::types::RunStatus::Completed;
+                let completed = run.status == RunStatus::Completed;
                 let send_ok = entry
                     .reply_tx
                     .send(Event::WatchedRunUpdated {
@@ -1306,7 +1307,7 @@ async fn tick_watches(
 
 fn fire_watch_hook(
     complete_command: Option<&String>,
-    run: &crate::types::WorkflowRun,
+    run: &WorkflowRun,
     owner: &str,
     repo: &str,
     reply_tx: &Sender<Event>,
@@ -1314,10 +1315,8 @@ fn fire_watch_hook(
     let Some(cmd_template) = complete_command else {
         return;
     };
-    let conclusion_str = run
-        .conclusion
-        .map_or_else(|| "unknown".to_owned(), |c| format!("{c:?}").to_lowercase());
-    let vars = crate::config::keybindings::TemplateVars {
+    let conclusion_str = run.conclusion.map_or("unknown", |c| c.as_str()).to_owned();
+    let vars = TemplateVars {
         url: run.html_url.clone(),
         repo_name: format!("{owner}/{repo}"),
         head_branch: run.head_branch.clone().unwrap_or_default(),
@@ -1327,11 +1326,11 @@ fn fire_watch_hook(
         conclusion: conclusion_str,
         ..Default::default()
     };
-    let expanded = crate::config::keybindings::expand_template(cmd_template, &vars);
+    let expanded = expand_template(cmd_template, &vars);
     let run_id = run.id;
     let reply = reply_tx.clone();
     tokio::task::spawn_blocking(move || {
-        let result = crate::config::keybindings::execute_shell_command(&expanded);
+        let result = execute_shell_command(&expanded);
         match result {
             Ok(output) => {
                 let _ = reply.send(Event::WatchHookResult {

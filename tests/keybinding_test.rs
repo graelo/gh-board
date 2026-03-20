@@ -139,12 +139,15 @@ fn builtin_action_roundtrip() {
         "last",
         "page_down",
         "page_up",
+        "half_page_down",
+        "half_page_up",
         "prev_filter",
         "next_filter",
         "toggle_preview",
         "open_browser",
         "refresh",
         "refresh_all",
+        "refresh_item",
         "search",
         "copy_number",
         "copy_url",
@@ -156,6 +159,7 @@ fn builtin_action_roundtrip() {
         "comment",
         "view_diff",
         "checkout",
+        "worktree",
         "close",
         "reopen",
         "mark_ready",
@@ -170,6 +174,17 @@ fn builtin_action_roundtrip() {
         "create_pr_from_branch",
         "view_prs_for_branch",
         "switch_view",
+        "switch_view_back",
+        "toggle_scope",
+        "toggle_workflow_nav",
+        "rerun_failed",
+        "rerun_all",
+        "cancel_run",
+        "jump_to_run",
+        "jump_to_pr",
+        "go_back",
+        "close_tab",
+        "watch_run",
     ];
     for name in &names {
         let action = BuiltinAction::from_name(name);
@@ -182,14 +197,6 @@ fn builtin_action_roundtrip() {
 #[test]
 fn builtin_from_name_unknown_returns_none() {
     assert!(BuiltinAction::from_name("nonexistent").is_none());
-}
-
-#[test]
-fn builtin_watch_run_from_name() {
-    assert_eq!(
-        BuiltinAction::from_name("watch_run"),
-        Some(BuiltinAction::WatchRun)
-    );
 }
 
 #[test]

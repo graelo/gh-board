@@ -32,6 +32,22 @@ pub enum RunConclusion {
     Unknown,
 }
 
+impl RunConclusion {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Failure => "failure",
+            Self::Neutral => "neutral",
+            Self::Cancelled => "cancelled",
+            Self::TimedOut => "timed_out",
+            Self::ActionRequired => "action_required",
+            Self::Skipped => "skipped",
+            Self::Stale => "stale",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // WorkflowJob and JobStep domain types
 // ---------------------------------------------------------------------------

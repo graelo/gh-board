@@ -17,13 +17,13 @@ struct WatchEntry {
 /// Sibling of `RefreshScheduler` — lives in the engine thread and polls
 /// individual runs at a short interval via the existing `fetch_run_by_id`
 /// REST endpoint.
-pub struct WatchScheduler {
+pub(super) struct WatchScheduler {
     entries: Vec<WatchEntry>,
     interval: Duration,
 }
 
 impl WatchScheduler {
-    pub fn new(interval: Duration) -> Self {
+    pub(super) fn new(interval: Duration) -> Self {
         Self {
             entries: Vec::new(),
             interval,
@@ -31,7 +31,7 @@ impl WatchScheduler {
     }
 
     /// Add a run to watch. De-duplicates by `run_id`.
-    pub fn add(
+    pub(super) fn add(
         &mut self,
         owner: String,
         repo: String,
@@ -53,18 +53,18 @@ impl WatchScheduler {
     }
 
     /// Remove a run from the watch list.
-    pub fn remove(&mut self, run_id: u64) {
+    pub(super) fn remove(&mut self, run_id: u64) {
         self.entries.retain(|e| e.run_id != run_id);
     }
 
     /// Check whether a run is currently being watched.
-    #[allow(dead_code)]
-    pub fn is_watched(&self, run_id: u64) -> bool {
+    #[cfg(test)]
+    fn is_watched(&self, run_id: u64) -> bool {
         self.entries.iter().any(|e| e.run_id == run_id)
     }
 
     /// Return entries whose poll interval has elapsed (or never been polled).
-    pub fn due_entries(&self) -> Vec<DueWatchEntry> {
+    pub(super) fn due_entries(&self) -> Vec<DueWatchEntry> {
         let now = SystemTime::now();
         self.entries
             .iter()
@@ -84,32 +84,29 @@ impl WatchScheduler {
     }
 
     /// Record that a run was just polled.
-    pub fn mark_polled(&mut self, run_id: u64) {
-        let now = SystemTime::now();
-        for entry in &mut self.entries {
-            if entry.run_id == run_id {
-                entry.last_poll = Some(now);
-            }
+    pub(super) fn mark_polled(&mut self, run_id: u64) {
+        if let Some(entry) = self.entries.iter_mut().find(|e| e.run_id == run_id) {
+            entry.last_poll = Some(SystemTime::now());
         }
     }
 
     /// Remove a completed entry.
-    pub fn complete(&mut self, run_id: u64) {
+    pub(super) fn complete(&mut self, run_id: u64) {
         self.remove(run_id);
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(super) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 }
 
 /// A watch entry that is due for polling.
-pub struct DueWatchEntry {
-    pub owner: String,
-    pub repo: String,
-    pub run_id: u64,
-    pub host: Option<String>,
-    pub reply_tx: Sender<Event>,
+pub(super) struct DueWatchEntry {
+    pub(super) owner: String,
+    pub(super) repo: String,
+    pub(super) run_id: u64,
+    pub(super) host: Option<String>,
+    pub(super) reply_tx: Sender<Event>,
 }
 
 #[cfg(test)]

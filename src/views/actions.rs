@@ -781,6 +781,13 @@ pub fn ActionsView<'a>(
                             completed,
                             rate_limit,
                         } => {
+                            // Remove from watched set first so run_to_row
+                            // clears the icon immediately on completion.
+                            if completed {
+                                let mut ids = watched_run_ids.read().clone();
+                                ids.remove(&run_id);
+                                watched_run_ids.set(ids);
+                            }
                             // Update the run in-place across ALL filters.
                             let mut state = actions_state.read().clone();
                             for fd in &mut state.filters {
@@ -791,11 +798,6 @@ pub fn ActionsView<'a>(
                                 }
                             }
                             actions_state.set(state);
-                            if completed {
-                                let mut ids = watched_run_ids.read().clone();
-                                ids.remove(&run_id);
-                                watched_run_ids.set(ids);
-                            }
                             if let Some(rl) = rate_limit {
                                 rate_limit_state.set(Some(rl));
                             }

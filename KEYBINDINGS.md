@@ -95,6 +95,7 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `e` | `rerun_failed` | Re-run failed jobs |
 | `E` | `rerun_all` | Re-run all jobs |
 | `ctrl+x` | `cancel_run` | Cancel run |
+| `W` | `watch_run` | Watch/unwatch workflow run |
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
 | `S` | `toggle_scope` | Toggle repo scope |
 
@@ -172,6 +173,11 @@ Available template variables:
 | `{{.RepoName}}` | `owner/repo` string |
 | `{{.HeadBranch}}` | Head branch name (PRs only) |
 | `{{.BaseBranch}}` | Base branch name (PRs only) |
+| `{{.RunId}}` | Numeric run ID (Actions only) |
+| `{{.RunName}}` | Workflow name, e.g. "CI" (Actions only) |
+| `{{.RunNumber}}` | Run number, e.g. "78" (Actions only) |
+| `{{.Conclusion}}` | `success`, `failure`, `cancelled`, `timed_out`, etc. (Actions only) |
+| `{{.ConclusionEmoji}}` | Conclusion emoji: `✅`, `❌`, `🚫`, `⏰`, … (Actions only) |
 
 ### Available contexts
 
@@ -252,6 +258,7 @@ The full list of names accepted by the `builtin` field:
 | `jump_to_run` | Jump to Actions run (from PR view) |
 | `go_back` | Go back to previous view (actions) |
 | `close_tab` | Close ephemeral tab (actions) |
+| `watch_run` | Watch/unwatch workflow run (actions) |
 
 ---
 

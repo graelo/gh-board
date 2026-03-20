@@ -137,3 +137,41 @@ fn stub_engine_fetch_run_by_id_returns_not_found() {
         "FetchRunById on stub should return SingleRunFetched with run: None"
     );
 }
+
+#[test]
+fn stub_engine_watch_run_returns_completed() {
+    let stub = StubEngine::default();
+
+    let handle = stub.start();
+    let (tx, rx) = std::sync::mpsc::channel::<Event>();
+
+    handle.send(Request::WatchRun {
+        owner: "acme".into(),
+        repo: "widget".into(),
+        run_id: 42,
+        host: None,
+        reply_tx: tx,
+    });
+
+    let event = rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("engine should reply within 2 seconds");
+
+    match event {
+        Event::WatchedRunUpdated {
+            run_id,
+            completed,
+            run,
+            ..
+        } => {
+            assert_eq!(run_id, 42);
+            assert!(completed);
+            assert_eq!(run.status, gh_board::types::RunStatus::Completed);
+            assert_eq!(
+                run.conclusion,
+                Some(gh_board::types::RunConclusion::Success)
+            );
+        }
+        _other => panic!("expected WatchedRunUpdated, got a different event variant"),
+    }
+}

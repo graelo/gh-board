@@ -32,6 +32,37 @@ pub enum RunConclusion {
     Unknown,
 }
 
+impl RunConclusion {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Failure => "failure",
+            Self::Neutral => "neutral",
+            Self::Cancelled => "cancelled",
+            Self::TimedOut => "timed_out",
+            Self::ActionRequired => "action_required",
+            Self::Skipped => "skipped",
+            Self::Stale => "stale",
+            Self::Unknown => "unknown",
+        }
+    }
+
+    /// Emoji for the conclusion, suitable for notifications.
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            Self::Success => "\u{2705}",        // ✅
+            Self::Failure => "\u{274c}",        // ❌
+            Self::Neutral => "\u{2796}",        // ➖
+            Self::Cancelled => "\u{1f6ab}",     // 🚫
+            Self::TimedOut => "\u{23f0}",       // ⏰
+            Self::ActionRequired => "\u{26a0}", // ⚠
+            Self::Skipped => "\u{23ed}",        // ⏭
+            Self::Stale => "\u{1f4a4}",         // 💤
+            Self::Unknown => "\u{2753}",        // ❓
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // WorkflowJob and JobStep domain types
 // ---------------------------------------------------------------------------

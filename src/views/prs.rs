@@ -1667,6 +1667,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 repo_name: format!("{pr_owner}/{pr_repo}"),
                                 head_branch,
                                 base_branch,
+                                ..Default::default()
                             };
                             match keybindings
                                 .as_ref()

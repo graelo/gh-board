@@ -81,6 +81,24 @@ pub struct AppConfig {
     ///   - `"builtin:<name>"` (e.g. `"builtin:dracula"`)
     ///   - A filesystem path (e.g. `"~/.config/gh-board/themes/monokai.toml"`)
     pub theme_file: Option<String>,
+    #[serde(default)]
+    pub actions: ActionsConfig,
+}
+
+// ---------------------------------------------------------------------------
+// Actions settings
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct ActionsConfig {
+    /// Seconds between polls for watched runs (default: 30).
+    pub watch_poll_interval_seconds: Option<u32>,
+    /// Shell command to run when a watched run completes.
+    /// Supports template variables: `{{.Url}}`, `{{.RepoName}}`,
+    /// `{{.RunId}}`, `{{.RunName}}`, `{{.RunNumber}}`, `{{.Conclusion}}`,
+    /// `{{.ConclusionEmoji}}`, `{{.HeadBranch}}`.
+    pub watch_complete_command: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -423,6 +441,7 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         action_skipped: overlay.action_skipped.or(base.action_skipped),
         action_running: overlay.action_running.or(base.action_running),
         action_queued: overlay.action_queued.or(base.action_queued),
+        action_watched: overlay.action_watched.or(base.action_watched),
     }
 }
 
@@ -751,4 +770,5 @@ pub struct IconConfig {
     pub action_skipped: Option<String>,
     pub action_running: Option<String>,
     pub action_queued: Option<String>,
+    pub action_watched: Option<String>,
 }

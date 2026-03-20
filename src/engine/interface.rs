@@ -280,6 +280,20 @@ pub enum Request {
     },
 
     // -----------------------------------------------------------------------
+    // Watch workflow run
+    // -----------------------------------------------------------------------
+    WatchRun {
+        owner: String,
+        repo: String,
+        run_id: u64,
+        host: Option<String>,
+        reply_tx: Sender<Event>,
+    },
+    UnwatchRun {
+        run_id: u64,
+    },
+
+    // -----------------------------------------------------------------------
     // Control
     // -----------------------------------------------------------------------
     Shutdown,
@@ -321,8 +335,9 @@ impl Request {
             | Self::UnsubscribeNotification { reply_tx, .. }
             | Self::FetchRunById { reply_tx, .. }
             | Self::RefreshPr { reply_tx, .. }
-            | Self::RefreshIssue { reply_tx, .. } => Some(reply_tx.clone()),
-            Self::RegisterRefresh { .. } | Self::Shutdown => None,
+            | Self::RefreshIssue { reply_tx, .. }
+            | Self::WatchRun { reply_tx, .. } => Some(reply_tx.clone()),
+            Self::RegisterRefresh { .. } | Self::UnwatchRun { .. } | Self::Shutdown => None,
         }
     }
 
@@ -361,6 +376,8 @@ impl Request {
             Self::FetchRunById { .. } => "FetchRunById",
             Self::RefreshPr { .. } => "RefreshPr",
             Self::RefreshIssue { .. } => "RefreshIssue",
+            Self::WatchRun { .. } => "WatchRun",
+            Self::UnwatchRun { .. } => "UnwatchRun",
             Self::RegisterRefresh { .. } => "RegisterRefresh",
             Self::Shutdown => "Shutdown",
         }
@@ -431,6 +448,20 @@ pub enum Event {
         issue: Box<Issue>,
         detail: IssueDetail,
         rate_limit: Option<RateLimitInfo>,
+    },
+
+    /// Periodic update for a watched run (or final completed state).
+    WatchedRunUpdated {
+        run_id: u64,
+        run: WorkflowRun,
+        completed: bool,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    /// Result of the watch completion hook execution.
+    WatchHookResult {
+        run_id: u64,
+        success: bool,
+        message: String,
     },
 
     /// Unified error event for all fetch or mutation failures.

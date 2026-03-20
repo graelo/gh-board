@@ -417,6 +417,7 @@ inactive color logic as other tab-bar labels.
 | `action_skipped`   | `text.faint`     |
 | `action_running`   | `text.warning`   |
 | `action_queued`    | `text.secondary` |
+| `action_watched`   | `text.primary`   |
 
 ---
 

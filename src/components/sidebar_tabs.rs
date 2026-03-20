@@ -385,7 +385,7 @@ fn check_status_icon(
             (icons.check_action_required.clone(), theme.text_warning)
         }
         (Some(CheckStatus::InProgress), _) => (icons.check_running.clone(), theme.text_warning),
-        (Some(CheckStatus::Queued), _) => (icons.check_pending.clone(), theme.text_warning),
+        (Some(CheckStatus::Queued), _) => (icons.check_pending.clone(), theme.text_secondary),
         // Neutral, Stale, Unknown conclusions or missing status
         _ => (icons.check_pending.clone(), theme.text_faint),
     }

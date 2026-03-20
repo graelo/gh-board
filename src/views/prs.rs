@@ -320,7 +320,7 @@ fn aggregate_ci_status(
         return (icons.ci_running.clone(), theme.text_warning);
     }
     if any_queued {
-        return (icons.ci_pending.clone(), theme.text_warning);
+        return (icons.ci_pending.clone(), theme.text_secondary);
     }
     if any_action_required {
         return (icons.ci_action_required.clone(), theme.text_warning);

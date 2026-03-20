@@ -1,3 +1,18 @@
+// Keybinding configuration types.
+//
+// This module defines:
+// - `Keybinding`: A single key-to-action mapping
+// - `KeybindingsConfig`: All context-specific bindings from the config file
+// - `MergedBindings`: Runtime representation with global defaults + overrides
+//
+// ## Binding Resolution
+//
+// When a key is pressed, resolution follows this priority:
+// 1. Context-specific binding (e.g., `prs`, `issues`)
+// 2. Universal binding
+// 3. No action (key ignored)
+//
+// Context bindings can shadow universal ones without affecting other views.
 use anyhow::{Context as _, Result};
 use serde::Deserialize;
 

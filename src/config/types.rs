@@ -1,3 +1,29 @@
+// Configuration types for gh-board.
+//
+// This module defines all configuration structures used by the application,
+// including top-level config, GitHub backend settings, filter definitions,
+// theme options, and keybindings.
+//
+// ## Config Loading
+//
+// Configuration is loaded from multiple sources in priority order:
+// 1. `--config` CLI flag (explicit path)
+// 2. `.gh-board.toml` in the current Git repository root
+// 3. `$GH_BOARD_CONFIG` environment variable
+// 4. XDG config directory (`$XDG_CONFIG_HOME/gh-board/config.toml`)
+// 5. Default user config directory (`~/.config/gh-board/config.toml` on Linux/macOS)
+//
+// When both global and repo-local configs exist, they are merged recursively:
+// local values override global values for the same key; missing keys in the
+// local config fall back to global defaults.
+//
+// ## Option<T> Fields
+//
+// Most configuration fields use `Option<T>` to distinguish between:
+// - **Explicit value**: field is present with a value
+// - **Missing/None**: field is not set, allowing fallback to global defaults
+//
+// This enables partial configs where only desired overrides need be specified.
 use std::collections::HashMap;
 use std::path::PathBuf;
 

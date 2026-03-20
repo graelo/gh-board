@@ -64,11 +64,11 @@ sequenceDiagram
 
 Three refresh levels exist (`r` / `R` / `ctrl+r`):
 
-- **`r` — `RefreshItem`**: refreshes only the selected item. For PRs and Issues
-  the engine runs a single combined GraphQL query (`RefreshPr` / `RefreshIssue`)
-  that returns both table-row and detail data, updating the row in-place across
-  all filters. For Actions it pairs `FetchRunById` + `FetchRunJobs`. Notifications
-  and Repo fall through to tab-level refresh.
+- **`r` — `RefreshItem`**: refreshes only the selected item. For PRs and
+    Issues the engine runs a single combined GraphQL query (`RefreshPr` /
+    `RefreshIssue`) that returns both table-row and detail data, updating the
+    row in-place across all filters. For Actions it pairs `FetchRunById` +
+    `FetchRunJobs`. Notifications and Repo fall through to tab-level refresh.
 - **`R` — `Refresh`**: resets the active filter tab and re-fetches all items.
 - **`ctrl+r` — `RefreshAll`**: resets every filter tab.
 

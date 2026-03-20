@@ -146,7 +146,8 @@ gh-board [COMMAND] [OPTIONS] [URL]
 **Options:**
 
 - `-c, --config <PATH>`: Use a specific config file
-- `--debug`: Enable verbose debug logging to `./debug.log` (default: warn+ to `~/.cache/gh-board/`)
+- `--debug`: Enable verbose debug logging to `./debug.log` (default: warn+ to
+    `~/.cache/gh-board/`)
 - `-h, --help`: Show help
 - `-v`: Show version
 
@@ -166,7 +167,14 @@ Configuration files are loaded in this priority order:
 5. `~/.config/gh-board/config.toml` (macOS:
    `~/Library/Application Support/gh-board/config.toml`)
 
-Repo-local config (`.gh-board.toml`) merges on top of global config.
+Repo-local config (`.gh-board.toml`) merges on top of global config:
+
+- Settings in the local config override global values for the same key
+- Missing keys in local config fall back to global settings
+- Filter lists (`pr_filters`, `issues_filters`, etc.) replace global only when
+    non-empty; otherwise, global filters are preserved
+- `repo_paths` from both configs are merged (local entries override matching
+    global keys)
 
 ## Documentation
 

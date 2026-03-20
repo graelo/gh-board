@@ -1,3 +1,13 @@
+// Root application component and view management.
+//
+// This module provides the main `App` TUI component that orchestrates the
+// five views (PRs, Issues, Actions, Notifications, Repo) and handles global
+// key events.
+//
+// ## View Kind Enum
+//
+// `ViewKind` is the public-facing enum for view identification, used by
+// the status bar and other components to determine which view is active.
 use std::path::Path;
 
 use iocraft::prelude::*;

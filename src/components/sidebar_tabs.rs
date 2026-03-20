@@ -375,10 +375,18 @@ fn check_status_icon(
             Some(CheckStatus::Completed),
             Some(CheckConclusion::Failure | CheckConclusion::TimedOut),
         ) => (icons.check_failure.clone(), theme.text_error),
-        (Some(CheckStatus::Completed), Some(CheckConclusion::Cancelled))
-        | (Some(CheckStatus::InProgress | CheckStatus::Queued), _) => {
-            (icons.check_pending.clone(), theme.text_warning)
+        (Some(CheckStatus::Completed), Some(CheckConclusion::Cancelled)) => {
+            (icons.check_cancelled.clone(), theme.text_faint)
         }
+        (Some(CheckStatus::Completed), Some(CheckConclusion::Skipped)) => {
+            (icons.check_skipped.clone(), theme.text_faint)
+        }
+        (Some(CheckStatus::Completed), Some(CheckConclusion::ActionRequired)) => {
+            (icons.check_action_required.clone(), theme.text_warning)
+        }
+        (Some(CheckStatus::InProgress), _) => (icons.check_running.clone(), theme.text_warning),
+        (Some(CheckStatus::Queued), _) => (icons.check_pending.clone(), theme.text_warning),
+        // Neutral, Stale, Unknown conclusions or missing status
         _ => (icons.check_pending.clone(), theme.text_faint),
     }
 }

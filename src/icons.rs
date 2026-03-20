@@ -22,10 +22,14 @@ pub struct ResolvedIcons {
     pub review_required: String,
     pub review_none: String,
     pub review_commented: String,
-    // CI status (4)
+    // CI status (8)
     pub ci_success: String,
     pub ci_failure: String,
     pub ci_pending: String,
+    pub ci_running: String,
+    pub ci_skipped: String,
+    pub ci_cancelled: String,
+    pub ci_action_required: String,
     pub ci_none: String,
     // Issue state (2)
     pub issue_open: String,
@@ -39,10 +43,14 @@ pub struct ResolvedIcons {
     // Branch (2)
     pub branch_ahead: String,
     pub branch_behind: String,
-    // Sidebar checks (3)
+    // Sidebar checks (7)
     pub check_success: String,
     pub check_failure: String,
     pub check_pending: String,
+    pub check_running: String,
+    pub check_skipped: String,
+    pub check_cancelled: String,
+    pub check_action_required: String,
     // Sidebar decorative (1)
     pub branch_arrow: String,
     // Sidebar tabs (5)
@@ -114,9 +122,13 @@ impl ResolvedIcons {
             review_none: "-".to_owned(),
             review_commented: "\u{1f4ac}".to_owned(), // 💬
             // CI status
-            ci_success: "\u{2714}".to_owned(), // ✔
-            ci_failure: "\u{2716}".to_owned(), // ✖
-            ci_pending: "\u{25cb}".to_owned(), // ○
+            ci_success: "\u{2714}".to_owned(),         // ✔
+            ci_failure: "\u{2716}".to_owned(),         // ✖
+            ci_pending: "\u{25cb}".to_owned(),         // ○
+            ci_running: "\u{21ba}".to_owned(),         // ↺
+            ci_skipped: "\u{23ed}".to_owned(),         // ⏭
+            ci_cancelled: "\u{2298}".to_owned(),       // ⊘
+            ci_action_required: "\u{26a0}".to_owned(), // ⚠
             ci_none: "-".to_owned(),
             // Issue state
             issue_open: "\u{25cf}".to_owned(),   // ●
@@ -131,9 +143,13 @@ impl ResolvedIcons {
             branch_ahead: "\u{2191}".to_owned(),  // ↑
             branch_behind: "\u{2193}".to_owned(), // ↓
             // Sidebar checks
-            check_success: "\u{2714}".to_owned(), // ✔
-            check_failure: "\u{2716}".to_owned(), // ✖
-            check_pending: "\u{25cb}".to_owned(), // ○
+            check_success: "\u{2714}".to_owned(),         // ✔
+            check_failure: "\u{2716}".to_owned(),         // ✖
+            check_pending: "\u{25cb}".to_owned(),         // ○
+            check_running: "\u{21ba}".to_owned(),         // ↺
+            check_skipped: "\u{23ed}".to_owned(),         // ⏭
+            check_cancelled: "\u{2298}".to_owned(),       // ⊘
+            check_action_required: "\u{26a0}".to_owned(), // ⚠
             // Sidebar decorative
             branch_arrow: "\u{2192}".to_owned(), // →
             // Sidebar tabs
@@ -208,7 +224,11 @@ impl ResolvedIcons {
             // CI status (matching gh-dash)
             ci_success: "\u{f058}".to_owned(), //  nf-fa-check_circle
             ci_failure: "\u{f0159}".to_owned(), // 󰅙 nf-md-close_circle
-            ci_pending: "\u{e641}".to_owned(), //  nf-seti-clock (waiting)
+            ci_pending: "\u{e641}".to_owned(), //  nf-seti-clock (queued/waiting)
+            ci_running: "\u{ea77}".to_owned(), //  nf-cod-sync (in progress)
+            ci_skipped: "\u{eab8}".to_owned(), //  nf-cod-debug_step_over
+            ci_cancelled: "\u{eabd}".to_owned(), //  nf-cod-circle_slash
+            ci_action_required: "\u{ea6c}".to_owned(), //  nf-cod-bell_dot (needs attention)
             ci_none: "\u{eabd}".to_owned(),    //  nf-cod-circle_slash
             // Issue state (matching gh-dash)
             issue_open: "\u{f41b}".to_owned(), //  nf-oct-issue_opened
@@ -225,7 +245,11 @@ impl ResolvedIcons {
             // Sidebar checks
             check_success: "\u{f058}".to_owned(), //  nf-fa-check_circle
             check_failure: "\u{f0159}".to_owned(), // 󰅙 nf-md-close_circle
-            check_pending: "\u{e641}".to_owned(), //  nf-seti-clock
+            check_pending: "\u{e641}".to_owned(), //  nf-seti-clock (queued/waiting)
+            check_running: "\u{ea77}".to_owned(), //  nf-cod-sync (in progress)
+            check_skipped: "\u{eab8}".to_owned(), //  nf-cod-debug_step_over
+            check_cancelled: "\u{eabd}".to_owned(), //  nf-cod-circle_slash
+            check_action_required: "\u{ea6c}".to_owned(), //  nf-cod-bell_dot (needs attention)
             // Sidebar decorative
             branch_arrow: "\u{e344}".to_owned(), //  nf-pl-left_hard_divider
             // Sidebar tabs (Codicons + Octicons)
@@ -300,6 +324,10 @@ impl ResolvedIcons {
             ci_success: "v".to_owned(),
             ci_failure: "x".to_owned(),
             ci_pending: "~".to_owned(),
+            ci_running: "~".to_owned(),
+            ci_skipped: "-".to_owned(),
+            ci_cancelled: "/".to_owned(),
+            ci_action_required: "!".to_owned(),
             ci_none: "-".to_owned(),
             // Issue state
             issue_open: "o".to_owned(),
@@ -317,6 +345,10 @@ impl ResolvedIcons {
             check_success: "v".to_owned(),
             check_failure: "x".to_owned(),
             check_pending: "~".to_owned(),
+            check_running: "~".to_owned(),
+            check_skipped: "-".to_owned(),
+            check_cancelled: "/".to_owned(),
+            check_action_required: "!".to_owned(),
             // Sidebar decorative
             branch_arrow: "->".to_owned(),
             // Sidebar tabs
@@ -407,6 +439,13 @@ impl ResolvedIcons {
             ci_success: config.ci_success.clone().unwrap_or(base.ci_success),
             ci_failure: config.ci_failure.clone().unwrap_or(base.ci_failure),
             ci_pending: config.ci_pending.clone().unwrap_or(base.ci_pending),
+            ci_running: config.ci_running.clone().unwrap_or(base.ci_running),
+            ci_skipped: config.ci_skipped.clone().unwrap_or(base.ci_skipped),
+            ci_cancelled: config.ci_cancelled.clone().unwrap_or(base.ci_cancelled),
+            ci_action_required: config
+                .ci_action_required
+                .clone()
+                .unwrap_or(base.ci_action_required),
             ci_none: config.ci_none.clone().unwrap_or(base.ci_none),
             issue_open: config.issue_open.clone().unwrap_or(base.issue_open),
             issue_closed: config.issue_closed.clone().unwrap_or(base.issue_closed),
@@ -429,6 +468,16 @@ impl ResolvedIcons {
             check_success: config.check_success.clone().unwrap_or(base.check_success),
             check_failure: config.check_failure.clone().unwrap_or(base.check_failure),
             check_pending: config.check_pending.clone().unwrap_or(base.check_pending),
+            check_running: config.check_running.clone().unwrap_or(base.check_running),
+            check_skipped: config.check_skipped.clone().unwrap_or(base.check_skipped),
+            check_cancelled: config
+                .check_cancelled
+                .clone()
+                .unwrap_or(base.check_cancelled),
+            check_action_required: config
+                .check_action_required
+                .clone()
+                .unwrap_or(base.check_action_required),
             branch_arrow: config.branch_arrow.clone().unwrap_or(base.branch_arrow),
             tab_overview: config.tab_overview.clone().unwrap_or(base.tab_overview),
             tab_activity: config.tab_activity.clone().unwrap_or(base.tab_activity),

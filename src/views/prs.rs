@@ -291,21 +291,42 @@ fn aggregate_ci_status(
     let any_failing = checks.iter().any(|c| {
         matches!(
             c.conclusion,
-            Some(CheckConclusion::Failure | CheckConclusion::TimedOut | CheckConclusion::Cancelled)
+            Some(CheckConclusion::Failure | CheckConclusion::TimedOut)
         )
     });
     if any_failing {
         return (icons.ci_failure.clone(), theme.text_error);
     }
 
-    let any_pending = checks.iter().any(|c| {
-        matches!(
-            c.status,
-            Some(CheckStatus::InProgress | CheckStatus::Queued)
-        ) || (matches!(c.status, Some(CheckStatus::Completed)) && c.conclusion.is_none())
+    let any_cancelled = checks
+        .iter()
+        .any(|c| matches!(c.conclusion, Some(CheckConclusion::Cancelled)));
+
+    let any_action_required = checks
+        .iter()
+        .any(|c| matches!(c.conclusion, Some(CheckConclusion::ActionRequired)));
+
+    let any_running = checks
+        .iter()
+        .any(|c| matches!(c.status, Some(CheckStatus::InProgress)));
+
+    let any_queued = checks.iter().any(|c| {
+        matches!(c.status, Some(CheckStatus::Queued))
+            || (matches!(c.status, Some(CheckStatus::Completed)) && c.conclusion.is_none())
     });
-    if any_pending {
+
+    // Priority: running > queued > action_required > cancelled > success
+    if any_running {
+        return (icons.ci_running.clone(), theme.text_warning);
+    }
+    if any_queued {
         return (icons.ci_pending.clone(), theme.text_warning);
+    }
+    if any_action_required {
+        return (icons.ci_action_required.clone(), theme.text_warning);
+    }
+    if any_cancelled {
+        return (icons.ci_cancelled.clone(), theme.text_faint);
     }
 
     (icons.ci_success.clone(), theme.text_success)

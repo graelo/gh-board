@@ -132,9 +132,16 @@ repo  = "@current"
 # Polling interval in seconds when watching a workflow run (default: 30)
 # watch_poll_interval_seconds = 30
 
-# Shell command to run when a watched run completes. Template variables:
-# {{.RunName}}, {{.Conclusion}}, {{.RepoName}}
-# watch_complete_command = "osascript -e 'display notification \"{{.RunName}} — {{.Conclusion}}\" with title \"gh-board: {{.RepoName}}\"'"
+# Shell command to run when a watched run completes.
+# Template variables:
+#   {{.Url}}        — run's HTML URL
+#   {{.RepoName}}   — owner/repo
+#   {{.RunId}}      — numeric run ID
+#   {{.RunName}}    — workflow name (e.g. "CI")
+#   {{.RunNumber}}  — run number (e.g. "78")
+#   {{.Conclusion}} — success, failure, cancelled, timed_out, etc.
+#   {{.HeadBranch}} — branch that triggered the run
+# watch_complete_command = "osascript -e 'display notification \"{{.RunName}} #{{.RunNumber}} — {{.Conclusion}}\" with title \"gh-board: {{.RepoName}}\"'"
 
 # ==============================================================================
 # NOTIFICATION FILTERS

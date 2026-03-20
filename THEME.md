@@ -54,12 +54,12 @@ document maps each configuration field to the exact UI elements it affects.
 
 | View / Component  | Element                                        |
 | ----------------- | ---------------------------------------------- |
-| PR list           | Pending CI icon, changes-requested review icon |
+| PR list           | Pending/running CI icon, action-required CI icon, changes-requested review icon |
 | Issue list        | _(not directly used)_                          |
 | Notification list | Issue-type badge icon                          |
 | Sidebar           | Force-push timeline event                      |
 | Sidebar Files     | Modified file entries                          |
-| Sidebar Checks    | Pending check icon                             |
+| Sidebar Checks    | Pending, running, and action-required check icons |
 
 ### `success`
 
@@ -271,12 +271,16 @@ headers share a single color: `text.secondary`.
 
 ### CI Status Icons
 
-| Icon field   | Colored by     |
-| ------------ | -------------- |
-| `ci_success` | `text.success` |
-| `ci_failure` | `text.error`   |
-| `ci_pending` | `text.warning` |
-| `ci_none`    | `text.faint`   |
+| Icon field          | Colored by      | Meaning                        |
+| ------------------- | --------------- | ------------------------------ |
+| `ci_success`        | `text.success`  | All checks passed              |
+| `ci_failure`        | `text.error`    | At least one check failed      |
+| `ci_pending`        | `text.warning`  | Queued / waiting to start      |
+| `ci_running`        | `text.warning`  | At least one check in progress |
+| `ci_skipped`        | `text.faint`    | Check was skipped              |
+| `ci_cancelled`      | `text.faint`    | Check was cancelled            |
+| `ci_action_required`| `text.warning`  | Manual action required         |
+| `ci_none`           | `text.faint`    | No checks configured           |
 
 ### Notification Type Icons
 
@@ -340,11 +344,15 @@ views use `text.faint`.
 
 ### Check Status Icons (Sidebar)
 
-| Icon field      | Colored by     |
-| --------------- | -------------- |
-| `check_success` | `text.success` |
-| `check_failure` | `text.error`   |
-| `check_pending` | `text.warning` |
+| Icon field              | Colored by      | Meaning                   |
+| ----------------------- | --------------- | ------------------------- |
+| `check_success`         | `text.success`  | Check passed              |
+| `check_failure`         | `text.error`    | Check failed / timed out  |
+| `check_pending`         | `text.warning`  | Queued / waiting to start |
+| `check_running`         | `text.warning`  | Check in progress         |
+| `check_skipped`         | `text.faint`    | Check was skipped         |
+| `check_cancelled`       | `text.faint`    | Check was cancelled       |
+| `check_action_required` | `text.warning`  | Manual action required    |
 
 ### File Change Icons (Sidebar)
 

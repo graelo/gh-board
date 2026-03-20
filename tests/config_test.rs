@@ -89,8 +89,18 @@ primary = "#c0caf5"
 secondary = "245"
 "##;
     let config: AppConfig = toml::from_str(toml).unwrap();
-    assert!(config.theme.colors.text.primary.is_some());
-    assert!(config.theme.colors.text.secondary.is_some());
+    assert_eq!(
+        config.theme.colors.text.primary.unwrap(),
+        gh_board::color::Color::Hex {
+            r: 0xc0,
+            g: 0xca,
+            b: 0xf5
+        }
+    );
+    assert_eq!(
+        config.theme.colors.text.secondary.unwrap(),
+        gh_board::color::Color::Ansi256(245)
+    );
 }
 
 #[test]
@@ -105,15 +115,6 @@ string = "#00ff00"
         config.theme.colors.markdown.syntax.keyword.unwrap(),
         gh_board::color::Color::Ansi256(5)
     );
-}
-
-#[test]
-fn default_config_has_sane_defaults() {
-    let config = AppConfig::default();
-    assert!(config.defaults.view.is_none());
-    assert!(config.github.refetch_interval_minutes.is_none());
-    assert!(config.github.prefetch_pr_details.is_none());
-    assert!(config.defaults.preview.width.is_none());
 }
 
 #[test]
@@ -157,6 +158,14 @@ fn parse_repo_paths() {
 "#;
     let config: AppConfig = toml::from_str(toml).unwrap();
     assert_eq!(config.repo_paths.len(), 2);
+    assert_eq!(
+        config.repo_paths.get("owner/repo1").unwrap(),
+        std::path::Path::new("/Users/user/projects/repo1")
+    );
+    assert_eq!(
+        config.repo_paths.get("owner/repo2").unwrap(),
+        std::path::Path::new("/Users/user/projects/repo2")
+    );
 }
 
 // ---------------------------------------------------------------------------

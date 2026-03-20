@@ -1316,6 +1316,7 @@ fn fire_watch_hook(
         return;
     };
     let conclusion_str = run.conclusion.map_or("unknown", |c| c.as_str()).to_owned();
+    let conclusion_emoji_str = run.conclusion.map_or("\u{2753}", |c| c.emoji()).to_owned();
     let vars = TemplateVars {
         url: run.html_url.clone(),
         repo_name: format!("{owner}/{repo}"),
@@ -1324,6 +1325,7 @@ fn fire_watch_hook(
         run_name: run.name.clone(),
         run_number: run.run_number.to_string(),
         conclusion: conclusion_str,
+        conclusion_emoji: conclusion_emoji_str,
         ..Default::default()
     };
     let expanded = expand_template(cmd_template, &vars);

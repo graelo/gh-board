@@ -609,20 +609,22 @@ pub struct TemplateVars {
     pub run_name: String,
     pub run_number: String,
     pub conclusion: String,
+    pub conclusion_emoji: String,
 }
 
 /// Expand `{{.Var}}` template variables in a command string.
 pub fn expand_template(template: &str, vars: &TemplateVars) -> String {
     template
-        .replace("{{.Url}}", &vars.url)
+        .replace("{{.BaseBranch}}", &vars.base_branch)
+        .replace("{{.Conclusion}}", &vars.conclusion)
+        .replace("{{.ConclusionEmoji}}", &vars.conclusion_emoji)
+        .replace("{{.HeadBranch}}", &vars.head_branch)
         .replace("{{.Number}}", &vars.number)
         .replace("{{.RepoName}}", &vars.repo_name)
-        .replace("{{.HeadBranch}}", &vars.head_branch)
-        .replace("{{.BaseBranch}}", &vars.base_branch)
         .replace("{{.RunId}}", &vars.run_id)
         .replace("{{.RunName}}", &vars.run_name)
         .replace("{{.RunNumber}}", &vars.run_number)
-        .replace("{{.Conclusion}}", &vars.conclusion)
+        .replace("{{.Url}}", &vars.url)
 }
 
 // ---------------------------------------------------------------------------

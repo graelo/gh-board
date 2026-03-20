@@ -96,7 +96,8 @@ pub struct ActionsConfig {
     pub watch_poll_interval_seconds: Option<u32>,
     /// Shell command to run when a watched run completes.
     /// Supports template variables: `{{.Url}}`, `{{.RepoName}}`,
-    /// `{{.RunId}}`, `{{.RunName}}`, `{{.RunNumber}}`, `{{.Conclusion}}`, `{{.HeadBranch}}`.
+    /// `{{.RunId}}`, `{{.RunName}}`, `{{.RunNumber}}`, `{{.Conclusion}}`,
+    /// `{{.ConclusionEmoji}}`, `{{.HeadBranch}}`.
     pub watch_complete_command: Option<String>,
 }
 

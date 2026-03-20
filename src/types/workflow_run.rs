@@ -46,6 +46,21 @@ impl RunConclusion {
             Self::Unknown => "unknown",
         }
     }
+
+    /// Emoji for the conclusion, suitable for notifications.
+    pub fn emoji(&self) -> &'static str {
+        match self {
+            Self::Success => "\u{2705}",        // ✅
+            Self::Failure => "\u{274c}",        // ❌
+            Self::Neutral => "\u{2796}",        // ➖
+            Self::Cancelled => "\u{1f6ab}",     // 🚫
+            Self::TimedOut => "\u{23f0}",       // ⏰
+            Self::ActionRequired => "\u{26a0}", // ⚠
+            Self::Skipped => "\u{23ed}",        // ⏭
+            Self::Stale => "\u{1f4a4}",         // 💤
+            Self::Unknown => "\u{2753}",        // ❓
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

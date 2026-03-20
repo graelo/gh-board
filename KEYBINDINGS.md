@@ -177,6 +177,7 @@ Available template variables:
 | `{{.RunName}}` | Workflow name, e.g. "CI" (Actions only) |
 | `{{.RunNumber}}` | Run number, e.g. "78" (Actions only) |
 | `{{.Conclusion}}` | `success`, `failure`, `cancelled`, `timed_out`, etc. (Actions only) |
+| `{{.ConclusionEmoji}}` | Conclusion emoji: `✅`, `❌`, `🚫`, `⏰`, … (Actions only) |
 
 ### Available contexts
 

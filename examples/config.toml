@@ -117,7 +117,7 @@ limit = 50
 # The tab is empty when no repo is detected (e.g. outside a git repo).
 [[actions_filters]]
 title = "CI"
-repo  = "@current"
+repo = "@current"
 
 # [[actions_filters]]
 # title  = "Org CI"
@@ -134,14 +134,15 @@ repo  = "@current"
 
 # Shell command to run when a watched run completes.
 # Template variables:
-#   {{.Url}}        — run's HTML URL
-#   {{.RepoName}}   — owner/repo
-#   {{.RunId}}      — numeric run ID
-#   {{.RunName}}    — workflow name (e.g. "CI")
-#   {{.RunNumber}}  — run number (e.g. "78")
-#   {{.Conclusion}} — success, failure, cancelled, timed_out, etc.
-#   {{.HeadBranch}} — branch that triggered the run
-# watch_complete_command = "osascript -e 'display notification \"{{.RunName}} #{{.RunNumber}} — {{.Conclusion}}\" with title \"gh-board: {{.RepoName}}\"'"
+#   {{.Url}}             — run's HTML URL
+#   {{.RepoName}}        — owner/repo
+#   {{.RunId}}           — numeric run ID
+#   {{.RunName}}         — workflow name (e.g. "CI")
+#   {{.RunNumber}}       — run number (e.g. "78")
+#   {{.Conclusion}}      — success, failure, cancelled, timed_out, etc.
+#   {{.ConclusionEmoji}} — emoji only: ✅, ❌, 🚫, ⏰, …
+#   {{.HeadBranch}}      — branch that triggered the run
+# watch_complete_command = "osascript -e 'display notification \"{{.RunName}} #{{.RunNumber}} — {{.ConclusionEmoji}} {{.Conclusion}}\" with title \"gh-board: {{.RepoName}}\"'"
 
 # ==============================================================================
 # NOTIFICATION FILTERS
@@ -246,11 +247,11 @@ faint = "#313244"  # Catppuccin surface0
 
 [theme.colors.icon]
 newcontributor = "#f9e2af"  # Yellow
-contributor = "#a6e3a1"     # Green
-collaborator = "#89b4fa"    # Blue
-member = "#cba6f7"          # Mauve
-owner = "#fab387"           # Peach
-unknownrole = "#6c7086"     # Gray
+contributor = "#a6e3a1"  # Green
+collaborator = "#89b4fa"  # Blue
+member = "#cba6f7"  # Mauve
+owner = "#fab387"  # Peach
+unknownrole = "#6c7086"  # Gray
 
 # ------------------------------------------------------------------------------
 # Colors: Pill (sidebar state badge + branch line)
@@ -258,16 +259,16 @@ unknownrole = "#6c7086"     # Gray
 
 [theme.colors.pill]
 # Pill background per PR state (falls back to the matching text.* color)
-draft_bg  = "#6c7086"  # Catppuccin overlay0
-open_bg   = "#a6e3a1"  # Catppuccin green
+draft_bg = "#6c7086"  # Catppuccin overlay0
+open_bg = "#a6e3a1"  # Catppuccin green
 closed_bg = "#f38ba8"  # Catppuccin red
 merged_bg = "#89b4fa"  # Catppuccin blue
-fg        = "#1e1e2e"  # Catppuccin base (dark text on colored pill)
+fg = "#1e1e2e"  # Catppuccin base (dark text on colored pill)
 
 # Meta line colors (falls back to text.* colors)
-branch    = "#cdd6f4"  # Catppuccin text
-author    = "#89b4fa"  # Catppuccin blue
-age       = "#6c7086"  # Catppuccin overlay0
+branch = "#cdd6f4"  # Catppuccin text
+author = "#89b4fa"  # Catppuccin blue
+age = "#6c7086"  # Catppuccin overlay0
 separator = "#6c7086"  # Catppuccin overlay0
 
 # ------------------------------------------------------------------------------
@@ -275,10 +276,10 @@ separator = "#6c7086"  # Catppuccin overlay0
 # ------------------------------------------------------------------------------
 
 [theme.colors.footer]
-prs           = "#89b4fa"  # Catppuccin blue
-issues        = "#a6e3a1"  # Catppuccin green
+prs = "#89b4fa"  # Catppuccin blue
+issues = "#a6e3a1"  # Catppuccin green
 notifications = "#cba6f7"  # Catppuccin mauve
-repo          = "#b4befe"  # Catppuccin lavender
+repo = "#b4befe"  # Catppuccin lavender
 
 # ------------------------------------------------------------------------------
 # Colors: Markdown Rendering
@@ -346,27 +347,27 @@ error = "#f38ba8"
 error_background = "#45475a"
 
 # Comments
-comment = "#6c7086"          # Gray
+comment = "#6c7086"  # Gray
 comment_preproc = "#a6e3a1"  # Preprocessor directives (green)
 
 # Keywords
-keyword = "#cba6f7"           # Mauve (fn, let, const, etc.)
+keyword = "#cba6f7"  # Mauve (fn, let, const, etc.)
 keyword_reserved = "#f38ba8"  # Red (unsafe, async, etc.)
-keyword_namespace = "#89b4fa" # Blue (use, import, etc.)
-keyword_type = "#f9e2af"      # Yellow (i32, String, etc.)
+keyword_namespace = "#89b4fa"  # Blue (use, import, etc.)
+keyword_type = "#f9e2af"  # Yellow (i32, String, etc.)
 
 # Operators and punctuation
-operator = "#89dceb"     # Sky (+, -, *, ==, etc.)
+operator = "#89dceb"  # Sky (+, -, *, ==, etc.)
 punctuation = "#cdd6f4"  # Text (;, :, {}, etc.)
 
 # Names (identifiers)
-name = "#cdd6f4"              # Default text
-name_builtin = "#f5c2e7"      # Pink (built-in types/functions)
-name_tag = "#89b4fa"          # Blue (HTML tags)
-name_attribute = "#f9e2af"    # Yellow (HTML attributes, struct fields)
-name_class = "#f9e2af"        # Yellow (class/type names)
-name_decorator = "#f5c2e7"    # Pink (decorators, attributes)
-name_function = "#89b4fa"     # Blue (function names)
+name = "#cdd6f4"  # Default text
+name_builtin = "#f5c2e7"  # Pink (built-in types/functions)
+name_tag = "#89b4fa"  # Blue (HTML tags)
+name_attribute = "#f9e2af"  # Yellow (HTML attributes, struct fields)
+name_class = "#f9e2af"  # Yellow (class/type names)
+name_decorator = "#f5c2e7"  # Pink (decorators, attributes)
+name_function = "#89b4fa"  # Blue (function names)
 
 # Literals
 number = "#fab387"  # Peach (42, 3.14, 0xFF)
@@ -374,7 +375,7 @@ string = "#a6e3a1"  # Green ("hello", 'world')
 string_escape = "#f5c2e7"  # Pink (\n, \t, \u{...})
 
 # Diff-specific
-deleted = "#f38ba8"   # Red (removed lines)
+deleted = "#f38ba8"  # Red (removed lines)
 inserted = "#a6e3a1"  # Green (added lines)
 
 # Markdown-specific
@@ -582,7 +583,6 @@ name = "Toggle help overlay"
 key = "q"
 builtin = "quit"
 name = "Quit"
-
 
 # ------------------------------------------------------------------------------
 # PR view keybindings

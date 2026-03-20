@@ -6,6 +6,18 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use crate::color::{Color as AppColor, ColorDepth};
 use crate::components::scrollbar::{ScrollInfo, Scrollbar};
 
+/// Dashed horizontal line for row separators (┈ U+2504).
+const DASHED_ROW_SEP: BorderStyle = BorderStyle::Custom(BorderCharacters {
+    top: ' ',
+    bottom: '\u{2504}', // ┈ BOX DRAWINGS LIGHT TRIPLE DASH HORIZONTAL
+    left: ' ',
+    right: ' ',
+    top_left: ' ',
+    top_right: ' ',
+    bottom_left: ' ',
+    bottom_right: ' ',
+});
+
 // ---------------------------------------------------------------------------
 // Column definition
 // ---------------------------------------------------------------------------
@@ -425,7 +437,7 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
                             View(
                                 key: row.key,
                                 flex_direction: FlexDirection::Column,
-                                border_style: if row_sep && !is_last { BorderStyle::Single } else { BorderStyle::None },
+                                border_style: if row_sep && !is_last { DASHED_ROW_SEP } else { BorderStyle::None },
                                 border_edges: Edges::Bottom,
                                 border_color: sep_color,
                             ) {

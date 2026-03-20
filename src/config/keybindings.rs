@@ -1,3 +1,18 @@
+// Keybinding configuration types.
+//
+// This module defines:
+// - `Keybinding`: A single key-to-action mapping
+// - `KeybindingsConfig`: All context-specific bindings from the config file
+// - `MergedBindings`: Runtime representation with global defaults + overrides
+//
+// ## Binding Resolution
+//
+// When a key is pressed, resolution follows this priority:
+// 1. Context-specific binding (e.g., `prs`, `issues`)
+// 2. Universal binding
+// 3. No action (key ignored)
+//
+// Context bindings can shadow universal ones without affecting other views.
 use anyhow::{Context as _, Result};
 use serde::Deserialize;
 
@@ -504,6 +519,46 @@ fn merge_lists(defaults: &[Keybinding], overrides: &[Keybinding]) -> Vec<Keybind
 }
 
 impl KeybindingsConfig {
+    /// Merge two keybinding configs (global + local) on top of defaults.
+    ///
+    /// For each context, local bindings for a given key replace global bindings;
+    /// the combined result is then merged with defaults via `merge_lists`.
+    pub(crate) fn merge(global: &Self, local: &Self) -> Self {
+        use std::collections::HashMap;
+
+        fn merge_binding_lists(global: &[Keybinding], local: &[Keybinding]) -> Vec<Keybinding> {
+            let mut result = global.to_vec();
+            let local_map: HashMap<&str, &Keybinding> =
+                local.iter().map(|b| (b.key.as_str(), b)).collect();
+            result.retain(|b| !local_map.contains_key(b.key.as_str()));
+            result.extend(local.iter().cloned());
+            result
+        }
+
+        Self {
+            universal: merge_lists(
+                &default_universal(),
+                &merge_binding_lists(&global.universal, &local.universal),
+            ),
+            prs: merge_lists(
+                &default_prs(),
+                &merge_binding_lists(&global.prs, &local.prs),
+            ),
+            issues: merge_lists(
+                &default_issues(),
+                &merge_binding_lists(&global.issues, &local.issues),
+            ),
+            actions: merge_lists(
+                &default_actions(),
+                &merge_binding_lists(&global.actions, &local.actions),
+            ),
+            branches: merge_lists(
+                &default_branches(),
+                &merge_binding_lists(&global.branches, &local.branches),
+            ),
+        }
+    }
+
     /// Look up a key string in the given context, returning the resolved binding.
     ///
     /// Resolution order: context-specific bindings first, then universal.

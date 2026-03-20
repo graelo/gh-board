@@ -48,10 +48,11 @@ const TICK_REFRESH_TIMEOUT: Duration = Duration::from_secs(30);
 
 impl GitHubEngine {
     async fn run_loop(self, mut rx: UnboundedReceiver<Request>) {
-        let mut client = GitHubClient::new(self.config.github.refetch_interval_minutes);
+        let refetch_mins = self.config.github.refetch_interval_minutes.unwrap_or(10);
+        let mut client = GitHubClient::new(refetch_mins);
         let mut scheduler = RefreshScheduler::new();
 
-        let interval_mins = u64::from(self.config.github.refetch_interval_minutes);
+        let interval_mins = u64::from(refetch_mins);
         let refresh_interval = Duration::from_secs((interval_mins * 60).max(60));
         let poll_dur = Duration::from_secs(30);
         let mut refresh_tick = tokio::time::interval(poll_dur);

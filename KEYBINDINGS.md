@@ -59,9 +59,9 @@ any of them — or add custom shell commands — in your `config.toml`.
 > `git fetch origin <branch>` before operating, so they work even when the
 > branch has never been fetched locally. `worktree` creates the worktree at
 > `<repo>-worktrees/<branch-slug>/` next to the configured clone path and copies
-> the path to the clipboard. The PR's head branch must still exist on the remote,
-> so both commands work reliably on **open** and **draft** PRs. For merged PRs
-> whose branch was deleted, the fetch will fail.
+> the path to the clipboard. The PR's head branch must still exist on the
+> remote, so both commands work reliably on **open** and **draft** PRs. For
+> merged PRs whose branch was deleted, the fetch will fail.
 
 ### Issue view
 
@@ -120,7 +120,7 @@ Destructive actions (close, merge, delete, cancel run, rerun, etc.) require
 a `y/n` confirmation before executing. After pressing the action key, the
 text-input bar at the bottom of the screen shows a warning-coloured prompt:
 
-```
+```text
 Close this PR? (y/n)
 ```
 

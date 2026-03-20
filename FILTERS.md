@@ -96,7 +96,7 @@ Valid reason values:
 
 ### Repository qualifier
 
-```
+```text
 repo:owner/name
 ```
 
@@ -130,8 +130,9 @@ filters = "repo:owner/my-repo"        # unread from one repo
 
 ## Actions Filters
 
-Actions filters use the GitHub REST API (`GET /repos/{owner}/{repo}/actions/runs`)
-and always target a specific repository.
+Actions filters use the GitHub REST API
+(`GET /repos/{owner}/{repo}/actions/runs`) and always target a specific
+repository.
 
 ### Fields
 

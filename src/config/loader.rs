@@ -4,6 +4,10 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::config::builtin_themes;
+use crate::config::keybindings::{
+    Keybinding, KeybindingsConfig, default_actions, default_branches, default_issues, default_prs,
+    default_universal, merge_lists,
+};
 use crate::config::types::{AppConfig, Defaults, GitHubConfig, PreviewDefaults, Theme};
 
 /// Wrapper used to parse a theme-only TOML file (contains only `[theme.*]`).
@@ -22,10 +26,10 @@ struct ThemeFile {
 /// 4. `$XDG_CONFIG_HOME/gh-board/config.toml`
 /// 5. `~/.config/gh-board/config.toml`
 ///
-/// If both a global and a repo-local config exist, repo-local sections replace
-/// their global counterparts entirely (defaults, theme, keybindings are taken
-/// from the local config; filter lists are replaced if non-empty; `repo_paths`
-/// are merged). Users should duplicate all needed settings in repo-local configs.
+/// If both a global and a repo-local config exist, they are merged recursively:
+/// local values override global for the same key; missing local keys fall
+/// through to global. Filter lists replace global only when non-empty;
+/// `repo_paths` are merged (local entries override matching global keys).
 pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
     // If an explicit path was given, just load that.
     if let Some(path) = explicit_path {
@@ -214,16 +218,8 @@ fn merge_defaults(global: &Defaults, local: &Defaults) -> Defaults {
 
 /// Merge two Keybindings configs by context.
 /// Local bindings for a given key replace global bindings for that key within each context.
-fn merge_keybindings(
-    global: &crate::config::keybindings::KeybindingsConfig,
-    local: &crate::config::keybindings::KeybindingsConfig,
-) -> crate::config::keybindings::KeybindingsConfig {
+fn merge_keybindings(global: &KeybindingsConfig, local: &KeybindingsConfig) -> KeybindingsConfig {
     use std::collections::HashMap;
-
-    use crate::config::keybindings::{
-        Keybinding, default_actions, default_branches, default_issues, default_prs,
-        default_universal, merge_lists,
-    };
 
     // Helper to merge two binding lists, with local overriding global
     fn merge_binding_lists(global: &[Keybinding], local: &[Keybinding]) -> Vec<Keybinding> {
@@ -244,7 +240,7 @@ fn merge_keybindings(
 
     // For each context, merge defaults with (global + local) overrides
     // This preserves custom global bindings while allowing local to override them
-    crate::config::keybindings::KeybindingsConfig {
+    KeybindingsConfig {
         universal: merge_lists(
             &default_universal(),
             &merge_binding_lists(&global.universal, &local.universal),
@@ -346,8 +342,7 @@ fn expand_repo_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::keybindings::Keybinding;
-    use crate::config::types::{AppConfig, IconConfig};
+    use crate::config::types::IconConfig;
 
     #[test]
     fn merge_configs_preserves_global_theme_with_empty_local() {
@@ -356,7 +351,7 @@ mod tests {
 
         let local = AppConfig::default(); // Empty local config
 
-        let merged = merge_configs(global.clone(), local);
+        let merged = merge_configs(global, local);
         assert_eq!(merged.theme.icons.preset, Some("nerdfont".to_string()));
     }
 
@@ -487,7 +482,7 @@ mod tests {
     #[test]
     fn merge_configs_overrides_defaults() {
         let mut global = AppConfig::default();
-        global.defaults.view = crate::config::types::View::Prs;
+        global.defaults.view = crate::config::types::View::Actions;
 
         let mut local = AppConfig::default();
         local.defaults.view = crate::config::types::View::Issues;

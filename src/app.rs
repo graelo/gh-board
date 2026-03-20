@@ -113,12 +113,14 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let depth = props.color_depth;
 
     // View switching state.
-    let initial_view = config.map_or(ViewKind::Prs, |c| match c.defaults.view {
-        crate::config::types::View::Prs => ViewKind::Prs,
-        crate::config::types::View::Issues => ViewKind::Issues,
-        crate::config::types::View::Actions => ViewKind::Actions,
-        crate::config::types::View::Notifications => ViewKind::Notifications,
-        crate::config::types::View::Repo => ViewKind::Repo,
+    let initial_view = config.map_or(ViewKind::Prs, |c| {
+        match c.defaults.view.unwrap_or_default() {
+            crate::config::types::View::Prs => ViewKind::Prs,
+            crate::config::types::View::Issues => ViewKind::Issues,
+            crate::config::types::View::Actions => ViewKind::Actions,
+            crate::config::types::View::Notifications => ViewKind::Notifications,
+            crate::config::types::View::Repo => ViewKind::Repo,
+        }
     });
     let mut active_view = hooks.use_state(move || initial_view);
 
@@ -184,7 +186,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     // When deep-linking to an external repo (different from the detected local
     // repo), start in global scope so config tabs aren't hidden by scope.
     let detected_repo = props.detected_repo;
-    let scope_config = config.map_or(Scope::Auto, |c| c.github.scope);
+    let scope_config = config.map_or(Scope::Auto, |c| c.github.scope.unwrap_or_default());
     let nav_targets_external = {
         let detected_full = detected_repo.map(RepoRef::full_name);
         nav_target.read().as_ref().is_some_and(|t| {
@@ -233,15 +235,15 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
 
     let show_count = config.is_none_or(|c| c.theme.ui.filters_show_count.unwrap_or(true));
     let show_separator = config.is_none_or(|c| c.theme.ui.table.show_separator.unwrap_or(true));
-    let preview_width_pct = config.map_or(0.45, |c| c.defaults.preview.width);
+    let preview_width_pct = config.map_or(0.45, |c| c.defaults.preview.width.unwrap_or(0.45));
     let repo_paths = config.map(|c| &c.repo_paths);
-    let date_format = config.map(|c| c.defaults.date_format.as_str());
+    let date_format = config.map(|c| c.defaults.date_format.as_deref().unwrap_or("relative"));
 
     // All filters/paths needed simultaneously (views are always in the tree).
     let active = active_view.get();
-    let refetch_minutes = config.map_or(10, |c| c.github.refetch_interval_minutes);
-    let prefetch_pr_details = config.map_or(0, |c| c.github.prefetch_pr_details);
-    let auto_clone = config.is_some_and(|c| c.github.auto_clone);
+    let refetch_minutes = config.map_or(10, |c| c.github.refetch_interval_minutes.unwrap_or(10));
+    let prefetch_pr_details = config.map_or(0, |c| c.github.prefetch_pr_details.unwrap_or(0));
+    let auto_clone = config.is_some_and(|c| c.github.auto_clone.unwrap_or(false));
     let filters_pr = config.map(|c| c.pr_filters.as_slice());
     let filters_issue = config.map(|c| c.issues_filters.as_slice());
     let filters_actions = config.map(|c| c.actions_filters.as_slice());

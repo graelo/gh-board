@@ -43,9 +43,12 @@ date_format = "%d/%m/%Y"
 width = 0.6
 "#;
     let config: AppConfig = toml::from_str(toml).unwrap();
-    assert_eq!(config.defaults.view, gh_board::config::types::View::Issues);
-    assert_eq!(config.github.refetch_interval_minutes, 5);
-    assert!((config.defaults.preview.width - 0.6).abs() < f64::EPSILON);
+    assert_eq!(
+        config.defaults.view,
+        Some(gh_board::config::types::View::Issues)
+    );
+    assert_eq!(config.github.refetch_interval_minutes, Some(5));
+    assert!((config.defaults.preview.width.unwrap() - 0.6).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -107,10 +110,10 @@ string = "#00ff00"
 #[test]
 fn default_config_has_sane_defaults() {
     let config = AppConfig::default();
-    assert_eq!(config.defaults.view, gh_board::config::types::View::Prs);
-    assert_eq!(config.github.refetch_interval_minutes, 10);
-    assert_eq!(config.github.prefetch_pr_details, 0);
-    assert!((config.defaults.preview.width - 0.45).abs() < f64::EPSILON);
+    assert!(config.defaults.view.is_none());
+    assert!(config.github.refetch_interval_minutes.is_none());
+    assert!(config.github.prefetch_pr_details.is_none());
+    assert!(config.defaults.preview.width.is_none());
 }
 
 #[test]
@@ -120,7 +123,7 @@ fn parse_prefetch_pr_details() {
 prefetch_pr_details = 20
 ";
     let config: AppConfig = toml::from_str(toml).unwrap();
-    assert_eq!(config.github.prefetch_pr_details, 20);
+    assert_eq!(config.github.prefetch_pr_details, Some(20));
 }
 
 #[test]
@@ -166,8 +169,8 @@ fn load_global_fixture() {
     let config = load_config(Some(path)).unwrap();
     assert_eq!(config.pr_filters.len(), 1);
     assert_eq!(config.pr_filters[0].title, "Global PRs");
-    assert_eq!(config.github.refetch_interval_minutes, 15);
-    assert!((config.defaults.preview.width - 0.5).abs() < f64::EPSILON);
+    assert_eq!(config.github.refetch_interval_minutes, Some(15));
+    assert!((config.defaults.preview.width.unwrap() - 0.5).abs() < f64::EPSILON);
     assert!(config.repo_paths.contains_key("org/global-repo"));
 }
 
@@ -178,9 +181,12 @@ fn load_local_override_fixture() {
     assert_eq!(config.pr_filters.len(), 1);
     assert_eq!(config.pr_filters[0].title, "Local PRs");
     assert_eq!(config.pr_filters[0].limit, Some(50));
-    assert_eq!(config.defaults.view, gh_board::config::types::View::Issues);
-    assert_eq!(config.github.refetch_interval_minutes, 5);
-    assert!((config.defaults.preview.width - 0.3).abs() < f64::EPSILON);
+    assert_eq!(
+        config.defaults.view,
+        Some(gh_board::config::types::View::Issues)
+    );
+    assert_eq!(config.github.refetch_interval_minutes, Some(5));
+    assert!((config.defaults.preview.width.unwrap() - 0.3).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -226,7 +232,7 @@ fn missing_config_file_produces_error() {
 #[test]
 fn default_date_format_is_relative() {
     let config = AppConfig::default();
-    assert_eq!(config.defaults.date_format, "relative");
+    assert!(config.defaults.date_format.is_none());
 }
 
 #[test]
@@ -236,5 +242,5 @@ fn parse_custom_date_format() {
 date_format = "%Y-%m-%d"
 "#;
     let config: AppConfig = toml::from_str(toml).unwrap();
-    assert_eq!(config.defaults.date_format, "%Y-%m-%d");
+    assert_eq!(config.defaults.date_format.as_deref(), Some("%Y-%m-%d"));
 }

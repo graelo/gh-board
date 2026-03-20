@@ -61,28 +61,17 @@ pub struct AppConfig {
 // GitHub backend settings
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct GitHubConfig {
-    pub scope: Scope,
-    pub refetch_interval_minutes: u32,
+    pub scope: Option<Scope>,
+    pub refetch_interval_minutes: Option<u32>,
     /// Number of PR details to prefetch in the background after the list loads.
     /// `0` = on-demand only (default).
-    pub prefetch_pr_details: u32,
+    pub prefetch_pr_details: Option<u32>,
     /// When `true`, automatically clone a repo via `gh repo clone` if the
     /// configured `repo_paths` target doesn't exist yet (checkout / worktree).
-    pub auto_clone: bool,
-}
-
-impl Default for GitHubConfig {
-    fn default() -> Self {
-        Self {
-            scope: Scope::Auto,
-            refetch_interval_minutes: 10,
-            prefetch_pr_details: 0,
-            auto_clone: false,
-        }
-    }
+    pub auto_clone: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------
@@ -167,34 +156,18 @@ pub enum View {
     Repo,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct Defaults {
-    pub view: View,
+    pub view: Option<View>,
     pub preview: PreviewDefaults,
-    pub date_format: String,
+    pub date_format: Option<String>,
 }
 
-impl Default for Defaults {
-    fn default() -> Self {
-        Self {
-            view: View::Prs,
-            preview: PreviewDefaults::default(),
-            date_format: "relative".to_owned(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct PreviewDefaults {
-    pub width: f64,
-}
-
-impl Default for PreviewDefaults {
-    fn default() -> Self {
-        Self { width: 0.45 }
-    }
+    pub width: Option<f64>,
 }
 
 // ---------------------------------------------------------------------------

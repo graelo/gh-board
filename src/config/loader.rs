@@ -4,10 +4,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 
 use crate::config::builtin_themes;
-use crate::config::keybindings::{
-    Keybinding, KeybindingsConfig, default_actions, default_branches, default_issues, default_prs,
-    default_universal, merge_lists,
-};
+use crate::config::keybindings::KeybindingsConfig;
 use crate::config::types::{AppConfig, Defaults, GitHubConfig, PreviewDefaults, Theme};
 
 /// Wrapper used to parse a theme-only TOML file (contains only `[theme.*]`).
@@ -142,7 +139,7 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
         github: merge_github_config(&global.github, &local.github),
         defaults: merge_defaults(&global.defaults, &local.defaults),
         theme: Theme::merge(global.theme, local.theme),
-        keybindings: merge_keybindings(&global.keybindings, &local.keybindings),
+        keybindings: KeybindingsConfig::merge(&global.keybindings, &local.keybindings),
         repo_paths: {
             let mut paths = global.repo_paths;
             paths.extend(local.repo_paths);
@@ -153,114 +150,28 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
 }
 
 /// Merge two GitHub configs, with local values overriding global.
-///
-/// Fields are compared against their `Default` values; a non-default local
-/// value wins, otherwise the global value is used. Note: because primitive
-/// fields cannot distinguish "absent" from "explicitly set to default", a
-/// local value that matches the default will fall through to global.
 fn merge_github_config(global: &GitHubConfig, local: &GitHubConfig) -> GitHubConfig {
-    let defaults = GitHubConfig::default();
-
     GitHubConfig {
-        scope: if local.scope == defaults.scope {
-            global.scope
-        } else {
-            local.scope
-        },
-        refetch_interval_minutes: if local.refetch_interval_minutes
-            == defaults.refetch_interval_minutes
-        {
-            global.refetch_interval_minutes
-        } else {
-            local.refetch_interval_minutes
-        },
-        prefetch_pr_details: if local.prefetch_pr_details == defaults.prefetch_pr_details {
-            global.prefetch_pr_details
-        } else {
-            local.prefetch_pr_details
-        },
-        // Bool fields cannot distinguish "absent" from "explicitly false",
-        // so local can only turn this on, never override a global `true`.
-        auto_clone: local.auto_clone || global.auto_clone,
+        scope: local.scope.or(global.scope),
+        refetch_interval_minutes: local
+            .refetch_interval_minutes
+            .or(global.refetch_interval_minutes),
+        prefetch_pr_details: local.prefetch_pr_details.or(global.prefetch_pr_details),
+        auto_clone: local.auto_clone.or(global.auto_clone),
     }
 }
 
 /// Merge two Defaults configs, with local values overriding global.
-///
-/// Same caveat as `merge_github_config`: primitive fields that match their
-/// `Default` value are treated as "not set".
-#[allow(clippy::float_cmp)] // TOML-parsed f64 vs compile-time constant: exact comparison is safe
 fn merge_defaults(global: &Defaults, local: &Defaults) -> Defaults {
-    let defaults = Defaults::default();
-
     Defaults {
-        view: if local.view == defaults.view {
-            global.view
-        } else {
-            local.view
-        },
+        view: local.view.or(global.view),
         preview: PreviewDefaults {
-            width: if local.preview.width == defaults.preview.width {
-                global.preview.width
-            } else {
-                local.preview.width
-            },
+            width: local.preview.width.or(global.preview.width),
         },
-        date_format: if !local.date_format.is_empty() {
-            local.date_format.clone()
-        } else if !global.date_format.is_empty() {
-            global.date_format.clone()
-        } else {
-            defaults.date_format
-        },
-    }
-}
-
-/// Merge two Keybindings configs by context.
-/// Local bindings for a given key replace global bindings for that key within each context.
-fn merge_keybindings(global: &KeybindingsConfig, local: &KeybindingsConfig) -> KeybindingsConfig {
-    use std::collections::HashMap;
-
-    // Helper to merge two binding lists, with local overriding global
-    fn merge_binding_lists(global: &[Keybinding], local: &[Keybinding]) -> Vec<Keybinding> {
-        let mut result = global.to_vec();
-
-        // Create a map of local bindings by key for quick lookup
-        let local_map: HashMap<&str, &Keybinding> =
-            local.iter().map(|b| (b.key.as_str(), b)).collect();
-
-        // Remove any global bindings that have local overrides
-        result.retain(|b| !local_map.contains_key(b.key.as_str()));
-
-        // Add all local bindings (they take precedence)
-        result.extend(local.iter().cloned());
-
-        result
-    }
-
-    // For each context, merge defaults with (global + local) overrides
-    // This preserves custom global bindings while allowing local to override them
-    KeybindingsConfig {
-        universal: merge_lists(
-            &default_universal(),
-            &merge_binding_lists(&global.universal, &local.universal),
-        ),
-        prs: merge_lists(
-            &default_prs(),
-            &merge_binding_lists(&global.prs, &local.prs),
-        ),
-        issues: merge_lists(
-            &default_issues(),
-            &merge_binding_lists(&global.issues, &local.issues),
-        ),
-        actions: merge_lists(
-            &default_actions(),
-            &merge_binding_lists(&global.actions, &local.actions),
-        ),
-        branches: merge_lists(
-            &default_branches(),
-            &merge_binding_lists(&global.branches, &local.branches),
-        ),
+        date_format: local
+            .date_format
+            .clone()
+            .or_else(|| global.date_format.clone()),
     }
 }
 
@@ -342,6 +253,7 @@ fn expand_repo_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::keybindings::Keybinding;
     use crate::config::types::IconConfig;
 
     #[test]
@@ -471,47 +383,53 @@ mod tests {
     #[test]
     fn merge_configs_preserves_global_defaults_with_empty_local() {
         let mut global = AppConfig::default();
-        global.defaults.view = crate::config::types::View::Issues;
+        global.defaults.view = Some(crate::config::types::View::Issues);
 
         let local = AppConfig::default(); // Empty local config
 
         let merged = merge_configs(global, local);
-        assert_eq!(merged.defaults.view, crate::config::types::View::Issues);
+        assert_eq!(
+            merged.defaults.view,
+            Some(crate::config::types::View::Issues)
+        );
     }
 
     #[test]
     fn merge_configs_overrides_defaults() {
         let mut global = AppConfig::default();
-        global.defaults.view = crate::config::types::View::Actions;
+        global.defaults.view = Some(crate::config::types::View::Actions);
 
         let mut local = AppConfig::default();
-        local.defaults.view = crate::config::types::View::Issues;
+        local.defaults.view = Some(crate::config::types::View::Issues);
 
         let merged = merge_configs(global, local);
-        assert_eq!(merged.defaults.view, crate::config::types::View::Issues);
+        assert_eq!(
+            merged.defaults.view,
+            Some(crate::config::types::View::Issues)
+        );
     }
 
     #[test]
     fn merge_configs_preserves_global_github_config_with_empty_local() {
         let mut global = AppConfig::default();
-        global.github.auto_clone = true;
+        global.github.auto_clone = Some(true);
 
         let local = AppConfig::default(); // Empty local config
 
         let merged = merge_configs(global, local);
-        assert!(merged.github.auto_clone);
+        assert_eq!(merged.github.auto_clone, Some(true));
     }
 
     #[test]
     fn merge_configs_overrides_github_config() {
         let mut global = AppConfig::default();
-        global.github.auto_clone = false;
+        global.github.auto_clone = Some(false);
 
         let mut local = AppConfig::default();
-        local.github.auto_clone = true;
+        local.github.auto_clone = Some(true);
 
         let merged = merge_configs(global, local);
-        assert!(merged.github.auto_clone);
+        assert_eq!(merged.github.auto_clone, Some(true));
     }
 
     #[test]

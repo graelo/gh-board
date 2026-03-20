@@ -193,7 +193,7 @@ fn load_fixture(name: &str) -> AppConfig {
 fn ansi_only_config_loads_successfully() {
     let config = load_fixture("ansi_only_theme.toml");
     assert!(!config.pr_filters.is_empty(), "should have PR filters");
-    assert!((config.defaults.preview.width - 0.45).abs() < f64::EPSILON);
+    assert!((config.defaults.preview.width.unwrap() - 0.45).abs() < f64::EPSILON);
 }
 
 #[test]

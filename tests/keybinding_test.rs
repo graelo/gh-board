@@ -183,3 +183,24 @@ fn builtin_action_roundtrip() {
 fn builtin_from_name_unknown_returns_none() {
     assert!(BuiltinAction::from_name("nonexistent").is_none());
 }
+
+#[test]
+fn builtin_watch_run_from_name() {
+    assert_eq!(
+        BuiltinAction::from_name("watch_run"),
+        Some(BuiltinAction::WatchRun)
+    );
+}
+
+#[test]
+fn default_actions_has_watch_run_and_resolves() {
+    let merged = MergedBindings::from_config(&KeybindingsConfig::default());
+    let binding = merged.resolve("W", ViewContext::Actions);
+    assert!(
+        matches!(
+            binding,
+            Some(ResolvedBinding::Builtin(BuiltinAction::WatchRun))
+        ),
+        "W should resolve to WatchRun in Actions context"
+    );
+}

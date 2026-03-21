@@ -71,7 +71,8 @@ impl GitHubEngine {
         // Consume the first immediate tick so refresh fires after one full interval.
         refresh_tick.tick().await;
 
-        let mut watch_tick = tokio::time::interval(Duration::from_secs(10));
+        let watch_tick_secs = (watch_poll_secs / 2).max(5);
+        let mut watch_tick = tokio::time::interval(Duration::from_secs(watch_tick_secs));
         watch_tick.tick().await;
 
         loop {

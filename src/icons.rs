@@ -298,7 +298,7 @@ impl ResolvedIcons {
             action_skipped: "-".to_owned(),
             action_running: "\u{ea77}".to_owned(), //  nf-cod-sync
             action_queued: "\u{e641}".to_owned(),  //  nf-seti-clock
-            action_watched: "\u{f06e}".to_owned(), //  nf-fa-eye
+            action_watched: "\u{e68f}".to_owned(), //  nf-seti-search
         }
     }
 
@@ -615,7 +615,7 @@ mod tests {
         assert_eq!(icons.action_skipped, "-");
         assert_eq!(icons.action_running, "\u{ea77}");
         assert_eq!(icons.action_queued, "\u{e641}");
-        assert_eq!(icons.action_watched, "\u{f06e}");
+        assert_eq!(icons.action_watched, "\u{e68f}");
     }
 
     #[test]

@@ -43,6 +43,8 @@ struct RawWorkflowRun {
     html_url: String,
     created_at: chrono::DateTime<chrono::Utc>,
     updated_at: chrono::DateTime<chrono::Utc>,
+    #[serde(default)]
+    run_started_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Deserialize)]
@@ -99,6 +101,7 @@ fn into_domain(raw: RawWorkflowRun) -> WorkflowRun {
         html_url: raw.html_url,
         created_at: raw.created_at,
         updated_at: raw.updated_at,
+        run_started_at: raw.run_started_at,
     }
 }
 

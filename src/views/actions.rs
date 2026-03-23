@@ -88,6 +88,13 @@ fn actions_columns() -> Vec<Column> {
             align: TextAlign::Right,
             fixed_width: Some(8),
         },
+        Column {
+            id: "duration".to_owned(),
+            header: "Durat.".to_owned(),
+            default_width_pct: 0.06,
+            align: TextAlign::Right,
+            fixed_width: Some(7),
+        },
     ]
 }
 
@@ -158,6 +165,15 @@ fn run_to_row(run: &WorkflowRun, theme: &ResolvedTheme, watched_ids: &HashSet<u6
     row.insert("actor".to_owned(), Cell::colored(actor, theme.text_actor));
     let age = crate::util::format_date(&run.created_at, "relative");
     row.insert("age".to_owned(), Cell::colored(age, theme.text_faint));
+    let duration = if run.conclusion.is_some() {
+        crate::util::format_duration(run.run_started_at, Some(run.updated_at))
+    } else {
+        "-".to_owned()
+    };
+    row.insert(
+        "duration".to_owned(),
+        Cell::colored(duration, theme.text_faint),
+    );
     row
 }
 

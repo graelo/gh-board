@@ -113,4 +113,6 @@ pub struct WorkflowRun {
     pub html_url: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(default)]
+    pub run_started_at: Option<DateTime<Utc>>,
 }

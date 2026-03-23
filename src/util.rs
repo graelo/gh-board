@@ -42,7 +42,7 @@ pub(crate) fn format_duration(
     } else {
         let m = secs / 60;
         let s = secs % 60;
-        format!("{m}m {s:02}s")
+        format!("{m}m{s:02}s")
     }
 }
 

@@ -523,7 +523,7 @@ fn checks_grouped_by_workflow() {
     );
 
     // Durations appear for completed checks with timestamps
-    assert!(text.contains("1m 30s"), "build should show 1m 30s");
+    assert!(text.contains("1m30s"), "build should show 1m30s");
     assert!(text.contains("45s"), "test should show 45s");
     assert!(text.contains("5s"), "deploy should show 5s");
 
@@ -546,13 +546,13 @@ fn checks_grouped_by_workflow() {
     // Durations are globally aligned: the padding before each duration should
     // account for the longest name across all groups ("external-check" = 14 chars)
     // so shorter names get more padding. Verify "build" line has more spaces
-    // before "1m 30s" than "external-check" line would.
+    // before "1m30s" than "external-check" line would.
     for line in &lines {
         let line_text: String = line.spans.iter().map(|s| s.text.as_str()).collect();
-        if line_text.contains("build") && line_text.contains("1m 30s") {
+        if line_text.contains("build") && line_text.contains("1m30s") {
             // "build" is 5 chars, "external-check" is 14 chars → 9 extra spaces of padding
-            // plus the base 2 = 11 spaces between "build" and "1m 30s"
-            let idx = line_text.find("1m 30s").unwrap();
+            // plus the base 2 = 11 spaces between "build" and "1m30s"
+            let idx = line_text.find("1m30s").unwrap();
             let before_dur = &line_text[..idx];
             let trailing_spaces = before_dur.len() - before_dur.trim_end().len();
             assert!(

@@ -188,6 +188,7 @@ impl StubEngine {
                             html_url: String::new(),
                             created_at: chrono::Utc::now(),
                             updated_at: chrono::Utc::now(),
+                            run_started_at: None,
                         },
                         completed: true,
                         rate_limit: None,

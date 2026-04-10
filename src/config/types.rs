@@ -8,7 +8,7 @@
 //
 // Configuration is loaded from multiple sources in priority order:
 // 1. `--config` CLI flag (explicit path)
-// 2. `.gh-board.toml` in the current Git repository root
+// 2. `gh-board.toml` or `.gh-board.toml` in the current Git repository root
 // 3. `$GH_BOARD_CONFIG` environment variable
 // 4. XDG config directory (`$XDG_CONFIG_HOME/gh-board/config.toml`)
 // 5. Default user config directory (`~/.config/gh-board/config.toml` on Linux/macOS)

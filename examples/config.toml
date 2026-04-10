@@ -9,7 +9,7 @@
 #
 # Config priority (highest to lowest):
 #   1. --config flag
-#   2. .gh-board.toml in Git repo root
+#   2. gh-board.toml or .gh-board.toml in Git repo root
 #   3. $GH_BOARD_CONFIG env var
 #   4. $XDG_CONFIG_HOME/gh-board/config.toml
 #   5. ~/.config/gh-board/config.toml

@@ -5,6 +5,14 @@ All notable changes to gh-board are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **Cross-fork PRs** — checkout and worktree actions now work for PRs opened
+  from forks; the fork owner is added as a named git remote using the user's
+  preferred protocol (SSH/HTTPS) and the branch tracks the fork's remote
+
 ## [0.10.1] - 2026-03-24
 
 ### Changed

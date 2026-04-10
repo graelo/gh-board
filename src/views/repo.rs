@@ -932,7 +932,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                         .cloned()
                                 };
                                 if let Some(repo_path) = path {
-                                    match crate::actions::local::create_worktree_at(&branch.name, &repo_path) {
+                                    match crate::actions::local::create_worktree_at(&branch.name, &repo_path, "github.com", None) {
                                         Ok(wt_path) => {
                                             let msg = match crate::actions::clipboard::copy_to_clipboard(&wt_path) {
                                                 Ok(()) => format!("Worktree ready (copied): {wt_path}"),

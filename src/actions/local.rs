@@ -4,6 +4,70 @@ use std::sync::mpsc::Sender;
 
 use anyhow::{Context, Result};
 
+/// Fork from which a cross-fork PR originates.
+#[derive(Debug, Clone)]
+pub struct ForkSource {
+    /// Fork owner login — also used as the git remote name.
+    pub owner: String,
+    /// Repository name on the fork.
+    pub repo_name: String,
+}
+
+/// Query the user's preferred git protocol (`ssh` or `https`) via `gh config`.
+fn detect_git_protocol(host: &str) -> String {
+    let mut cmd = std::process::Command::new("gh");
+    cmd.args(["config", "get", "git_protocol"]);
+    if host != "github.com" {
+        cmd.env("GH_HOST", host);
+    }
+    cmd.output()
+        .ok()
+        .filter(|o| o.status.success())
+        .map_or_else(
+            || "https".to_owned(),
+            |o| String::from_utf8_lossy(&o.stdout).trim().to_owned(),
+        )
+}
+
+/// Build a remote URL for a fork, respecting the chosen protocol.
+fn fork_remote_url(host: &str, fork: &ForkSource, protocol: &str) -> String {
+    if protocol == "ssh" {
+        format!("git@{host}:{}/{}.git", fork.owner, fork.repo_name)
+    } else {
+        format!("https://{host}/{}/{}.git", fork.owner, fork.repo_name)
+    }
+}
+
+/// Idempotently add the fork owner as a git remote in `repo_path`.
+fn ensure_fork_remote(repo_path: &Path, host: &str, fork: &ForkSource) -> Result<()> {
+    // Check whether the remote already exists.
+    let check = std::process::Command::new("git")
+        .args(["remote", "get-url", &fork.owner])
+        .current_dir(repo_path)
+        .output()
+        .context("checking fork remote")?;
+
+    if check.status.success() {
+        return Ok(());
+    }
+
+    let protocol = detect_git_protocol(host);
+    let url = fork_remote_url(host, fork, &protocol);
+
+    let add = std::process::Command::new("git")
+        .args(["remote", "add", &fork.owner, &url])
+        .current_dir(repo_path)
+        .output()
+        .with_context(|| format!("adding remote {} → {url}", fork.owner))?;
+
+    if !add.status.success() {
+        let stderr = String::from_utf8_lossy(&add.stderr).trim().to_owned();
+        anyhow::bail!("git remote add {} failed: {stderr}", fork.owner);
+    }
+
+    Ok(())
+}
+
 /// Check whether a repo needs to be cloned (path is configured but doesn't exist yet).
 pub fn repo_needs_clone<S: std::hash::BuildHasher>(
     repo_full_name: &str,
@@ -45,6 +109,7 @@ pub fn checkout_branch<S: std::hash::BuildHasher>(
     repo_full_name: &str,
     repo_paths: &HashMap<String, PathBuf, S>,
     host: &str,
+    fork: Option<&ForkSource>,
 ) -> Result<String> {
     let repo_path = repo_paths
         .get(repo_full_name)
@@ -52,20 +117,46 @@ pub fn checkout_branch<S: std::hash::BuildHasher>(
 
     let cloned = ensure_repo_cloned(repo_full_name, repo_path, host)?;
 
-    // Fetch the branch from origin so the remote-tracking ref is up to date.
-    // Without this, `git checkout <branch>` fails when the branch has never
-    // been fetched locally (e.g. a new PR branch on a stale clone).
+    let remote_name = if let Some(fork) = fork {
+        ensure_fork_remote(repo_path, host, fork)?;
+        fork.owner.as_str()
+    } else {
+        "origin"
+    };
+
+    // Fetch the branch so the remote-tracking ref is up to date.
     let _fetch = std::process::Command::new("git")
-        .args(["fetch", "origin", head_ref])
+        .args(["fetch", remote_name, head_ref])
         .current_dir(repo_path)
         .output();
 
-    let output = std::process::Command::new("git")
-        .arg("checkout")
-        .arg(head_ref)
-        .current_dir(repo_path)
-        .output()
-        .with_context(|| format!("cannot run git checkout in {}", repo_path.display()))?;
+    // For cross-fork PRs, create a local tracking branch explicitly to avoid
+    // ambiguity when `origin` also has a branch with the same name.
+    let output = if fork.is_some() {
+        let tracking_ref = format!("{remote_name}/{head_ref}");
+        let try_create = std::process::Command::new("git")
+            .args(["checkout", "-b", head_ref, "--track", &tracking_ref])
+            .current_dir(repo_path)
+            .output()
+            .with_context(|| format!("cannot run git checkout in {}", repo_path.display()))?;
+
+        if try_create.status.success() {
+            try_create
+        } else {
+            // Branch already exists locally — just switch to it.
+            std::process::Command::new("git")
+                .args(["checkout", head_ref])
+                .current_dir(repo_path)
+                .output()
+                .with_context(|| format!("cannot run git checkout in {}", repo_path.display()))?
+        }
+    } else {
+        std::process::Command::new("git")
+            .args(["checkout", head_ref])
+            .current_dir(repo_path)
+            .output()
+            .with_context(|| format!("cannot run git checkout in {}", repo_path.display()))?
+    };
 
     if output.status.success() {
         if cloned {
@@ -93,7 +184,12 @@ pub fn checkout_branch<S: std::hash::BuildHasher>(
 ///
 /// The caller is responsible for ensuring the repo exists on disk and for gating
 /// on user confirmation when needed.
-pub fn create_worktree_at(branch: &str, repo_path: &Path) -> Result<String> {
+pub fn create_worktree_at(
+    branch: &str,
+    repo_path: &Path,
+    host: &str,
+    fork: Option<&ForkSource>,
+) -> Result<String> {
     let repo_path = repo_path
         .canonicalize()
         .context("canonicalizing repo path")?;
@@ -117,17 +213,41 @@ pub fn create_worktree_at(branch: &str, repo_path: &Path) -> Result<String> {
 
     std::fs::create_dir_all(&worktree_base).context("creating worktree base directory")?;
 
+    let remote_name = if let Some(fork) = fork {
+        ensure_fork_remote(&repo_path, host, fork)?;
+        fork.owner.as_str()
+    } else {
+        "origin"
+    };
+
     // Best-effort fetch — ignore errors for local-only branches.
     let _ = std::process::Command::new("git")
-        .args(["fetch", "origin", branch])
+        .args(["fetch", remote_name, branch])
         .current_dir(&repo_path)
         .output();
 
-    let add = std::process::Command::new("git")
-        .args(["worktree", "add", &worktree_path.to_string_lossy(), branch])
-        .current_dir(&repo_path)
-        .output()
-        .context("running git worktree add")?;
+    let add = if fork.is_some() {
+        // Create a local branch tracking the fork's remote branch.
+        let start_point = format!("{remote_name}/{branch}");
+        std::process::Command::new("git")
+            .args([
+                "worktree",
+                "add",
+                "-b",
+                branch,
+                &worktree_path.to_string_lossy(),
+                &start_point,
+            ])
+            .current_dir(&repo_path)
+            .output()
+            .context("running git worktree add")?
+    } else {
+        std::process::Command::new("git")
+            .args(["worktree", "add", &worktree_path.to_string_lossy(), branch])
+            .current_dir(&repo_path)
+            .output()
+            .context("running git worktree add")?
+    };
 
     if !add.status.success() {
         let stderr = String::from_utf8_lossy(&add.stderr);
@@ -149,6 +269,7 @@ pub fn create_or_open_worktree<S: std::hash::BuildHasher>(
     repo_full_name: &str,
     repo_paths: &HashMap<String, PathBuf, S>,
     host: &str,
+    fork: Option<&ForkSource>,
 ) -> Result<String> {
     let repo_path = repo_paths
         .get(repo_full_name)
@@ -156,7 +277,7 @@ pub fn create_or_open_worktree<S: std::hash::BuildHasher>(
 
     ensure_repo_cloned(repo_full_name, repo_path, host)?;
 
-    create_worktree_at(head_ref, repo_path)
+    create_worktree_at(head_ref, repo_path, host, fork)
 }
 
 /// Spawn a background thread that runs [`checkout_branch`] and sends the result
@@ -169,10 +290,17 @@ pub fn spawn_checkout<S: std::hash::BuildHasher + Send + 'static>(
     repo_full_name: String,
     repo_paths: HashMap<String, PathBuf, S>,
     host: String,
+    fork: Option<ForkSource>,
     reply_tx: Sender<String>,
 ) {
     std::thread::spawn(move || {
-        let msg = match checkout_branch(&head_ref, &repo_full_name, &repo_paths, &host) {
+        let msg = match checkout_branch(
+            &head_ref,
+            &repo_full_name,
+            &repo_paths,
+            &host,
+            fork.as_ref(),
+        ) {
             Ok(m) => m,
             Err(e) => format!("Checkout error: {e:#}"),
         };
@@ -189,10 +317,17 @@ pub fn spawn_worktree<S: std::hash::BuildHasher + Send + 'static>(
     repo_full_name: String,
     repo_paths: HashMap<String, PathBuf, S>,
     host: String,
+    fork: Option<ForkSource>,
     reply_tx: Sender<String>,
 ) {
     std::thread::spawn(move || {
-        let msg = match create_or_open_worktree(&head_ref, &repo_full_name, &repo_paths, &host) {
+        let msg = match create_or_open_worktree(
+            &head_ref,
+            &repo_full_name,
+            &repo_paths,
+            &host,
+            fork.as_ref(),
+        ) {
             Ok(path) => match crate::actions::clipboard::copy_to_clipboard(&path) {
                 Ok(()) => format!("Worktree ready (copied): {path}"),
                 Err(e) => format!("Worktree ready: {path} (clipboard: {e})"),
@@ -258,5 +393,41 @@ mod tests {
     #[test]
     fn slugify_empty() {
         assert_eq!(slugify_branch(""), "");
+    }
+
+    #[test]
+    fn fork_remote_url_https() {
+        let fork = ForkSource {
+            owner: "alice".into(),
+            repo_name: "my-repo".into(),
+        };
+        assert_eq!(
+            fork_remote_url("github.com", &fork, "https"),
+            "https://github.com/alice/my-repo.git"
+        );
+    }
+
+    #[test]
+    fn fork_remote_url_ssh() {
+        let fork = ForkSource {
+            owner: "alice".into(),
+            repo_name: "my-repo".into(),
+        };
+        assert_eq!(
+            fork_remote_url("github.com", &fork, "ssh"),
+            "git@github.com:alice/my-repo.git"
+        );
+    }
+
+    #[test]
+    fn fork_remote_url_ghe_ssh() {
+        let fork = ForkSource {
+            owner: "bob".into(),
+            repo_name: "internal-tool".into(),
+        };
+        assert_eq!(
+            fork_remote_url("github.corp.example.com", &fork, "ssh"),
+            "git@github.corp.example.com:bob/internal-tool.git"
+        );
     }
 }

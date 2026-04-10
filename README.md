@@ -48,6 +48,8 @@ Press `w` on any PR to create a git worktree for its branch — the path is
 copied to your clipboard so you can `cd` straight into it. The worktree is
 placed at `<repo>-worktrees/<branch-slug>/` next to your main clone. Pressing
 `w` again on the same PR is a no-op that returns the existing path instantly.
+Cross-fork PRs are handled automatically: the fork owner is added as a named
+remote and the worktree tracks the fork's branch, so you can push back to it.
 
 Requires a `[repo_paths]` entry mapping the repository to its local clone:
 

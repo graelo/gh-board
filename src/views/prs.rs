@@ -1465,6 +1465,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                             repo_name,
                                             repo_paths.clone(),
                                             host,
+                                            pr.fork_source(),
                                             local_action_tx.clone(),
                                         );
                                     }
@@ -1496,6 +1497,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                 repo_name,
                                                 repo_paths.clone(),
                                                 host,
+                                                pr.fork_source(),
                                                 local_action_tx.clone(),
                                             );
                                         } else {
@@ -1507,6 +1509,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                 &repo_name,
                                                 &repo_paths,
                                                 host,
+                                                pr.fork_source().as_ref(),
                                             ) {
                                                 Ok(path) => {
                                                     match clipboard::copy_to_clipboard(&path) {
@@ -1821,6 +1824,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                     repo_name,
                                                     repo_paths.clone(),
                                                     host,
+                                                    pr.fork_source(),
                                                     local_action_tx.clone(),
                                                 );
                                             } else {
@@ -1832,6 +1836,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                                     &repo_name,
                                                     &repo_paths,
                                                     host,
+                                                    pr.fork_source().as_ref(),
                                                 ) {
                                                     Ok(msg) => {
                                                         action_status.set(Some(ActionFeedback::Success(msg)));

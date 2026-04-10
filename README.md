@@ -163,13 +163,14 @@ gh-board [COMMAND] [OPTIONS] [URL]
 Configuration files are loaded in this priority order:
 
 1. `--config` flag
-2. `.gh-board.toml` in current Git repository root
+2. `gh-board.toml` or `.gh-board.toml` in current Git repository root
 3. `$GH_BOARD_CONFIG` environment variable
 4. `$XDG_CONFIG_HOME/gh-board/config.toml`
 5. `~/.config/gh-board/config.toml` (macOS:
    `~/Library/Application Support/gh-board/config.toml`)
 
-Repo-local config (`.gh-board.toml`) merges on top of global config:
+Repo-local config (`gh-board.toml` or `.gh-board.toml`) merges on top of global
+config:
 
 - Settings in the local config override global values for the same key
 - Missing keys in local config fall back to global settings

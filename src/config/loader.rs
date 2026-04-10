@@ -18,7 +18,7 @@ struct ThemeFile {
 ///
 /// Priority:
 /// 1. `--config` flag (explicit path)
-/// 2. `.gh-board.toml` in the current Git repository root
+/// 2. `gh-board.toml` or `.gh-board.toml` in the current Git repository root
 /// 3. `$GH_BOARD_CONFIG` environment variable
 /// 4. `$XDG_CONFIG_HOME/gh-board/config.toml`
 /// 5. `~/.config/gh-board/config.toml`
@@ -193,15 +193,22 @@ fn merge_defaults(global: &Defaults, local: &Defaults) -> Defaults {
 }
 
 fn find_repo_local_config() -> Option<PathBuf> {
-    // Walk up from CWD looking for `.gh-board.toml` next to a `.git` directory.
-    let mut dir = std::env::current_dir().ok()?;
+    find_repo_local_config_from(std::env::current_dir().ok()?)
+}
+
+fn find_repo_local_config_from(mut dir: PathBuf) -> Option<PathBuf> {
+    // Walk up from `dir` looking for `gh-board.toml` (preferred) or `.gh-board.toml`
+    // at the git repository root.
     loop {
-        let candidate = dir.join(".gh-board.toml");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
         if dir.join(".git").exists() {
-            // Reached git root without finding config.
+            let candidate = dir.join("gh-board.toml");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+            let candidate = dir.join(".gh-board.toml");
+            if candidate.is_file() {
+                return Some(candidate);
+            }
             return None;
         }
         if !dir.pop() {
@@ -594,5 +601,55 @@ mod tests {
         );
         // Repo paths should be merged
         assert_eq!(merged.repo_paths.len(), 1);
+    }
+
+    #[test]
+    fn find_repo_local_config_prefers_gh_board_toml_over_dot() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let git_dir = temp_dir.path().join(".git");
+        std::fs::create_dir(&git_dir).unwrap();
+
+        let gh_board_toml = temp_dir.path().join("gh-board.toml");
+        std::fs::write(&gh_board_toml, "defaults.view = \"prs\"").unwrap();
+
+        let dot_gh_board_toml = temp_dir.path().join(".gh-board.toml");
+        std::fs::write(&dot_gh_board_toml, "defaults.view = \"issues\"").unwrap();
+
+        let found = find_repo_local_config_from(temp_dir.path().to_path_buf());
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().file_name().unwrap(), "gh-board.toml");
+    }
+
+    #[test]
+    fn find_repo_local_config_only_at_git_root() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let git_dir = temp_dir.path().join(".git");
+        std::fs::create_dir(&git_dir).unwrap();
+
+        let subdir = temp_dir.path().join("subdir");
+        std::fs::create_dir(&subdir).unwrap();
+
+        let gh_board_toml = subdir.join("gh-board.toml");
+        std::fs::write(&gh_board_toml, "defaults.view = \"prs\"").unwrap();
+
+        let found = find_repo_local_config_from(subdir);
+        assert!(found.is_none());
+    }
+
+    #[test]
+    fn find_repo_local_config_finds_at_git_root() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let git_dir = temp_dir.path().join(".git");
+        std::fs::create_dir(&git_dir).unwrap();
+
+        let gh_board_toml = temp_dir.path().join("gh-board.toml");
+        std::fs::write(&gh_board_toml, "defaults.view = \"prs\"").unwrap();
+
+        let subdir = temp_dir.path().join("subdir");
+        std::fs::create_dir(&subdir).unwrap();
+
+        let found = find_repo_local_config_from(subdir);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().file_name().unwrap(), "gh-board.toml");
     }
 }

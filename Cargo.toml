@@ -76,5 +76,8 @@ tree-sitter-toml-ng = "0.7"
 tree-sitter-typescript = "0.23"
 unicode-width = "0.2"
 
+[dev-dependencies]
+tempfile = "3"
+
 [profile.release]
 strip = true

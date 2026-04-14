@@ -5,6 +5,27 @@ All notable changes to gh-board are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.10.3] - 2026-04-15
+
+### Added
+
+- **Config file discovery** — support `gh-board.toml` (without dot prefix)
+  alongside `.gh-board.toml` for repo-local configuration
+
+### Changed
+
+- **CI hardening** — pin all actions to commit SHAs, least-privilege
+  permissions, persist-credentials: false, template injection fixes, cache
+  restricted to PRs, semver-only tag filter, 1-day artifact retention
+- **Supply chain audits** — add reusable cargo-audit and ci-security workflows
+  (zizmor + poutine), conditional on file changes and scheduled Tue/Fri
+- **Release workflow** — replace ncipollo/release-action with gh CLI, add build
+  provenance attestation via Sigstore
+- **Secrets management** — replace PATs with GitHub App tokens for Homebrew and
+  Renovate jobs, scoped to dedicated environments
+- **Renovate config** — add pinDigests for GitHub Actions, set gitAuthor to
+  graelo-ci-bot
+
 ## [0.10.2] - 2026-04-10
 
 ### Added
@@ -231,6 +252,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
+[0.10.3]: https://github.com/graelo/gh-board/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/graelo/gh-board/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/graelo/gh-board/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/graelo/gh-board/compare/v0.9.0...v0.10.0

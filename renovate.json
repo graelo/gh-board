@@ -3,6 +3,7 @@
   "extends": [
     "config:recommended"
   ],
+  "gitAuthor": "graelo-ci-bot[bot] <274240725+graelo-ci-bot[bot]@users.noreply.github.com>",
   "labels": [
     "dependencies"
   ],
@@ -10,6 +11,11 @@
     "enabled": true
   },
   "packageRules": [
+    {
+      "description": "Pin GitHub Actions to commit SHAs for supply chain safety",
+      "matchManagers": ["github-actions"],
+      "pinDigests": true
+    },
     {
       "description": "Group all patch updates into one PR",
       "matchUpdateTypes": "patch",

@@ -265,7 +265,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
 
     let show_count = config.is_none_or(|c| c.theme.ui.filters_show_count.unwrap_or(true));
     let show_separator = config.is_none_or(|c| c.theme.ui.table.show_separator.unwrap_or(true));
-    let preview_width_pct = config.map_or(0.45, |c| c.defaults.preview.width.unwrap_or(0.45));
+    let default_preview_pct = config.map_or(0.45, |c| c.defaults.preview.width.unwrap_or(0.45));
+    let preview_width_pct: State<f64> = hooks.use_state(move || default_preview_pct);
     let repo_paths = config.map(|c| &c.repo_paths);
     let date_format = config.map(|c| c.defaults.date_format.as_deref().unwrap_or("relative"));
 
@@ -295,7 +296,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     color_depth: depth,
                     width,
                     height,
-                    preview_width_pct,
+                    preview_width_pct: preview_width_pct,
+                    default_preview_pct,
                     show_filter_count: show_count,
                     show_separator,
                     should_exit,
@@ -327,7 +329,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     color_depth: depth,
                     width,
                     height,
-                    preview_width_pct,
+                    preview_width_pct: preview_width_pct,
+                    default_preview_pct,
                     show_filter_count: show_count,
                     show_separator,
                     should_exit,
@@ -356,7 +359,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     color_depth: depth,
                     width,
                     height,
-                    preview_width_pct,
+                    preview_width_pct: preview_width_pct,
+                    default_preview_pct,
                     show_filter_count: show_count,
                     show_separator,
                     scope_repo: scope_repo.clone(),
@@ -385,7 +389,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     color_depth: depth,
                     width,
                     height,
-                    preview_width_pct,
+                    preview_width_pct: preview_width_pct,
+                    default_preview_pct,
                     show_filter_count: show_count,
                     show_separator,
                     scope_repo: scope_repo.clone(),
@@ -437,7 +442,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     color_depth: depth,
                     width,
                     height,
-                    preview_width_pct,
+                    preview_width_pct: preview_width_pct,
+                    default_preview_pct,
                     show_separator,
                     should_exit,
                     switch_view: switch_signal,

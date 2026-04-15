@@ -22,6 +22,9 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `h` / `←` | `prev_filter` | Previous filter tab |
 | `l` / `→` | `next_filter` | Next filter tab |
 | `p` | `toggle_preview` | Toggle preview pane |
+| `+` | `sidebar_wider` | Widen sidebar |
+| `-` | `sidebar_narrower` | Narrow sidebar |
+| `=` | `sidebar_reset_width` | Reset sidebar width |
 | `o` | `open_browser` | Open item in browser |
 | `r` | `refresh_item` | Refresh selected item |
 | `R` | `refresh` | Refresh current filter |
@@ -225,6 +228,9 @@ The full list of names accepted by the `builtin` field:
 | `prev_filter` | Previous filter tab |
 | `next_filter` | Next filter tab |
 | `toggle_preview` | Toggle preview pane |
+| `sidebar_wider` | Widen sidebar |
+| `sidebar_narrower` | Narrow sidebar |
+| `sidebar_reset_width` | Reset sidebar width |
 | `open_browser` | Open in browser |
 | `refresh_item` | Refresh selected item |
 | `refresh` | Refresh current filter |

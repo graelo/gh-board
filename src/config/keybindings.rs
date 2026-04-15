@@ -99,6 +99,10 @@ pub enum BuiltinAction {
     GoToAlerts,
     GoToNotifications,
     GoToRepo,
+    // Sidebar resize
+    SidebarWider,
+    SidebarNarrower,
+    SidebarResetWidth,
     // Scope
     ToggleScope,
     // Actions view
@@ -167,6 +171,9 @@ impl BuiltinAction {
             "go_to_alerts" => Self::GoToAlerts,
             "go_to_notifications" => Self::GoToNotifications,
             "go_to_repo" => Self::GoToRepo,
+            "sidebar_wider" => Self::SidebarWider,
+            "sidebar_narrower" => Self::SidebarNarrower,
+            "sidebar_reset_width" => Self::SidebarResetWidth,
             "toggle_scope" => Self::ToggleScope,
             "toggle_workflow_nav" => Self::ToggleWorkflowNav,
             "rerun_failed" => Self::RerunFailed,
@@ -231,6 +238,9 @@ impl BuiltinAction {
             Self::GoToAlerts => "Go to Alerts",
             Self::GoToNotifications => "Go to Notifications",
             Self::GoToRepo => "Go to Repo",
+            Self::SidebarWider => "Widen sidebar",
+            Self::SidebarNarrower => "Narrow sidebar",
+            Self::SidebarResetWidth => "Reset sidebar width",
             Self::ToggleScope => "Toggle repo scope",
             Self::ToggleWorkflowNav => "Toggle workflow navigator",
             Self::RerunFailed => "Re-run failed jobs",
@@ -372,6 +382,9 @@ pub fn default_universal() -> Vec<Keybinding> {
         kb("4", "go_to_alerts", "Go to Alerts"),
         kb("5", "go_to_notifications", "Go to Notifications"),
         kb("6", "go_to_repo", "Go to Repo"),
+        kb("+", "sidebar_wider", "Widen sidebar"),
+        kb("-", "sidebar_narrower", "Narrow sidebar"),
+        kb("=", "sidebar_reset_width", "Reset sidebar width"),
     ]
 }
 

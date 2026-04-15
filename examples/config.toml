@@ -574,6 +574,21 @@ builtin = "toggle_preview"
 name = "Toggle preview pane"
 
 [[keybindings.universal]]
+key = "+"
+builtin = "sidebar_wider"
+name = "Widen sidebar"
+
+[[keybindings.universal]]
+key = "-"
+builtin = "sidebar_narrower"
+name = "Narrow sidebar"
+
+[[keybindings.universal]]
+key = "="
+builtin = "sidebar_reset_width"
+name = "Reset sidebar width"
+
+[[keybindings.universal]]
 key = "o"
 builtin = "open_browser"
 name = "Open in browser"

@@ -78,6 +78,10 @@ The same shape applies to every mutation (`CloseIssue`, `AssignIssue`, …):
 engine replies with `Event::MutationOk` or `Event::MutationError`, then the
 view resets its filter and triggers a fresh fetch.
 
+The **Alerts** view issues three REST calls per filter tab (dependabot, code
+scanning, secret scanning). Individual 403 errors are non-fatal — the engine
+merges whatever succeeds and sends a single `AlertsFetched` event.
+
 ---
 
 ## Module dependency boundaries
@@ -86,12 +90,12 @@ view resets its filter and triggers a fresh fetch.
 graph TD
     main["main.rs / lib.rs"]
     app["app.rs"]
-    views["views/\nprs · issues · actions · notifications · repo"]
+    views["views/\nprs · issues · actions · alerts · notifications · repo"]
     components["components/\nTabBar · Table · Sidebar · Footer · …"]
     engine_iface["engine/interface.rs\nEngineHandle · Request · Event"]
     engine_impl["engine/github.rs\nengine/refresh.rs\nengine/watch.rs"]
-    github["github/  ⟨pub crate⟩\nclient · graphql · notifications · auth"]
-    types["types/\nPullRequest · Issue · Notification · …"]
+    github["github/  ⟨pub crate⟩\nclient · graphql · notifications · security · auth"]
+    types["types/\nPullRequest · Issue · Notification · SecurityAlert · …"]
     config["config/\ntypes · loader · keybindings · builtin_themes"]
     theme["theme/\nResolvedTheme · Background"]
     actions["actions/\nclipboard · local · pr · issue · notification"]

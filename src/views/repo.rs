@@ -1409,6 +1409,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             Some(theme.footer_prs),
             Some(theme.footer_issues),
             Some(theme.footer_actions),
+            Some(theme.footer_alerts),
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],

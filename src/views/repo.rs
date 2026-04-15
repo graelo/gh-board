@@ -611,7 +611,8 @@ pub struct RepoViewProps<'a> {
     pub color_depth: ColorDepth,
     pub width: u16,
     pub height: u16,
-    pub preview_width_pct: f64,
+    pub preview_width_pct: Option<State<f64>>,
+    pub default_preview_pct: f64,
     pub show_separator: bool,
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
@@ -657,11 +658,9 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let date_format = props.date_format.unwrap_or("relative");
     let is_active = props.is_active;
 
-    let preview_pct = if props.preview_width_pct > 0.0 {
-        props.preview_width_pct
-    } else {
-        0.45
-    };
+    let preview_pct_state = props.preview_width_pct;
+    let preview_pct = preview_pct_state.map_or(0.45, |s| s.get());
+    let default_pct = props.default_preview_pct;
 
     let mut cursor = hooks.use_state(|| 0usize);
     let mut scroll_offset = hooks.use_state(|| 0usize);
@@ -1095,6 +1094,21 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     BuiltinAction::TogglePreview => {
                                         preview_open.set(!preview_open.get());
                                         preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::SidebarWider => {
+                                        if let Some(mut s) = preview_pct_state {
+                                            s.set((s.get() + 0.05).min(0.80));
+                                        }
+                                    }
+                                    BuiltinAction::SidebarNarrower => {
+                                        if let Some(mut s) = preview_pct_state {
+                                            s.set((s.get() - 0.05).max(0.15));
+                                        }
+                                    }
+                                    BuiltinAction::SidebarResetWidth => {
+                                        if let Some(mut s) = preview_pct_state {
+                                            s.set(default_pct);
+                                        }
                                     }
                                     BuiltinAction::MoveDown if total_rows > 0 => {
                                         let new_cursor =

@@ -500,8 +500,10 @@ pub struct PrsViewProps<'a> {
     pub width: u16,
     /// Available height.
     pub height: u16,
-    /// Preview pane width fraction (from config defaults.preview.width).
-    pub preview_width_pct: f64,
+    /// Shared sidebar width state (fraction of total width).
+    pub preview_width_pct: Option<State<f64>>,
+    /// Default sidebar width from config (for reset).
+    pub default_preview_pct: f64,
     /// Whether filter counts are shown in tabs.
     pub show_filter_count: bool,
     /// Whether table separators are shown.
@@ -552,11 +554,9 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let scope_repo = &props.scope_repo;
     let filter_count = filters_cfg.len();
     let is_active = props.is_active;
-    let preview_pct = if props.preview_width_pct > 0.0 {
-        props.preview_width_pct
-    } else {
-        0.45
-    };
+    let preview_pct_state = props.preview_width_pct;
+    let preview_pct = preview_pct_state.map_or(0.45, |s| s.get());
+    let default_pct = props.default_preview_pct;
 
     // State: active filter index, cursor, scroll offset.
     let mut active_filter = hooks.use_state(|| 0usize);
@@ -1708,6 +1708,21 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                     BuiltinAction::TogglePreview => {
                                         preview_open.set(!preview_open.get());
                                         preview_scroll.set(0);
+                                    }
+                                    BuiltinAction::SidebarWider => {
+                                        if let Some(mut s) = preview_pct_state {
+                                            s.set((s.get() + 0.05).min(0.80));
+                                        }
+                                    }
+                                    BuiltinAction::SidebarNarrower => {
+                                        if let Some(mut s) = preview_pct_state {
+                                            s.set((s.get() - 0.05).max(0.15));
+                                        }
+                                    }
+                                    BuiltinAction::SidebarResetWidth => {
+                                        if let Some(mut s) = preview_pct_state {
+                                            s.set(default_pct);
+                                        }
                                     }
                                     BuiltinAction::Approve => {
                                         input_mode.set(InputMode::Confirm(BuiltinAction::Approve));

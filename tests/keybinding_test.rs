@@ -191,6 +191,9 @@ fn builtin_action_roundtrip() {
         "go_to_alerts",
         "go_to_notifications",
         "go_to_repo",
+        "sidebar_wider",
+        "sidebar_narrower",
+        "sidebar_reset_width",
     ];
     for name in &names {
         let action = BuiltinAction::from_name(name);
@@ -250,6 +253,23 @@ fn default_universal_has_goto_keys() {
         assert!(
             keys.contains(&digit),
             "missing universal binding for {digit}"
+        );
+    }
+}
+
+#[test]
+fn sidebar_resize_keys_resolve() {
+    let merged = MergedBindings::from_config(&KeybindingsConfig::default());
+    let expected = [
+        ("+", BuiltinAction::SidebarWider),
+        ("-", BuiltinAction::SidebarNarrower),
+        ("=", BuiltinAction::SidebarResetWidth),
+    ];
+    for (key, action) in expected {
+        let binding = merged.resolve(key, ViewContext::Prs);
+        assert!(
+            matches!(binding, Some(ResolvedBinding::Builtin(a)) if a == action),
+            "{key} should resolve to {action:?}"
         );
     }
 }

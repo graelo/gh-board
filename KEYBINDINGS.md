@@ -101,6 +101,14 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
 | `S` | `toggle_scope` | Toggle repo scope |
 
+### Alerts view
+
+| Key | Action | Description |
+|---|---|---|
+| `w` | `toggle_workflow_nav` | Toggle category navigator sidebar |
+| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
+| `S` | `toggle_scope` | Toggle repo scope |
+
 ### Branches view
 
 | Key | Action | Description |
@@ -189,6 +197,7 @@ Available template variables:
 | `[[keybindings.prs]]` | PR view |
 | `[[keybindings.issues]]` | Issue view |
 | `[[keybindings.actions]]` | Actions view |
+| `[[keybindings.alerts]]` | Alerts view |
 | `[[keybindings.branches]]` | Branches view |
 
 > **Note:** Notifications keybindings are not currently user-configurable.
@@ -282,3 +291,4 @@ cannot be rebound:
 | `m` / `M` | PR update-branch method picker | Choose merge strategy |
 | `?` / `Esc` | Help overlay | Dismiss overlay |
 | `j` / `k` / `↑` / `↓` / `Enter` / `Esc` | Actions workflow nav panel (when focused) | Navigate the popup list |
+| `j` / `k` / `↑` / `↓` / `Enter` / `Esc` | Alerts category nav panel (when focused) | Navigate the popup list |

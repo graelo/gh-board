@@ -71,6 +71,8 @@ pub struct AppConfig {
     pub actions_filters: Vec<ActionsFilter>,
     #[serde(default, rename = "notifications_filters")]
     pub notifications_filters: Vec<NotificationFilter>,
+    #[serde(default, rename = "alerts_filters")]
+    pub alerts_filters: Vec<AlertsFilter>,
     pub github: GitHubConfig,
     pub defaults: Defaults,
     pub theme: Theme,
@@ -160,6 +162,15 @@ pub struct ActionsFilter {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct AlertsFilter {
+    pub title: String,
+    /// `"owner/repo"` or `"@current"` for auto-detection.
+    pub repo: String,
+    pub host: Option<String>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct NotificationFilter {
     pub title: String,
     pub filters: String,
@@ -196,6 +207,7 @@ pub enum View {
     Prs,
     Issues,
     Actions,
+    Alerts,
     Notifications,
     Repo,
 }
@@ -297,6 +309,7 @@ fn merge_colors(base: &ColorsTheme, overlay: &ColorsTheme) -> ColorsTheme {
             notifications: overlay.footer.notifications.or(base.footer.notifications),
             repo: overlay.footer.repo.or(base.footer.repo),
             actions: overlay.footer.actions.or(base.footer.actions),
+            alerts: overlay.footer.alerts.or(base.footer.alerts),
         },
     }
 }
@@ -422,6 +435,7 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         view_notifications: overlay.view_notifications.or(base.view_notifications),
         view_repo: overlay.view_repo.or(base.view_repo),
         view_actions: overlay.view_actions.or(base.view_actions),
+        view_alerts: overlay.view_alerts.or(base.view_alerts),
         tab_filter: overlay.tab_filter.or(base.tab_filter),
         pill_left: overlay.pill_left.or(base.pill_left),
         pill_right: overlay.pill_right.or(base.pill_right),
@@ -488,6 +502,8 @@ pub struct FooterColors {
     pub repo: Option<Color>,
     #[serde(default, deserialize_with = "color_de::deserialize")]
     pub actions: Option<Color>,
+    #[serde(default, deserialize_with = "color_de::deserialize")]
+    pub alerts: Option<Color>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -745,6 +761,7 @@ pub struct IconConfig {
     pub view_notifications: Option<String>,
     pub view_repo: Option<String>,
     pub view_actions: Option<String>,
+    pub view_alerts: Option<String>,
     // Tab filter marker
     pub tab_filter: Option<String>,
     // Pill caps (rounded edges)

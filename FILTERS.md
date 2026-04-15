@@ -175,10 +175,51 @@ event = "push"
 
 ---
 
+## Alerts Filters
+
+Alerts filters use the GitHub REST API to fetch security alerts from
+Dependabot (`/repos/{owner}/{repo}/dependabot/alerts`), Code Scanning
+(`/repos/{owner}/{repo}/code-scanning/alerts`), and Secret Scanning
+(`/repos/{owner}/{repo}/secret-scanning/alerts`). Like Actions filters,
+they always target a specific repository.
+
+### Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `title` | string | yes | Tab label |
+| `repo` | string | yes | `"owner/repo"` or `"@current"` |
+| `host` | string | no | GHE hostname; defaults to `github.com` |
+| `limit` | integer | no | Max alerts to fetch per category (1–100, default 30) |
+
+### `@current` — follow the working directory
+
+The `@current` placeholder works identically to Actions filters — it resolves
+to the repository detected from the current git remote.
+
+```toml
+# Follow the current repo's security alerts
+[[alerts_filters]]
+title = "Security"
+repo  = "@current"
+
+# Always show alerts for a specific repo
+[[alerts_filters]]
+title = "Infra Alerts"
+repo  = "myorg/infra"
+```
+
+The view fetches all three alert categories (Dependabot, Code Scanning,
+Secret Scanning) for each filter tab and merges them into a single table.
+A category navigator sidebar lets you drill down by alert type or tool
+(e.g., CodeQL, zizmor, poutine).
+
+---
+
 ## GitHub Enterprise (GHE) support
 
 Every filter type (`[[pr_filters]]`, `[[issues_filters]]`,
-`[[actions_filters]]`, `[[notifications_filters]]`) accepts an optional
+`[[actions_filters]]`, `[[alerts_filters]]`, `[[notifications_filters]]`) accepts an optional
 `host` field. When set, all API calls for that filter are routed to the
 specified GHE hostname instead of `github.com`.
 

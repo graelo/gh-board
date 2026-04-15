@@ -7,8 +7,8 @@ descriptions live in `ARCHITECTURE.md`.
 
 ## 1. View component structure
 
-Each view file (`prs.rs`, `issues.rs`, `actions.rs`, `notifications.rs`,
-`repo.rs`) follows the same internal layout:
+Each view file (`prs.rs`, `issues.rs`, `actions.rs`, `alerts.rs`,
+`notifications.rs`, `repo.rs`) follows the same internal layout:
 
 ```text
 1. Column definitions (pure functions returning Vec<Column>)

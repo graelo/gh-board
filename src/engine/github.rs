@@ -11,6 +11,7 @@ use crate::github::{
     client::GitHubClient,
     graphql, notifications as notif,
     rate_limit::{format_rate_limit_message, is_rate_limited},
+    security as gh_security,
 };
 use crate::types::{RunStatus, WorkflowRun};
 
@@ -271,6 +272,110 @@ async fn handle_request(
                         } else {
                             e.to_string()
                         },
+                    });
+                }
+            }
+        }
+
+        // --- Fetch Alerts ---
+        Request::FetchAlerts {
+            filter_idx,
+            filter,
+            reply_tx,
+        } => {
+            let host = filter.host.as_deref().unwrap_or("github.com");
+            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchAlerts") else {
+                return;
+            };
+            let Some((owner, repo)) = filter.repo.split_once('/') else {
+                let _ = reply_tx.send(Event::FetchError {
+                    context: format!("FetchAlerts[{filter_idx}]"),
+                    message: format!("invalid repo format: {}", filter.repo),
+                });
+                return;
+            };
+            let limit = filter.limit.unwrap_or(30).min(100);
+
+            // Fetch all three alert types. Individual 403s are non-fatal.
+            let mut all_alerts = Vec::new();
+            let mut last_rl = None;
+
+            match gh_security::fetch_dependabot_alerts(&octocrab, owner, repo, limit).await {
+                Ok((alerts, rl)) => {
+                    all_alerts.extend(alerts);
+                    if rl.is_some() {
+                        last_rl = rl;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("engine: FetchAlerts[{filter_idx}] dependabot: {e}");
+                }
+            }
+            match gh_security::fetch_code_scanning_alerts(&octocrab, owner, repo, limit).await {
+                Ok((alerts, rl)) => {
+                    all_alerts.extend(alerts);
+                    if rl.is_some() {
+                        last_rl = rl;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("engine: FetchAlerts[{filter_idx}] code-scanning: {e}");
+                }
+            }
+            match gh_security::fetch_secret_scanning_alerts(&octocrab, owner, repo, limit).await {
+                Ok((alerts, rl)) => {
+                    all_alerts.extend(alerts);
+                    if rl.is_some() {
+                        last_rl = rl;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("engine: FetchAlerts[{filter_idx}] secret-scanning: {e}");
+                }
+            }
+
+            // Sort by created_at descending (most recent first)
+            all_alerts.sort_by_key(|a| std::cmp::Reverse(a.created_at));
+
+            scheduler.mark_fetched(filter_idx, ViewKind::Alerts);
+            tracing::debug!(
+                "engine: sending AlertsFetched[{filter_idx}] count={}",
+                all_alerts.len()
+            );
+            let _ = reply_tx.send(Event::AlertsFetched {
+                filter_idx,
+                alerts: all_alerts,
+                rate_limit: last_rl,
+            });
+        }
+
+        // --- Fetch Secret Locations ---
+        Request::FetchSecretLocations {
+            owner,
+            repo,
+            alert_number,
+            reply_tx,
+        } => {
+            let Some(octocrab) =
+                get_octocrab(client, "github.com", &reply_tx, "FetchSecretLocations")
+            else {
+                return;
+            };
+            match gh_security::fetch_secret_alert_locations(&octocrab, &owner, &repo, alert_number)
+                .await
+            {
+                Ok((locations, rate_limit)) => {
+                    let _ = reply_tx.send(Event::SecretLocationsFetched {
+                        alert_number,
+                        locations,
+                        rate_limit,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!("engine: FetchSecretLocations[{alert_number}] error: {e}");
+                    let _ = reply_tx.send(Event::FetchError {
+                        context: format!("FetchSecretLocations[{alert_number}]"),
+                        message: e.to_string(),
                     });
                 }
             }
@@ -1225,6 +1330,11 @@ async fn tick_refresh(
                 reply_tx: notify_tx,
             },
             FilterConfig::Action(f) => Request::FetchActions {
+                filter_idx,
+                filter: f,
+                reply_tx: notify_tx,
+            },
+            FilterConfig::Alert(f) => Request::FetchAlerts {
                 filter_idx,
                 filter: f,
                 reply_tx: notify_tx,

@@ -136,6 +136,11 @@ fn merge_configs(global: AppConfig, local: AppConfig) -> AppConfig {
         } else {
             local.notifications_filters
         },
+        alerts_filters: if local.alerts_filters.is_empty() {
+            global.alerts_filters
+        } else {
+            local.alerts_filters
+        },
         github: merge_github_config(&global.github, &local.github),
         defaults: merge_defaults(&global.defaults, &local.defaults),
         theme: Theme::merge(global.theme, local.theme),

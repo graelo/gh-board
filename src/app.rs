@@ -20,6 +20,7 @@ use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 use crate::types::{RateLimitInfo, RepoRef};
 use crate::views::actions::ActionsView;
+use crate::views::alerts::AlertsView;
 use crate::views::issues::IssuesView;
 use crate::views::notifications::NotificationsView;
 use crate::views::prs::PrsView;
@@ -61,15 +62,17 @@ pub enum ViewKind {
     Prs,
     Issues,
     Actions,
+    Alerts,
     Notifications,
     Repo,
 }
 
 impl ViewKind {
-    pub const ALL: [ViewKind; 5] = [
+    pub const ALL: [ViewKind; 6] = [
         ViewKind::Prs,
         ViewKind::Issues,
         ViewKind::Actions,
+        ViewKind::Alerts,
         ViewKind::Notifications,
         ViewKind::Repo,
     ];
@@ -79,6 +82,7 @@ impl ViewKind {
             Self::Prs => "PRs",
             Self::Issues => "Issues",
             Self::Actions => "Actions",
+            Self::Alerts => "Alerts",
             Self::Notifications => "Notifs",
             Self::Repo => "Repo",
         }
@@ -89,6 +93,7 @@ impl ViewKind {
             Self::Prs => format!("{} {}", icons.view_prs, self.label()),
             Self::Issues => format!("{} {}", icons.view_issues, self.label()),
             Self::Actions => format!("{} {}", icons.view_actions, self.label()),
+            Self::Alerts => format!("{} {}", icons.view_alerts, self.label()),
             Self::Notifications => format!("{} {}", icons.view_notifications, self.label()),
             Self::Repo => format!("{} {}", icons.view_repo, self.label()),
         }
@@ -129,6 +134,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             crate::config::types::View::Issues => ViewKind::Issues,
             crate::config::types::View::Actions => ViewKind::Actions,
             crate::config::types::View::Notifications => ViewKind::Notifications,
+            crate::config::types::View::Alerts => ViewKind::Alerts,
             crate::config::types::View::Repo => ViewKind::Repo,
         }
     });
@@ -171,7 +177,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         let next = match active_view.get() {
             ViewKind::Prs => ViewKind::Issues,
             ViewKind::Issues => ViewKind::Actions,
-            ViewKind::Actions => ViewKind::Notifications,
+            ViewKind::Actions => ViewKind::Alerts,
+            ViewKind::Alerts => ViewKind::Notifications,
             ViewKind::Notifications => ViewKind::Repo,
             ViewKind::Repo => ViewKind::Prs,
         };
@@ -186,7 +193,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             ViewKind::Prs => ViewKind::Repo,
             ViewKind::Issues => ViewKind::Prs,
             ViewKind::Actions => ViewKind::Issues,
-            ViewKind::Notifications => ViewKind::Actions,
+            ViewKind::Alerts => ViewKind::Actions,
+            ViewKind::Notifications => ViewKind::Alerts,
             ViewKind::Repo => ViewKind::Notifications,
         };
         active_view.set(prev);
@@ -258,6 +266,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let filters_issue = config.map(|c| c.issues_filters.as_slice());
     let filters_actions = config.map(|c| c.actions_filters.as_slice());
     let filters_notif = config.map(|c| c.notifications_filters.as_slice());
+    let filters_alerts = config.map(|c| c.alerts_filters.as_slice());
     let repo_path = props.repo_path;
 
     element! {
@@ -346,6 +355,33 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     refetch_interval_minutes: refetch_minutes,
                     nav_target,
                     go_back: go_back_signal,
+                    rate_limit: rest_rate_limit,
+                )
+            }
+            View(
+                display: if active == ViewKind::Alerts { Display::Flex } else { Display::None },
+                flex_grow: 1.0,
+            ) {
+                AlertsView(
+                    filters: filters_alerts,
+                    engine: props.engine,
+                    theme,
+                    keybindings,
+                    color_depth: depth,
+                    width,
+                    height,
+                    preview_width_pct,
+                    show_filter_count: show_count,
+                    show_separator,
+                    scope_repo: scope_repo.clone(),
+                    detected_repo: detected_repo.map(RepoRef::full_name),
+                    should_exit,
+                    switch_view: switch_signal,
+                    switch_view_back: switch_back_signal,
+                    scope_toggle: scope_toggle_signal,
+                    is_active: active == ViewKind::Alerts,
+                    refetch_interval_minutes: refetch_minutes,
+                    date_format,
                     rate_limit: rest_rate_limit,
                 )
             }

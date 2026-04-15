@@ -77,7 +77,7 @@ impl RenderedFooter {
         status: Option<&ActionFeedback>,
         theme: &ResolvedTheme,
         depth: ColorDepth,
-        view_colors: [Option<AppColor>; 5],
+        view_colors: [Option<AppColor>; 6],
         inactive_color: Option<AppColor>,
         text_color: Option<AppColor>,
         border_color: Option<AppColor>,

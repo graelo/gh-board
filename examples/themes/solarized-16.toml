@@ -75,6 +75,7 @@ issues        = "2"        # green
 notifications = "5"        # magenta
 repo          = "13"       # violet
 actions       = "9"        # orange
+alerts        = "3"        # yellow
 
 [theme.colors.markdown]
 text = "11"             # base00

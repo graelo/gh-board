@@ -4,4 +4,5 @@ pub(crate) mod client;
 pub(crate) mod graphql;
 pub(crate) mod notifications;
 pub(crate) mod rate_limit;
+pub(crate) mod security;
 pub(crate) mod types;

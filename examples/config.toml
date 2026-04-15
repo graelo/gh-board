@@ -49,7 +49,7 @@ refetch_interval_minutes = 10
 # ==============================================================================
 
 [defaults]
-# Initial view on startup: "prs", "issues", "notifications", or "repo"
+# Initial view on startup: "prs", "issues", "actions", "alerts", "notifications", or "repo"
 view = "prs"
 
 # Date format: "relative" or a strftime format string like "%Y-%m-%d %H:%M"
@@ -143,6 +143,25 @@ repo = "@current"
 #   {{.ConclusionEmoji}} — emoji only: ✅, ❌, 🚫, ⏰, …
 #   {{.HeadBranch}}      — branch that triggered the run
 # watch_complete_command = "osascript -e 'display notification \"{{.RunName}} #{{.RunNumber}} — {{.ConclusionEmoji}} {{.Conclusion}}\" with title \"gh-board: {{.RepoName}}\"'"
+
+# ==============================================================================
+# ALERTS FILTERS
+# ==============================================================================
+
+# Security alerts: Dependabot, Code Scanning (CodeQL, zizmor, poutine, …),
+# and Secret Scanning. Each filter tab fetches all three categories for the
+# specified repository and merges them into a single table.
+
+# Use "@current" to follow the git repo you launched gh-board from.
+[[alerts_filters]]
+title = "Security"
+repo = "@current"
+
+# [[alerts_filters]]
+# title = "Infra Alerts"
+# repo  = "myorg/infra"
+# limit = 50
+# host  = "github.acme.com"  # Optional: GitHub Enterprise hostname
 
 # ==============================================================================
 # NOTIFICATION FILTERS
@@ -278,6 +297,8 @@ separator = "#6c7086"  # Catppuccin overlay0
 [theme.colors.footer]
 prs = "#89b4fa"  # Catppuccin blue
 issues = "#a6e3a1"  # Catppuccin green
+actions = "#f9e2af"  # Catppuccin yellow
+alerts = "#f9e2af"  # Catppuccin yellow
 notifications = "#cba6f7"  # Catppuccin mauve
 repo = "#b4befe"  # Catppuccin lavender
 
@@ -393,6 +414,14 @@ subheading = "#fab387"  # Peach (## headings in markdown)
 # Preset: "unicode" (default – safe on most terminals), "nerdfont" (requires a
 # Nerd Font patched font), or "ascii" (plain ASCII, works everywhere)
 preset = "unicode"
+
+# --- View labels ---
+# view_prs = "⇄"
+# view_issues = "○"
+# view_actions = "▶"
+# view_alerts = "⚠"
+# view_notifications = "●"
+# view_repo = "⌂"
 
 # --- PR state ---
 # pr_open = "●"
@@ -757,3 +786,15 @@ name = "Switch view back"
 key = "S"
 builtin = "toggle_scope"
 name = "Toggle repo scope"
+
+# ------------------------------------------------------------------------------
+# Alerts view keybindings
+# ------------------------------------------------------------------------------
+
+# Alerts view shares the same defaults as Actions view (navigator toggle,
+# close tab, etc.). Add overrides here to customise alerts-specific keys.
+
+# [[keybindings.alerts]]
+# key = "w"
+# builtin = "toggle_workflow_nav"
+# name = "Toggle category navigator"

@@ -1,4 +1,5 @@
 pub mod actions;
+pub mod alerts;
 pub(crate) mod common;
 pub mod issues;
 pub mod notifications;

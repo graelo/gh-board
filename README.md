@@ -7,7 +7,7 @@ repository branches.
 
 ## Features
 
-**Five views, one dashboard** — switch between them with `n`/`N`, organize each
+**Six views, one dashboard** — switch between them with `n`/`N`, organize each
 with named filter tabs (`h`/`l`), and press `?` anywhere for contextual help.
 
 ### Review & merge PRs
@@ -27,6 +27,13 @@ Mark read, unsubscribe, filter by reason, repo, or status.
 
 Browse workflow runs, re-run failed jobs, cancel runs. Jump straight from a PR's
 check status to its Actions run with `Ctrl+]`.
+
+### Monitor security alerts
+
+Browse Dependabot, code scanning (CodeQL, zizmor, poutine, …), and secret
+scanning alerts. A two-level navigator groups by category and tool, with a
+detail sidebar showing remediation info, code locations, or secret exposure
+details.
 
 ### Open any GitHub URL
 
@@ -197,7 +204,7 @@ config:
 - **Async Runtimes**: smol (UI thread) + Tokio (engine thread)
 - **Syntax Highlighting**: tree-sitter with custom color model integration
 - **Markdown**: pulldown-cmark parser with custom ANSI renderer
-- **GitHub API**: octocrab (GraphQL for PRs/issues, REST for notifications)
+- **GitHub API**: octocrab (GraphQL for PRs/issues, REST for notifications/actions/alerts)
 - **Cache**: moka in-process LRU cache with async support
 
 ## License

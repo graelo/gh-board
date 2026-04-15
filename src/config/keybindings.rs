@@ -38,6 +38,7 @@ pub struct KeybindingsConfig {
     pub prs: Vec<Keybinding>,
     pub issues: Vec<Keybinding>,
     pub actions: Vec<Keybinding>,
+    pub alerts: Vec<Keybinding>,
     pub branches: Vec<Keybinding>,
 }
 
@@ -403,6 +404,16 @@ pub(crate) fn default_actions() -> Vec<Keybinding> {
     ]
 }
 
+/// Default Alerts view keybindings.
+pub(crate) fn default_alerts() -> Vec<Keybinding> {
+    vec![
+        kb("w", "toggle_workflow_nav", "Toggle category navigator"),
+        kb("n", "switch_view", "Switch view"),
+        kb("N", "switch_view_back", "Switch view back"),
+        kb("S", "toggle_scope", "Toggle repo scope"),
+    ]
+}
+
 /// Default Notification view keybindings.
 pub(crate) fn default_notifications() -> Vec<Keybinding> {
     vec![
@@ -445,6 +456,7 @@ pub struct MergedBindings {
     pub prs: Vec<Keybinding>,
     pub issues: Vec<Keybinding>,
     pub actions: Vec<Keybinding>,
+    pub alerts: Vec<Keybinding>,
     pub notifications: Vec<Keybinding>,
     pub branches: Vec<Keybinding>,
 }
@@ -460,6 +472,7 @@ impl MergedBindings {
             prs: merge_lists(&default_prs(), &config.prs),
             issues: merge_lists(&default_issues(), &config.issues),
             actions: merge_lists(&default_actions(), &config.actions),
+            alerts: merge_lists(&default_alerts(), &config.alerts),
             notifications: merge_lists(&default_notifications(), &[]),
             branches: merge_lists(&default_branches(), &config.branches),
         }
@@ -472,6 +485,7 @@ impl MergedBindings {
             ViewContext::Prs => &self.prs,
             ViewContext::Issues => &self.issues,
             ViewContext::Actions => &self.actions,
+            ViewContext::Alerts => &self.alerts,
             ViewContext::Notifications => &self.notifications,
             ViewContext::Branches => &self.branches,
         };
@@ -489,6 +503,7 @@ impl MergedBindings {
             ViewContext::Prs => ("PR", self.prs.as_slice()),
             ViewContext::Issues => ("Issue", self.issues.as_slice()),
             ViewContext::Actions => ("Actions", self.actions.as_slice()),
+            ViewContext::Alerts => ("Alerts", self.alerts.as_slice()),
             ViewContext::Notifications => ("Notification", self.notifications.as_slice()),
             ViewContext::Branches => ("Branch", self.branches.as_slice()),
         };
@@ -503,6 +518,7 @@ pub enum ViewContext {
     Prs,
     Issues,
     Actions,
+    Alerts,
     Notifications,
     Branches,
 }
@@ -556,6 +572,10 @@ impl KeybindingsConfig {
             actions: merge_lists(
                 &default_actions(),
                 &merge_binding_lists(&global.actions, &local.actions),
+            ),
+            alerts: merge_lists(
+                &default_alerts(),
+                &merge_binding_lists(&global.alerts, &local.alerts),
             ),
             branches: merge_lists(
                 &default_branches(),

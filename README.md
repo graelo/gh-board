@@ -7,8 +7,8 @@ repository branches.
 
 ## Features
 
-**Six views, one dashboard** — switch between them with `n`/`N`, organize each
-with named filter tabs (`h`/`l`), and press `?` anywhere for contextual help.
+**Six views, one dashboard** — jump to any with `1`–`6` or cycle with `n`/`N`,
+organize each with named filter tabs (`h`/`l`), and press `?` for contextual help.
 
 ### Review & merge PRs
 

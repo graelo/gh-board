@@ -613,6 +613,37 @@ key = "q"
 builtin = "quit"
 name = "Quit"
 
+# Direct view navigation (1-6)
+[[keybindings.universal]]
+key = "1"
+builtin = "go_to_prs"
+name = "Go to PRs"
+
+[[keybindings.universal]]
+key = "2"
+builtin = "go_to_issues"
+name = "Go to Issues"
+
+[[keybindings.universal]]
+key = "3"
+builtin = "go_to_actions"
+name = "Go to Actions"
+
+[[keybindings.universal]]
+key = "4"
+builtin = "go_to_alerts"
+name = "Go to Alerts"
+
+[[keybindings.universal]]
+key = "5"
+builtin = "go_to_notifications"
+name = "Go to Notifications"
+
+[[keybindings.universal]]
+key = "6"
+builtin = "go_to_repo"
+name = "Go to Repo"
+
 # ------------------------------------------------------------------------------
 # PR view keybindings
 # ------------------------------------------------------------------------------

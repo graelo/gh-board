@@ -5,6 +5,25 @@ All notable changes to gh-board are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.11.0] - 2026-04-15
+
+### Added
+
+- **Alerts view** — 6th view surfacing Dependabot, Code Scanning (CodeQL,
+  zizmor, poutine, …), and Secret Scanning alerts via GitHub REST API. Two-level
+  tree navigator groups by category and tool. Tabbed sidebar with severity pill,
+  markdown-rendered summary, and category-specific detail tab (Remediation /
+  Instances / Locations). Secret alert locations lazy-fetched on demand.
+  Configured via `[[alerts_filters]]` with `@current` support. Yellow-themed
+  footer color across all 25 builtin themes. Dedicated `[keybindings.alerts]`
+  config section
+- **Goto-view keybindings** (`1`–`6`) — jump directly to any view without
+  cycling through `n`/`N`. Updates `previous_view` so `ctrl+t` returns to the
+  origin
+- **Sidebar resize** (`+`/`-`/`=`) — widen or narrow the sidebar by 5% per
+  press, reset to config default with `=`. Width is shared across views and
+  persists through sidebar toggle. Clamped to 15%–80%
+
 ## [0.10.3] - 2026-04-15
 
 ### Added
@@ -252,6 +271,7 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
+[0.11.0]: https://github.com/graelo/gh-board/compare/v0.10.3...v0.11.0
 [0.10.3]: https://github.com/graelo/gh-board/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/graelo/gh-board/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/graelo/gh-board/compare/v0.10.0...v0.10.1

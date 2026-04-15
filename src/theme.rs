@@ -89,6 +89,7 @@ pub struct ResolvedTheme {
     pub footer_actions: Color,
     pub footer_notifications: Color,
     pub footer_repo: Color,
+    pub footer_alerts: Color,
     // Icons
     pub icons: ResolvedIcons,
 }
@@ -169,6 +170,7 @@ impl ResolvedTheme {
                 .notifications
                 .unwrap_or(d.footer_notifications),
             footer_repo: theme.colors.footer.repo.unwrap_or(d.footer_repo),
+            footer_alerts: theme.colors.footer.alerts.unwrap_or(d.footer_alerts),
             icons: ResolvedIcons::resolve(&theme.icons),
         }
     }
@@ -212,6 +214,7 @@ struct Defaults {
     footer_actions: Color,
     footer_notifications: Color,
     footer_repo: Color,
+    footer_alerts: Color,
 }
 
 impl Defaults {
@@ -254,6 +257,7 @@ impl Defaults {
                 footer_actions: Color::Ansi256(13),      // bright magenta/violet
                 footer_notifications: Color::Ansi256(5), // magenta
                 footer_repo: Color::Ansi256(6),          // cyan
+                footer_alerts: Color::Ansi256(3),        // yellow
             },
             Background::Light => Self {
                 text_primary: Color::Ansi256(0),
@@ -292,6 +296,7 @@ impl Defaults {
                 footer_actions: Color::Ansi256(13),      // bright magenta/violet
                 footer_notifications: Color::Ansi256(5), // magenta
                 footer_repo: Color::Ansi256(6),          // cyan
+                footer_alerts: Color::Ansi256(3),        // yellow
             },
         }
     }

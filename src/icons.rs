@@ -70,6 +70,7 @@ pub struct ResolvedIcons {
     pub view_prs: String,
     pub view_issues: String,
     pub view_actions: String,
+    pub view_alerts: String,
     pub view_notifications: String,
     pub view_repo: String,
     // Tab filter marker (1)
@@ -170,6 +171,7 @@ impl ResolvedIcons {
             view_prs: "\u{2195}".to_owned(),            // ↕
             view_issues: "\u{2299}".to_owned(),         // ⊙
             view_actions: "\u{25b6}".to_owned(),        // ▶
+            view_alerts: "\u{26a0}".to_owned(),         // ⚠
             view_notifications: "\u{1f514}".to_owned(), // 🔔
             view_repo: "\u{2387}".to_owned(),           // ⎇
             // Tab filter marker
@@ -273,6 +275,7 @@ impl ResolvedIcons {
             view_notifications: "\u{eaa2}".to_owned(), //  nf-cod-bell
             view_repo: "\u{e727}".to_owned(), //  nf-dev-git_branch
             view_actions: "\u{ebc8}".to_owned(), //  nf-cod-run_all
+            view_alerts: "\u{eb53}".to_owned(), //  nf-cod-shield
             // Tab filter marker
             tab_filter: "\u{f02b}".to_owned(), //  nf-fa-tag
             // Pill caps (Powerline half-circles for rounded edges)
@@ -373,6 +376,7 @@ impl ResolvedIcons {
             view_notifications: "N".to_owned(),
             view_repo: "R".to_owned(),
             view_actions: "A".to_owned(),
+            view_alerts: "S".to_owned(),
             // Tab filter marker
             tab_filter: "#".to_owned(),
             // Pill caps (no rounded edges in ascii preset)
@@ -511,6 +515,7 @@ impl ResolvedIcons {
                 .unwrap_or(base.view_notifications),
             view_repo: config.view_repo.clone().unwrap_or(base.view_repo),
             view_actions: config.view_actions.clone().unwrap_or(base.view_actions),
+            view_alerts: config.view_alerts.clone().unwrap_or(base.view_alerts),
             tab_filter: config.tab_filter.clone().unwrap_or(base.tab_filter),
             pill_left: config.pill_left.clone().unwrap_or(base.pill_left),
             pill_right: config.pill_right.clone().unwrap_or(base.pill_right),

@@ -1,9 +1,11 @@
 use std::sync::mpsc::Sender;
 
-use crate::config::types::{ActionsFilter, IssueFilter, NotificationFilter, PrFilter};
+use crate::config::types::{
+    ActionsFilter, AlertsFilter, IssueFilter, NotificationFilter, PrFilter,
+};
 use crate::types::{
-    Issue, IssueDetail, Notification, PrDetail, PullRequest, RateLimitInfo, WorkflowJob,
-    WorkflowRun,
+    Issue, IssueDetail, Notification, PrDetail, PullRequest, RateLimitInfo, SecretLocation,
+    SecurityAlert, WorkflowJob, WorkflowRun,
 };
 
 /// Handle to the backend engine held by the UI layer.
@@ -64,6 +66,17 @@ pub enum Request {
     FetchActions {
         filter_idx: usize,
         filter: ActionsFilter,
+        reply_tx: Sender<Event>,
+    },
+    FetchAlerts {
+        filter_idx: usize,
+        filter: AlertsFilter,
+        reply_tx: Sender<Event>,
+    },
+    FetchSecretLocations {
+        owner: String,
+        repo: String,
+        alert_number: u64,
         reply_tx: Sender<Event>,
     },
     FetchRunJobs {
@@ -307,6 +320,8 @@ impl Request {
             Self::FetchPrs { reply_tx, .. }
             | Self::FetchIssues { reply_tx, .. }
             | Self::FetchActions { reply_tx, .. }
+            | Self::FetchAlerts { reply_tx, .. }
+            | Self::FetchSecretLocations { reply_tx, .. }
             | Self::FetchRunJobs { reply_tx, .. }
             | Self::FetchNotifications { reply_tx, .. }
             | Self::FetchPrDetail { reply_tx, .. }
@@ -347,6 +362,8 @@ impl Request {
             Self::FetchPrs { .. } => "FetchPrs",
             Self::FetchIssues { .. } => "FetchIssues",
             Self::FetchActions { .. } => "FetchActions",
+            Self::FetchAlerts { .. } => "FetchAlerts",
+            Self::FetchSecretLocations { .. } => "FetchSecretLocations",
             Self::FetchRunJobs { .. } => "FetchRunJobs",
             Self::FetchNotifications { .. } => "FetchNotifications",
             Self::FetchPrDetail { .. } => "FetchPrDetail",
@@ -407,6 +424,16 @@ pub enum Event {
     ActionsFetched {
         filter_idx: usize,
         runs: Vec<WorkflowRun>,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    AlertsFetched {
+        filter_idx: usize,
+        alerts: Vec<SecurityAlert>,
+        rate_limit: Option<RateLimitInfo>,
+    },
+    SecretLocationsFetched {
+        alert_number: u64,
+        locations: Vec<SecretLocation>,
         rate_limit: Option<RateLimitInfo>,
     },
     RunJobsFetched {

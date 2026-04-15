@@ -80,6 +80,32 @@ impl StubEngine {
                     });
                 }
 
+                // Alerts — return empty list
+                Request::FetchAlerts {
+                    filter_idx,
+                    reply_tx,
+                    ..
+                } => {
+                    let _ = reply_tx.send(Event::AlertsFetched {
+                        filter_idx,
+                        alerts: vec![],
+                        rate_limit: None,
+                    });
+                }
+
+                // Secret locations — return empty list
+                Request::FetchSecretLocations {
+                    alert_number,
+                    reply_tx,
+                    ..
+                } => {
+                    let _ = reply_tx.send(Event::SecretLocationsFetched {
+                        alert_number,
+                        locations: vec![],
+                        rate_limit: None,
+                    });
+                }
+
                 // Run jobs — return empty list
                 Request::FetchRunJobs {
                     run_id, reply_tx, ..

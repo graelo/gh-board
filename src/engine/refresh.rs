@@ -1,7 +1,9 @@
 use std::sync::mpsc::Sender;
 use std::time::{Duration, SystemTime};
 
-use crate::config::types::{ActionsFilter, IssueFilter, NotificationFilter, PrFilter};
+use crate::config::types::{
+    ActionsFilter, AlertsFilter, IssueFilter, NotificationFilter, PrFilter,
+};
 
 use super::interface::Event;
 
@@ -12,6 +14,7 @@ pub enum ViewKind {
     Issues,
     Actions,
     Notifications,
+    Alerts,
 }
 
 /// A filter configuration for any view kind.
@@ -21,6 +24,7 @@ pub enum FilterConfig {
     Issue(IssueFilter),
     Action(ActionsFilter),
     Notification(NotificationFilter),
+    Alert(AlertsFilter),
 }
 
 impl FilterConfig {
@@ -30,6 +34,7 @@ impl FilterConfig {
             Self::Issue(_) => ViewKind::Issues,
             Self::Action(_) => ViewKind::Actions,
             Self::Notification(_) => ViewKind::Notifications,
+            Self::Alert(_) => ViewKind::Alerts,
         }
     }
 }

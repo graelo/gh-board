@@ -49,6 +49,7 @@ issues        = "#76946a"
 notifications = "#957fb8"
 repo          = "#6a9589"
 actions       = "#ffa066"
+alerts        = "#e6c384"
 
 [theme.colors.markdown]
 text = "#dcd7ba"

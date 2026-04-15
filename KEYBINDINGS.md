@@ -31,6 +31,9 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `Y` | `copy_url` | Copy URL to clipboard |
 | `?` | `toggle_help` | Toggle help overlay |
 | `q` | `quit` | Quit |
+| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
+| `1`–`6` | `go_to_prs` … `go_to_repo` | Jump directly to a view |
+| `S` | `toggle_scope` | Toggle repo scope |
 
 ### PR view
 
@@ -57,7 +60,7 @@ any of them — or add custom shell commands — in your `config.toml`.
 > to confirm cloning it first (via `gh repo clone`). Set `auto_clone = true`
 > under `[github]` to skip the prompt. Both commands automatically fetch the
 > branch before operating, so they work even when the branch has never been
-> fetched locally. For cross-fork PRs, the fork owner is added as a named git
+> fetched locally. For cross-fork PRs, the fork owners are added as a named git
 > remote (using your `gh config get git_protocol` preference) and the branch
 > tracks the fork, so you can push back to it. `worktree` creates the worktree
 > at `<repo>-worktrees/<branch-slug>/` next to the configured clone path and
@@ -74,8 +77,6 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `c` | `comment` | Comment |
 | `x` | `close` | Close issue |
 | `X` | `reopen` | Reopen issue |
-| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
-| `S` | `toggle_scope` | Toggle repo scope |
 
 ### Notifications view
 
@@ -98,16 +99,12 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `E` | `rerun_all` | Re-run all jobs |
 | `ctrl+x` | `cancel_run` | Cancel run |
 | `W` | `watch_run` | Watch/unwatch workflow run |
-| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
-| `S` | `toggle_scope` | Toggle repo scope |
 
 ### Alerts view
 
 | Key | Action | Description |
 |---|---|---|
 | `w` | `toggle_workflow_nav` | Toggle category navigator sidebar |
-| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
-| `S` | `toggle_scope` | Toggle repo scope |
 
 ### Branches view
 
@@ -120,8 +117,6 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `v` | `view_prs_for_branch` | View PRs for branch |
 | `ctrl+]` | `jump_to_pr` | Jump to PR |
 | `w` | `worktree` | Create/open worktree |
-| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
-| `S` | `toggle_scope` | Toggle repo scope |
 
 ---
 
@@ -270,6 +265,12 @@ The full list of names accepted by the `builtin` field:
 | `go_back` | Go back to previous view (actions) |
 | `close_tab` | Close ephemeral tab (actions) |
 | `watch_run` | Watch/unwatch workflow run (actions) |
+| `go_to_prs` | Go to PRs view |
+| `go_to_issues` | Go to Issues view |
+| `go_to_actions` | Go to Actions view |
+| `go_to_alerts` | Go to Alerts view |
+| `go_to_notifications` | Go to Notifications view |
+| `go_to_repo` | Go to Repo view |
 
 ---
 

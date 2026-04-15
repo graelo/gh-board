@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex};
 
 use iocraft::prelude::*;
 
+use crate::app::ViewKind;
+use crate::config::keybindings::BuiltinAction;
 use crate::engine::Event;
 
 /// Type alias for the event channel pair used by every view.
@@ -22,6 +24,21 @@ pub type EventChannel = (Sender<Event>, Arc<Mutex<std::sync::mpsc::Receiver<Even
 pub fn new_event_channel() -> EventChannel {
     let (tx, rx) = std::sync::mpsc::channel::<Event>();
     (tx, Arc::new(Mutex::new(rx)))
+}
+
+/// Map a `GoTo*` keybinding action to its target `ViewKind`.
+///
+/// Returns `None` for non-`GoTo*` actions.
+pub(crate) fn goto_target(action: BuiltinAction) -> Option<ViewKind> {
+    match action {
+        BuiltinAction::GoToPrs => Some(ViewKind::Prs),
+        BuiltinAction::GoToIssues => Some(ViewKind::Issues),
+        BuiltinAction::GoToActions => Some(ViewKind::Actions),
+        BuiltinAction::GoToAlerts => Some(ViewKind::Alerts),
+        BuiltinAction::GoToNotifications => Some(ViewKind::Notifications),
+        BuiltinAction::GoToRepo => Some(ViewKind::Repo),
+        _ => None,
+    }
 }
 
 /// Mark a filter index as in-flight (or clear it).

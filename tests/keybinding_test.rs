@@ -1,6 +1,6 @@
 use gh_board::config::keybindings::{
     BuiltinAction, Keybinding, KeybindingsConfig, MergedBindings, ResolvedBinding, TemplateVars,
-    ViewContext, default_prs, expand_template,
+    ViewContext, default_prs, default_universal, expand_template,
 };
 
 // ---------------------------------------------------------------------------
@@ -185,6 +185,12 @@ fn builtin_action_roundtrip() {
         "go_back",
         "close_tab",
         "watch_run",
+        "go_to_prs",
+        "go_to_issues",
+        "go_to_actions",
+        "go_to_alerts",
+        "go_to_notifications",
+        "go_to_repo",
     ];
     for name in &names {
         let action = BuiltinAction::from_name(name);
@@ -210,4 +216,40 @@ fn default_actions_has_watch_run_and_resolves() {
         ),
         "W should resolve to WatchRun in Actions context"
     );
+}
+
+// ---------------------------------------------------------------------------
+// Go-to-view keybinding tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn goto_keys_resolve_to_goto_actions() {
+    let merged = MergedBindings::from_config(&KeybindingsConfig::default());
+    let expected = [
+        ("1", BuiltinAction::GoToPrs),
+        ("2", BuiltinAction::GoToIssues),
+        ("3", BuiltinAction::GoToActions),
+        ("4", BuiltinAction::GoToAlerts),
+        ("5", BuiltinAction::GoToNotifications),
+        ("6", BuiltinAction::GoToRepo),
+    ];
+    for (key, action) in expected {
+        let binding = merged.resolve(key, ViewContext::Prs);
+        assert!(
+            matches!(binding, Some(ResolvedBinding::Builtin(a)) if a == action),
+            "{key} should resolve to {action:?}"
+        );
+    }
+}
+
+#[test]
+fn default_universal_has_goto_keys() {
+    let bindings = default_universal();
+    let keys: Vec<&str> = bindings.iter().map(|b| b.key.as_str()).collect();
+    for digit in ["1", "2", "3", "4", "5", "6"] {
+        assert!(
+            keys.contains(&digit),
+            "missing universal binding for {digit}"
+        );
+    }
 }

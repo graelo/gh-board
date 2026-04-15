@@ -617,6 +617,8 @@ pub struct RepoViewProps<'a> {
     pub switch_view: Option<State<bool>>,
     /// Signal to switch to the previous view.
     pub switch_view_back: Option<State<bool>>,
+    /// Signal to jump directly to a specific view.
+    pub goto_view: Option<State<Option<ViewKind>>>,
     /// Signal to toggle repo scope.
     pub scope_toggle: Option<State<bool>>,
     /// Active scope repo (e.g. `"owner/repo"`), or `None` for global.
@@ -647,6 +649,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let switch_view_back = props.switch_view_back;
+    let goto_view = props.goto_view;
     let scope_toggle = props.scope_toggle;
     let scope_repo = &props.scope_repo;
     let detected_repo = props.detected_repo.cloned();
@@ -1024,6 +1027,11 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     BuiltinAction::SwitchViewBack => {
                                         if let Some(mut sv) = switch_view_back {
                                             sv.set(true);
+                                        }
+                                    }
+                                    action if super::common::goto_target(action).is_some() => {
+                                        if let Some(mut gv) = goto_view {
+                                            gv.set(super::common::goto_target(action));
                                         }
                                     }
                                     BuiltinAction::ToggleScope => {

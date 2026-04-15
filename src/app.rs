@@ -200,6 +200,18 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         active_view.set(prev);
     }
 
+    // Go-to-view signal: a child view sets this to jump directly to a specific view.
+    // Unlike switch_view/switch_view_back (which just cycle), goto updates
+    // previous_view so that go_back (ctrl+t) returns to the origin.
+    let mut goto_view_signal = hooks.use_state(|| Option::<ViewKind>::None);
+    if let Some(dest) = goto_view_signal.get() {
+        goto_view_signal.set(None);
+        if active_view.get() != dest {
+            previous_view.set(Some(active_view.get()));
+            active_view.set(dest);
+        }
+    }
+
     // Scope state: repo-scoped vs global.
     // When deep-linking to an external repo (different from the detected local
     // repo), start in global scope so config tabs aren't hidden by scope.
@@ -289,6 +301,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
                     scope_repo: scope_repo.clone(),
                     repo_paths,
@@ -320,6 +333,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
                     scope_repo: scope_repo.clone(),
                     date_format,
@@ -350,6 +364,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
                     is_active: active == ViewKind::Actions,
                     refetch_interval_minutes: refetch_minutes,
@@ -378,6 +393,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
                     is_active: active == ViewKind::Alerts,
                     refetch_interval_minutes: refetch_minutes,
@@ -402,6 +418,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
                     scope_repo: scope_repo.clone(),
                     date_format,
@@ -425,6 +442,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     should_exit,
                     switch_view: switch_signal,
                     switch_view_back: switch_back_signal,
+                    goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
                     scope_repo: scope_repo.clone(),
                     repo_path,

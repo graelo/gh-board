@@ -361,6 +361,8 @@ pub struct ActionsViewProps<'a> {
     pub should_exit: Option<State<bool>>,
     pub switch_view: Option<State<bool>>,
     pub switch_view_back: Option<State<bool>>,
+    /// Signal to jump directly to a specific view.
+    pub goto_view: Option<State<Option<ViewKind>>>,
     pub scope_toggle: Option<State<bool>>,
     pub is_active: bool,
     pub refetch_interval_minutes: u32,
@@ -384,6 +386,7 @@ pub fn ActionsView<'a>(
     let should_exit = props.should_exit;
     let switch_view = props.switch_view;
     let switch_view_back = props.switch_view_back;
+    let goto_view = props.goto_view;
     let filter_count = filters_cfg.len();
     let is_active = props.is_active;
     let preview_pct = props.preview_width_pct;
@@ -1372,6 +1375,11 @@ pub fn ActionsView<'a>(
                                     BuiltinAction::SwitchViewBack => {
                                         if let Some(mut sv) = switch_view_back {
                                             sv.set(true);
+                                        }
+                                    }
+                                    action if super::common::goto_target(action).is_some() => {
+                                        if let Some(mut gv) = goto_view {
+                                            gv.set(super::common::goto_target(action));
                                         }
                                     }
                                     BuiltinAction::ToggleScope => {

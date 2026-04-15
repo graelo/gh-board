@@ -93,6 +93,12 @@ pub enum BuiltinAction {
     // View switching
     SwitchView,
     SwitchViewBack,
+    GoToPrs,
+    GoToIssues,
+    GoToActions,
+    GoToAlerts,
+    GoToNotifications,
+    GoToRepo,
     // Scope
     ToggleScope,
     // Actions view
@@ -155,6 +161,12 @@ impl BuiltinAction {
             "view_prs_for_branch" => Self::ViewPrsForBranch,
             "switch_view" => Self::SwitchView,
             "switch_view_back" => Self::SwitchViewBack,
+            "go_to_prs" => Self::GoToPrs,
+            "go_to_issues" => Self::GoToIssues,
+            "go_to_actions" => Self::GoToActions,
+            "go_to_alerts" => Self::GoToAlerts,
+            "go_to_notifications" => Self::GoToNotifications,
+            "go_to_repo" => Self::GoToRepo,
             "toggle_scope" => Self::ToggleScope,
             "toggle_workflow_nav" => Self::ToggleWorkflowNav,
             "rerun_failed" => Self::RerunFailed,
@@ -213,6 +225,12 @@ impl BuiltinAction {
             Self::ViewPrsForBranch => "View PRs for branch",
             Self::SwitchView => "Switch view",
             Self::SwitchViewBack => "Switch view back",
+            Self::GoToPrs => "Go to PRs",
+            Self::GoToIssues => "Go to Issues",
+            Self::GoToActions => "Go to Actions",
+            Self::GoToAlerts => "Go to Alerts",
+            Self::GoToNotifications => "Go to Notifications",
+            Self::GoToRepo => "Go to Repo",
             Self::ToggleScope => "Toggle repo scope",
             Self::ToggleWorkflowNav => "Toggle workflow navigator",
             Self::RerunFailed => "Re-run failed jobs",
@@ -348,6 +366,12 @@ pub fn default_universal() -> Vec<Keybinding> {
         kb("Y", "copy_url", "Copy URL"),
         kb("?", "toggle_help", "Toggle help"),
         kb("q", "quit", "Quit"),
+        kb("1", "go_to_prs", "Go to PRs"),
+        kb("2", "go_to_issues", "Go to Issues"),
+        kb("3", "go_to_actions", "Go to Actions"),
+        kb("4", "go_to_alerts", "Go to Alerts"),
+        kb("5", "go_to_notifications", "Go to Notifications"),
+        kb("6", "go_to_repo", "Go to Repo"),
     ]
 }
 

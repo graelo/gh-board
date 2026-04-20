@@ -5,14 +5,14 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
+use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar};
-use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarColors};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
-use crate::components::text_input::{RenderedTextInput, TextInput};
+use crate::components::text_input::{RenderedTextInput, TextInput, TextInputColors};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -1930,14 +1930,17 @@ pub fn ActionsView<'a>(
         scrollbar_thumb_color: Some(theme.border_primary),
     });
 
+    let tab_colors = TabBarColors {
+        active: Some(theme.footer_actions),
+        inactive: Some(theme.footer_actions),
+        border: Some(theme.border_faint),
+    };
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
         current_filter_idx,
         props.show_filter_count,
         depth,
-        Some(theme.footer_actions),
-        Some(theme.footer_actions),
-        Some(theme.border_faint),
+        &tab_colors,
         &theme.icons.tab_filter,
         &theme.icons.tab_ephemeral,
     );
@@ -1955,18 +1958,24 @@ pub fn ActionsView<'a>(
                 prompt,
                 "",
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_warning),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_warning),
+                    border: Some(theme.border_faint),
+                    ..Default::default()
+                },
             ))
         }
         InputMode::Search => Some(RenderedTextInput::build(
             "/",
             &search_query.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Normal => None,
     };
@@ -2000,6 +2009,19 @@ pub fn ActionsView<'a>(
         None => "all repos".to_owned(),
     };
 
+    let footer_colors = FooterColors {
+        view_colors: [
+            Some(theme.footer_prs),
+            Some(theme.footer_issues),
+            Some(theme.footer_actions),
+            Some(theme.footer_alerts),
+            Some(theme.footer_notifications),
+            Some(theme.footer_repo),
+        ],
+        inactive: Some(theme.text_faint),
+        text: Some(theme.text_faint),
+        border: Some(theme.border_faint),
+    };
     let rendered_footer = RenderedFooter::build(
         ViewKind::Actions,
         &theme.icons,
@@ -2010,17 +2032,7 @@ pub fn ActionsView<'a>(
         action_status.read().as_ref(),
         &theme,
         depth,
-        [
-            Some(theme.footer_prs),
-            Some(theme.footer_issues),
-            Some(theme.footer_actions),
-            Some(theme.footer_alerts),
-            Some(theme.footer_notifications),
-            Some(theme.footer_repo),
-        ],
-        Some(theme.text_faint),
-        Some(theme.text_faint),
-        Some(theme.border_faint),
+        &footer_colors,
     );
 
     let rendered_help = if help_visible.get() {
@@ -2053,6 +2065,12 @@ pub fn ActionsView<'a>(
         let jobs_lines = build_jobs_lines(&sidebar_jobs, sidebar_loading, &theme);
         let sidebar_title = current_run_for_detail
             .map_or_else(|| "Jobs".to_owned(), |r| format!("Run #{}", r.run_number));
+        let sidebar_colors = SidebarColors {
+            title: Some(theme.text_primary),
+            border: Some(theme.border_faint),
+            indicator: Some(theme.text_faint),
+            thumb: Some(theme.border_primary),
+        };
         let sidebar = RenderedSidebar::build(
             &sidebar_title,
             &jobs_lines,
@@ -2060,10 +2078,7 @@ pub fn ActionsView<'a>(
             sidebar_visible_lines,
             sidebar_w,
             depth,
-            Some(theme.text_primary),
-            Some(theme.border_faint),
-            Some(theme.text_faint),
-            Some(theme.border_primary),
+            &sidebar_colors,
         );
         if detail_scroll.get() != sidebar.clamped_scroll {
             detail_scroll.set(sidebar.clamped_scroll);

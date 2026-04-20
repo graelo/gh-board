@@ -6,6 +6,14 @@ use crate::color::{Color as AppColor, ColorDepth};
 // TabBar component
 // ---------------------------------------------------------------------------
 
+/// Groups color parameters for `RenderedTabBar::build`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TabBarColors {
+    pub active: Option<AppColor>,
+    pub inactive: Option<AppColor>,
+    pub border: Option<AppColor>,
+}
+
 /// A single tab definition.
 #[derive(Debug, Clone)]
 pub struct Tab {
@@ -28,21 +36,24 @@ pub struct RenderedTab {
 }
 
 impl RenderedTabBar {
-    #[allow(clippy::too_many_arguments)]
     pub fn build(
         tabs: &[Tab],
         active: usize,
         show_count: bool,
         depth: ColorDepth,
-        active_color: Option<AppColor>,
-        inactive_color: Option<AppColor>,
-        border_color: Option<AppColor>,
+        colors: &TabBarColors,
         icon: &str,
         ephemeral_icon: &str,
     ) -> Self {
-        let active_fg = active_color.map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
-        let inactive_fg = inactive_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let active_fg = colors
+            .active
+            .map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
+        let inactive_fg = colors
+            .inactive
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let border_fg = colors
+            .border
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
 
         let icon_prefix = if icon.is_empty() {
             String::new()

@@ -8,6 +8,15 @@ use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 use crate::types::RateLimitInfo;
 
+/// Groups color parameters for `RenderedFooter::build`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FooterColors {
+    pub view_colors: [Option<AppColor>; 6],
+    pub inactive: Option<AppColor>,
+    pub text: Option<AppColor>,
+    pub border: Option<AppColor>,
+}
+
 // ---------------------------------------------------------------------------
 // ActionFeedback — typed status messages with icon + color
 // ---------------------------------------------------------------------------
@@ -77,14 +86,17 @@ impl RenderedFooter {
         status: Option<&ActionFeedback>,
         theme: &ResolvedTheme,
         depth: ColorDepth,
-        view_colors: [Option<AppColor>; 6],
-        inactive_color: Option<AppColor>,
-        text_color: Option<AppColor>,
-        border_color: Option<AppColor>,
+        colors: &FooterColors,
     ) -> Self {
-        let inactive_fg = inactive_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let text_fg = text_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let inactive_fg = colors
+            .inactive
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let text_fg = colors
+            .text
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let border_fg = colors
+            .border
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let separator_fg = text_fg;
 
         let (status_text, status_fg) = match status {
@@ -94,7 +106,7 @@ impl RenderedFooter {
 
         let views = ViewKind::ALL
             .iter()
-            .zip(view_colors.iter())
+            .zip(colors.view_colors.iter())
             .map(|(v, color)| FooterView {
                 label: v.icon_label(icons),
                 is_active: *v == active_view,

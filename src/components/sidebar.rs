@@ -9,6 +9,20 @@ use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::StyledLine;
 
 // ---------------------------------------------------------------------------
+// Sidebar color config
+// ---------------------------------------------------------------------------
+
+/// Groups the four color parameters shared by `RenderedSidebar::build` and
+/// `build_tabbed`, reducing argument count.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SidebarColors {
+    pub title: Option<AppColor>,
+    pub border: Option<AppColor>,
+    pub indicator: Option<AppColor>,
+    pub thumb: Option<AppColor>,
+}
+
+// ---------------------------------------------------------------------------
 // Sidebar tab enum (T072 — FR-014)
 // ---------------------------------------------------------------------------
 
@@ -188,7 +202,6 @@ pub struct RenderedSidebar {
 
 impl RenderedSidebar {
     /// Build a pre-rendered sidebar from markdown lines and display parameters.
-    #[allow(clippy::too_many_arguments)]
     pub fn build(
         title: &str,
         lines: &[StyledLine],
@@ -196,10 +209,7 @@ impl RenderedSidebar {
         visible_lines: usize,
         width: u16,
         depth: ColorDepth,
-        title_color: Option<AppColor>,
-        border_color: Option<AppColor>,
-        indicator_color: Option<AppColor>,
-        thumb_color: Option<AppColor>,
+        colors: &SidebarColors,
     ) -> Self {
         Self::build_tabbed(
             title,
@@ -208,10 +218,7 @@ impl RenderedSidebar {
             visible_lines,
             width,
             depth,
-            title_color,
-            border_color,
-            indicator_color,
-            thumb_color,
+            colors,
             None,
             None,
             None,
@@ -229,20 +236,21 @@ impl RenderedSidebar {
         visible_lines: usize,
         width: u16,
         depth: ColorDepth,
-        title_color: Option<AppColor>,
-        border_color: Option<AppColor>,
-        indicator_color: Option<AppColor>,
-        thumb_color: Option<AppColor>,
+        colors: &SidebarColors,
         active_tab: Option<SidebarTab>,
         icons: Option<&ResolvedIcons>,
         meta: Option<SidebarMeta>,
         visible_tabs: Option<&[SidebarTab]>,
         tab_label_overrides: Option<&HashMap<SidebarTab, String>>,
     ) -> Self {
-        let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
-        let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let indicator_fg = indicator_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let thumb_fg = thumb_color.map_or(border_fg, |c| c.to_crossterm_color(depth));
+        let title_fg = colors.title.map_or(Color::White, |c| c.to_crossterm_color(depth));
+        let border_fg = colors.border.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let indicator_fg = colors
+            .indicator
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let thumb_fg = colors
+            .thumb
+            .map_or(border_fg, |c| c.to_crossterm_color(depth));
 
         // Visual row estimation: each logical line may wrap to multiple
         // terminal rows.  Content width = sidebar width minus left border (1)

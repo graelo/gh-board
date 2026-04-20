@@ -6,6 +6,17 @@ use crate::color::{Color as AppColor, ColorDepth};
 // Pre-rendered text input (T056)
 // ---------------------------------------------------------------------------
 
+/// Groups color parameters for `RenderedTextInput` builder methods.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TextInputColors {
+    pub text: Option<AppColor>,
+    pub prompt: Option<AppColor>,
+    pub border: Option<AppColor>,
+    pub highlight: Option<AppColor>,
+    pub highlight_bg: Option<AppColor>,
+    pub suggestion: Option<AppColor>,
+}
+
 pub struct RenderedTextInput {
     pub prompt: String,
     pub text: String,
@@ -28,45 +39,34 @@ impl RenderedTextInput {
         prompt: &str,
         text: &str,
         depth: ColorDepth,
-        text_color: Option<AppColor>,
-        prompt_color: Option<AppColor>,
-        border_color: Option<AppColor>,
+        colors: &TextInputColors,
     ) -> Self {
-        Self::build_with_suggestions(
-            prompt,
-            text,
-            depth,
-            text_color,
-            prompt_color,
-            border_color,
-            &[],
-            None,
-            None,
-            None,
-            None,
-        )
+        Self::build_with_suggestions(prompt, text, depth, colors, &[], None)
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn build_with_suggestions(
         prompt: &str,
         text: &str,
         depth: ColorDepth,
-        text_color: Option<AppColor>,
-        prompt_color: Option<AppColor>,
-        border_color: Option<AppColor>,
+        colors: &TextInputColors,
         suggestions: &[String],
         selected_index: Option<usize>,
-        highlight_color: Option<AppColor>,
-        _highlight_bg_color: Option<AppColor>,
-        suggestion_color: Option<AppColor>,
     ) -> Self {
-        let text_fg = text_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
-        let prompt_fg = prompt_color.map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
-        let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let highlight_fg = highlight_color.map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
-        let suggestion_fg =
-            suggestion_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let text_fg = colors
+            .text
+            .map_or(Color::White, |c| c.to_crossterm_color(depth));
+        let prompt_fg = colors
+            .prompt
+            .map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
+        let border_fg = colors
+            .border
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let highlight_fg = colors
+            .highlight
+            .map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
+        let suggestion_fg = colors
+            .suggestion
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
 
         let rendered_suggestions: Vec<RenderedSuggestion> = suggestions
             .iter()
@@ -93,19 +93,13 @@ impl RenderedTextInput {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub fn build_with_multiselect_suggestions(
         prompt: &str,
         text: &str,
         depth: ColorDepth,
-        text_color: Option<AppColor>,
-        prompt_color: Option<AppColor>,
-        border_color: Option<AppColor>,
+        colors: &TextInputColors,
         suggestions: &[String],
         highlighted_idx: Option<usize>,
-        highlight_color: Option<AppColor>,
-        highlight_bg_color: Option<AppColor>,
-        suggestion_color: Option<AppColor>,
         selected_labels: &[String],
     ) -> Self {
         use std::collections::HashSet;
@@ -120,19 +114,7 @@ impl RenderedTextInput {
                 }
             })
             .collect();
-        Self::build_with_suggestions(
-            prompt,
-            text,
-            depth,
-            text_color,
-            prompt_color,
-            border_color,
-            &display,
-            highlighted_idx,
-            highlight_color,
-            highlight_bg_color,
-            suggestion_color,
-        )
+        Self::build_with_suggestions(prompt, text, depth, colors, &display, highlighted_idx)
     }
 }
 

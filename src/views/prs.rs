@@ -5,18 +5,20 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
+use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::selection_overlay::{
     RenderedSelectionOverlay, SelectionOverlay, SelectionOverlayBuildConfig, SelectionOverlayItem,
 };
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
+use crate::components::sidebar::{
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab,
+};
 use crate::components::sidebar_tabs;
-use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
-use crate::components::text_input::{self, RenderedTextInput, TextInput};
+use crate::components::text_input::{self, RenderedTextInput, TextInput, TextInputColors};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -2486,6 +2488,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
         let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
+        let sidebar_colors = SidebarColors {
+            title: Some(theme.text_primary),
+            border: Some(theme.border_faint),
+            indicator: Some(theme.text_faint),
+            thumb: Some(theme.border_primary),
+        };
         let sidebar = RenderedSidebar::build_tabbed(
             title,
             &md_lines,
@@ -2493,10 +2501,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             sidebar_visible_lines,
             sidebar_width,
             depth,
-            Some(theme.text_primary),
-            Some(theme.border_faint),
-            Some(theme.text_faint),
-            Some(theme.border_primary),
+            &sidebar_colors,
             Some(current_tab),
             Some(&theme.icons),
             sidebar_meta,
@@ -2512,14 +2517,17 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         None
     };
 
+    let tab_colors = TabBarColors {
+        active: Some(theme.footer_prs),
+        inactive: Some(theme.footer_prs),
+        border: Some(theme.border_faint),
+    };
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
         current_filter_idx,
         props.show_filter_count,
         depth,
-        Some(theme.footer_prs),
-        Some(theme.footer_prs),
-        Some(theme.border_faint),
+        &tab_colors,
         &theme.icons.tab_filter,
         &theme.icons.tab_ephemeral,
     );
@@ -2548,14 +2556,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 &prompt,
                 &buf,
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_secondary),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_secondary),
+                    border: Some(theme.border_faint),
+                    highlight: Some(theme.text_primary),
+                    highlight_bg: Some(theme.bg_selected),
+                    suggestion: Some(theme.text_faint),
+                },
                 &filtered,
                 selected_idx,
-                Some(theme.text_primary),
-                Some(theme.bg_selected),
-                Some(theme.text_faint),
                 &selected,
             ))
         }
@@ -2579,14 +2589,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 &prompt,
                 &buf,
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_secondary),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_secondary),
+                    border: Some(theme.border_faint),
+                    highlight: Some(theme.text_primary),
+                    highlight_bg: Some(theme.bg_selected),
+                    suggestion: Some(theme.text_faint),
+                },
                 &filtered,
                 selected_idx,
-                Some(theme.text_primary),
-                Some(theme.bg_selected),
-                Some(theme.text_faint),
                 &selected,
             ))
         }
@@ -2594,9 +2606,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             "Comment (Ctrl+D to submit, Esc to cancel):",
             &input_buffer.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Confirm(action) => {
             let prompt = match action {
@@ -2614,27 +2629,36 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 prompt,
                 "",
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_warning),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_warning),
+                    border: Some(theme.border_faint),
+                    ..Default::default()
+                },
             ))
         }
         InputMode::Search => Some(RenderedTextInput::build(
             "/",
             &search_query.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Normal => None,
         InputMode::UpdateBranchMethod => Some(RenderedTextInput::build(
             "[m]erge  Esc cancel",
             "",
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_warning),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_warning),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
     };
 
@@ -2664,6 +2688,19 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         Some(repo) => repo.clone(),
         None => "all repos".to_owned(),
     };
+    let footer_colors = FooterColors {
+        view_colors: [
+            Some(theme.footer_prs),
+            Some(theme.footer_issues),
+            Some(theme.footer_actions),
+            Some(theme.footer_alerts),
+            Some(theme.footer_notifications),
+            Some(theme.footer_repo),
+        ],
+        inactive: Some(theme.text_faint),
+        text: Some(theme.text_faint),
+        border: Some(theme.border_faint),
+    };
     let rendered_footer = RenderedFooter::build(
         ViewKind::Prs,
         &theme.icons,
@@ -2674,17 +2711,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         action_status.read().as_ref(),
         &theme,
         depth,
-        [
-            Some(theme.footer_prs),
-            Some(theme.footer_issues),
-            Some(theme.footer_actions),
-            Some(theme.footer_alerts),
-            Some(theme.footer_notifications),
-            Some(theme.footer_repo),
-        ],
-        Some(theme.text_faint),
-        Some(theme.text_faint),
-        Some(theme.border_faint),
+        &footer_colors,
     );
 
     let rendered_help = if help_visible.get() {

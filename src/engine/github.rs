@@ -143,7 +143,6 @@ impl GitHubEngine {
 // Request dispatch
 // ---------------------------------------------------------------------------
 
-#[expect(clippy::too_many_lines)]
 async fn handle_request(
     req: Request,
     client: &mut GitHubClient,
@@ -155,1141 +154,1058 @@ async fn handle_request(
     let label = req.label();
     tracing::debug!("engine: received request: {label}");
     match req {
-        // --- Fetch PRs ---
-        Request::FetchPrs {
-            filter_idx,
-            filter,
-            force,
-            reply_tx,
-        } => {
-            let host = filter.host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchPrs") else {
-                return;
-            };
-            let cache = client.cache();
-            let limit = filter.limit.unwrap_or(100);
-            let cache_opt = if force { None } else { Some(&cache) };
-            match graphql::search_pull_requests_all(&octocrab, &filter.filters, limit, cache_opt)
-                .await
-            {
-                Ok((prs, rate_limit)) => {
-                    scheduler.mark_fetched(filter_idx, ViewKind::Prs);
-                    tracing::debug!(
-                        "engine: sending PrsFetched[{filter_idx}] count={}",
-                        prs.len()
-                    );
-                    let _ = reply_tx.send(Event::PrsFetched {
-                        filter_idx,
-                        prs,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchPrs[{filter_idx}] error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchPrs[{filter_idx}]"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
+        Request::FetchPrs { filter_idx, filter, force, reply_tx } =>
+            handle_fetch_prs(client, scheduler, filter_idx, filter, force, reply_tx).await,
+        Request::FetchIssues { filter_idx, filter, force, reply_tx } =>
+            handle_fetch_issues(client, scheduler, filter_idx, filter, force, reply_tx).await,
+        Request::FetchActions { filter_idx, filter, reply_tx } =>
+            handle_fetch_actions(client, scheduler, filter_idx, filter, reply_tx).await,
+        Request::FetchAlerts { filter_idx, filter, reply_tx } =>
+            handle_fetch_alerts(client, scheduler, filter_idx, filter, reply_tx).await,
+        Request::FetchSecretLocations { owner, repo, alert_number, reply_tx } =>
+            handle_fetch_secret_locations(client, owner, repo, alert_number, reply_tx).await,
+        Request::FetchRunJobs { owner, repo, run_id, host, reply_tx } =>
+            handle_fetch_run_jobs(client, owner, repo, run_id, host, reply_tx).await,
+        Request::FetchNotifications { filter_idx, filter, reply_tx } =>
+            handle_fetch_notifications(client, scheduler, filter_idx, filter, reply_tx).await,
+        Request::FetchPrDetail { pr_ref, force, reply_tx } =>
+            handle_fetch_pr_detail(client, pr_ref, force, reply_tx).await,
+        Request::FetchIssueDetail { owner, repo, number, reply_tx } =>
+            handle_fetch_issue_detail(client, owner, repo, number, reply_tx).await,
+        Request::PrefetchPrDetails { prs, reply_tx } =>
+            handle_prefetch_pr_details(client, prs, reply_tx).await,
+        Request::RegisterRefresh { configs, notify_tx } =>
+            scheduler.register(configs, refresh_interval, &notify_tx),
+        Request::ApprovePr { owner, repo, number, body, reply_tx } =>
+            handle_approve_pr(client, owner, repo, number, body, reply_tx).await,
+        Request::MergePr { owner, repo, number, reply_tx } =>
+            handle_merge_pr(client, owner, repo, number, reply_tx).await,
+        Request::ClosePr { owner, repo, number, reply_tx } =>
+            handle_close_pr(client, owner, repo, number, reply_tx).await,
+        Request::ReopenPr { owner, repo, number, reply_tx } =>
+            handle_reopen_pr(client, owner, repo, number, reply_tx).await,
+        Request::AddPrComment { owner, repo, number, body, reply_tx } =>
+            handle_add_pr_comment(client, owner, repo, number, body, reply_tx).await,
+        Request::UpdateBranch { owner, repo, number, reply_tx } =>
+            handle_update_branch(client, owner, repo, number, reply_tx).await,
+        Request::ReadyForReview { owner, repo, number, reply_tx } =>
+            handle_ready_for_review(client, owner, repo, number, reply_tx).await,
+        Request::SetPrAssignees { owner, repo, number, logins, reply_tx } =>
+            handle_set_pr_assignees(client, owner, repo, number, logins, reply_tx).await,
+        Request::SetPrLabels { owner, repo, number, labels, reply_tx } =>
+            handle_set_pr_labels(client, owner, repo, number, labels, reply_tx).await,
+        Request::CloseIssue { owner, repo, number, reply_tx } =>
+            handle_close_issue(client, owner, repo, number, reply_tx).await,
+        Request::ReopenIssue { owner, repo, number, reply_tx } =>
+            handle_reopen_issue(client, owner, repo, number, reply_tx).await,
+        Request::AddIssueComment { owner, repo, number, body, reply_tx } =>
+            handle_add_issue_comment(client, owner, repo, number, body, reply_tx).await,
+        Request::SetIssueLabels { owner, repo, number, labels, reply_tx } =>
+            handle_set_issue_labels(client, owner, repo, number, labels, reply_tx).await,
+        Request::SetIssueAssignees { owner, repo, number, logins, reply_tx } =>
+            handle_set_issue_assignees(client, owner, repo, number, logins, reply_tx).await,
+        Request::RerunWorkflowRun { owner, repo, run_id, failed_only, reply_tx } =>
+            handle_rerun_workflow_run(client, owner, repo, run_id, failed_only, reply_tx).await,
+        Request::CancelWorkflowRun { owner, repo, run_id, reply_tx } =>
+            handle_cancel_workflow_run(client, owner, repo, run_id, reply_tx).await,
+        Request::MarkNotificationRead { id, reply_tx } =>
+            handle_mark_notification_read(client, id, reply_tx).await,
+        Request::MarkAllNotificationsRead { reply_tx } =>
+            handle_mark_all_notifications_read(client, reply_tx).await,
+        Request::UnsubscribeNotification { id, reply_tx } =>
+            handle_unsubscribe_notification(client, id, reply_tx).await,
+        Request::FetchRepoLabels { owner, repo, reply_tx } =>
+            handle_fetch_repo_labels(client, owner, repo, reply_tx).await,
+        Request::FetchRepoCollaborators { owner, repo, reply_tx } =>
+            handle_fetch_repo_collaborators(client, owner, repo, reply_tx).await,
+        Request::RefreshPr { owner, repo, number, base_ref, head_repo_owner, head_ref, reply_tx } => {
+            let pr_ref = PrRef { owner, repo, number, base_ref, head_repo_owner, head_ref };
+            handle_refresh_pr(client, pr_ref, reply_tx).await;
         }
-
-        // --- Fetch Issues ---
-        Request::FetchIssues {
-            filter_idx,
-            filter,
-            force,
-            reply_tx,
-        } => {
-            let host = filter.host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchIssues") else {
-                return;
-            };
-            let cache = client.cache();
-            let limit = filter.limit.unwrap_or(100);
-            let cache_opt = if force { None } else { Some(&cache) };
-            match graphql::search_issues_all(&octocrab, &filter.filters, limit, cache_opt).await {
-                Ok((issues, rate_limit)) => {
-                    scheduler.mark_fetched(filter_idx, ViewKind::Issues);
-                    tracing::debug!(
-                        "engine: sending IssuesFetched[{filter_idx}] count={}",
-                        issues.len()
-                    );
-                    let _ = reply_tx.send(Event::IssuesFetched {
-                        filter_idx,
-                        issues,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchIssues[{filter_idx}] error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchIssues[{filter_idx}]"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Fetch Actions ---
-        Request::FetchActions {
-            filter_idx,
-            filter,
-            reply_tx,
-        } => {
-            let host = filter.host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchActions") else {
-                return;
-            };
-            match gh_actions::fetch_workflow_runs(&octocrab, &filter).await {
-                Ok((runs, rate_limit)) => {
-                    scheduler.mark_fetched(filter_idx, ViewKind::Actions);
-                    tracing::debug!(
-                        "engine: sending ActionsFetched[{filter_idx}] count={}",
-                        runs.len()
-                    );
-                    let _ = reply_tx.send(Event::ActionsFetched {
-                        filter_idx,
-                        runs,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchActions[{filter_idx}] error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchActions[{filter_idx}]"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Fetch Alerts ---
-        Request::FetchAlerts {
-            filter_idx,
-            filter,
-            reply_tx,
-        } => {
-            let host = filter.host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchAlerts") else {
-                return;
-            };
-            let Some((owner, repo)) = filter.repo.split_once('/') else {
-                let _ = reply_tx.send(Event::FetchError {
-                    context: format!("FetchAlerts[{filter_idx}]"),
-                    message: format!("invalid repo format: {}", filter.repo),
-                });
-                return;
-            };
-            let limit = filter.limit.unwrap_or(30).min(100);
-
-            // Fetch all three alert types. Individual 403s are non-fatal.
-            let mut all_alerts = Vec::new();
-            let mut last_rl = None;
-
-            match gh_security::fetch_dependabot_alerts(&octocrab, owner, repo, limit).await {
-                Ok((alerts, rl)) => {
-                    all_alerts.extend(alerts);
-                    if rl.is_some() {
-                        last_rl = rl;
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchAlerts[{filter_idx}] dependabot: {e}");
-                }
-            }
-            match gh_security::fetch_code_scanning_alerts(&octocrab, owner, repo, limit).await {
-                Ok((alerts, rl)) => {
-                    all_alerts.extend(alerts);
-                    if rl.is_some() {
-                        last_rl = rl;
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchAlerts[{filter_idx}] code-scanning: {e}");
-                }
-            }
-            match gh_security::fetch_secret_scanning_alerts(&octocrab, owner, repo, limit).await {
-                Ok((alerts, rl)) => {
-                    all_alerts.extend(alerts);
-                    if rl.is_some() {
-                        last_rl = rl;
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchAlerts[{filter_idx}] secret-scanning: {e}");
-                }
-            }
-
-            // Sort by created_at descending (most recent first)
-            all_alerts.sort_by_key(|a| std::cmp::Reverse(a.created_at));
-
-            scheduler.mark_fetched(filter_idx, ViewKind::Alerts);
-            tracing::debug!(
-                "engine: sending AlertsFetched[{filter_idx}] count={}",
-                all_alerts.len()
-            );
-            let _ = reply_tx.send(Event::AlertsFetched {
-                filter_idx,
-                alerts: all_alerts,
-                rate_limit: last_rl,
-            });
-        }
-
-        // --- Fetch Secret Locations ---
-        Request::FetchSecretLocations {
-            owner,
-            repo,
-            alert_number,
-            reply_tx,
-        } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "FetchSecretLocations")
-            else {
-                return;
-            };
-            match gh_security::fetch_secret_alert_locations(&octocrab, &owner, &repo, alert_number)
-                .await
-            {
-                Ok((locations, rate_limit)) => {
-                    let _ = reply_tx.send(Event::SecretLocationsFetched {
-                        alert_number,
-                        locations,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchSecretLocations[{alert_number}] error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchSecretLocations[{alert_number}]"),
-                        message: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        // --- Fetch Run Jobs ---
-        Request::FetchRunJobs {
-            owner,
-            repo,
-            run_id,
-            host,
-            reply_tx,
-        } => {
-            let host = host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunJobs") else {
-                return;
-            };
-            match gh_actions::fetch_run_jobs(&octocrab, &owner, &repo, run_id).await {
-                Ok((jobs, rate_limit)) => {
-                    tracing::debug!(
-                        "engine: sending RunJobsFetched run_id={run_id} count={}",
-                        jobs.len()
-                    );
-                    let _ = reply_tx.send(Event::RunJobsFetched {
-                        run_id,
-                        jobs,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchRunJobs run_id={run_id} error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchRunJobs[{run_id}]"),
-                        message: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        // --- Fetch Notifications ---
-        Request::FetchNotifications {
-            filter_idx,
-            filter,
-            reply_tx,
-        } => {
-            let host = filter.host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchNotifications") else {
-                return;
-            };
-            let limit = filter.limit.unwrap_or(50);
-            let params = notif::parse_filters(&filter.filters, limit);
-            match notif::fetch_notifications(&octocrab, &params).await {
-                Ok((notifications, rate_limit)) => {
-                    scheduler.mark_fetched(filter_idx, ViewKind::Notifications);
-                    tracing::debug!(
-                        "engine: sending NotificationsFetched[{filter_idx}] count={}",
-                        notifications.len()
-                    );
-                    let _ = reply_tx.send(Event::NotificationsFetched {
-                        filter_idx,
-                        notifications,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchNotifications[{filter_idx}] error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchNotifications[{filter_idx}]"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Fetch PR Detail ---
-        Request::FetchPrDetail {
-            pr_ref,
-            force,
-            reply_tx,
-        } => {
-            let PrRef {
-                owner,
-                repo,
-                number,
-                base_ref,
-                head_repo_owner,
-                head_ref,
-            } = pr_ref;
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchPrDetail")
-            else {
-                return;
-            };
-            let cache = client.cache();
-            if force {
-                let cache_key = format!("pr:{owner}/{repo}#{number}");
-                cache.remove(&cache_key).await;
-            }
-            match graphql::fetch_pr_detail(&octocrab, &owner, &repo, number, Some(&cache)).await {
-                Ok((mut detail, rate_limit)) => {
-                    if detail.behind_by.is_none()
-                        && let Some(ref head_owner) = head_repo_owner
-                    {
-                        match graphql::fetch_compare(
-                            &octocrab, &owner, &repo, &base_ref, head_owner, &head_ref,
-                        )
-                        .await
-                        {
-                            Ok(n) => detail.behind_by = n,
-                            Err(e) => {
-                                tracing::warn!("engine: compare API failed for #{number}: {e:#}");
-                            }
-                        }
-                    }
-                    tracing::debug!("engine: sending PrDetailFetched #{number}");
-                    let _ = reply_tx.send(Event::PrDetailFetched {
-                        number,
-                        detail,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchPrDetail #{number} error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchPrDetail #{number}"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Fetch Issue Detail ---
-        Request::FetchIssueDetail {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchIssueDetail")
-            else {
-                return;
-            };
-            let cache = client.cache();
-            match graphql::fetch_issue_detail(&octocrab, &owner, &repo, number, Some(&cache)).await
-            {
-                Ok((detail, rate_limit)) => {
-                    tracing::debug!("engine: sending IssueDetailFetched #{number}");
-                    let _ = reply_tx.send(Event::IssueDetailFetched {
-                        number,
-                        detail,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchIssueDetail #{number} error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchIssueDetail #{number}"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Prefetch PR Details ---
-        Request::PrefetchPrDetails { prs, reply_tx } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "PrefetchPrDetails")
-            else {
-                return;
-            };
-            let cache = client.cache();
-            for pr in prs {
-                let number = pr.number;
-                match graphql::fetch_pr_detail(&octocrab, &pr.owner, &pr.repo, number, Some(&cache))
-                    .await
-                {
-                    Ok((mut detail, rate_limit)) => {
-                        if detail.behind_by.is_none()
-                            && let Some(ref head_owner) = pr.head_repo_owner
-                        {
-                            match graphql::fetch_compare(
-                                &octocrab,
-                                &pr.owner,
-                                &pr.repo,
-                                &pr.base_ref,
-                                head_owner,
-                                &pr.head_ref,
-                            )
-                            .await
-                            {
-                                Ok(n) => detail.behind_by = n,
-                                Err(e) => {
-                                    tracing::debug!(
-                                        "engine: compare API failed for #{number}: {e:#}"
-                                    );
-                                }
-                            }
-                        }
-                        tracing::debug!("engine: sending PrDetailFetched #{number} (prefetch)");
-                        let _ = reply_tx.send(Event::PrDetailFetched {
-                            number,
-                            detail,
-                            rate_limit,
-                        });
-                    }
-                    Err(e) => {
-                        tracing::warn!("engine: PrefetchPrDetails #{number} error: {e}");
-                        // Continue prefetching remaining PRs even if one fails.
-                    }
-                }
-            }
-        }
-
-        // --- Register refresh ---
-        Request::RegisterRefresh { configs, notify_tx } => {
-            scheduler.register(configs, refresh_interval, &notify_tx);
-        }
-
-        // -----------------------------------------------------------------------
-        // Mutation operations — PR
-        // -----------------------------------------------------------------------
-        Request::ApprovePr {
-            owner,
-            repo,
-            number,
-            body,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ApprovePr") else {
-                return;
-            };
-            let result =
-                pr_actions::approve(&octocrab, &owner, &repo, number, body.as_deref()).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Approved PR #{number}"),
-                format!("Approve PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::MergePr {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MergePr") else {
-                return;
-            };
-            let result = pr_actions::merge(&octocrab, &owner, &repo, number).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Merged PR #{number}"),
-                format!("Merge PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::ClosePr {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ClosePr") else {
-                return;
-            };
-            let result = pr_actions::close(&octocrab, &owner, &repo, number).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Closed PR #{number}"),
-                format!("Close PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::ReopenPr {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenPr") else {
-                return;
-            };
-            let result = pr_actions::reopen(&octocrab, &owner, &repo, number).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Reopened PR #{number}"),
-                format!("Reopen PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::AddPrComment {
-            owner,
-            repo,
-            number,
-            body,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddPrComment")
-            else {
-                return;
-            };
-            let result = pr_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Added comment to PR #{number}"),
-                format!("Add comment to PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::UpdateBranch {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UpdateBranch")
-            else {
-                return;
-            };
-            let result = pr_actions::update_branch(&octocrab, &owner, &repo, number).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Updated branch for PR #{number}"),
-                format!("Update branch for PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::ReadyForReview {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReadyForReview")
-            else {
-                return;
-            };
-            let result = pr_actions::ready_for_review(&octocrab, &owner, &repo, number).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Marked PR #{number} as ready for review"),
-                format!("Mark PR #{number} as ready for review"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::SetPrAssignees {
-            owner,
-            repo,
-            number,
-            logins,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrAssignees")
-            else {
-                return;
-            };
-            let result =
-                issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Set assignees on PR #{number}"),
-                format!("Set assignees on PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        Request::SetPrLabels {
-            owner,
-            repo,
-            number,
-            labels,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrLabels")
-            else {
-                return;
-            };
-            let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
-            let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Set labels on PR #{number}"),
-                format!("Set labels on PR #{number}"),
-                ck,
-            )
-            .await;
-        }
-
-        // -----------------------------------------------------------------------
-        // Mutation operations — Issue
-        // -----------------------------------------------------------------------
-        Request::CloseIssue {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CloseIssue") else {
-                return;
-            };
-            let result = issue_actions::close(&octocrab, &owner, &repo, number).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Closed issue #{number}"),
-                format!("Close issue #{number}"),
-                None,
-            )
-            .await;
-        }
-
-        Request::ReopenIssue {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenIssue")
-            else {
-                return;
-            };
-            let result = issue_actions::reopen(&octocrab, &owner, &repo, number).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Reopened issue #{number}"),
-                format!("Reopen issue #{number}"),
-                None,
-            )
-            .await;
-        }
-
-        Request::AddIssueComment {
-            owner,
-            repo,
-            number,
-            body,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddIssueComment")
-            else {
-                return;
-            };
-            let result = issue_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Added comment to issue #{number}"),
-                format!("Add comment to issue #{number}"),
-                None,
-            )
-            .await;
-        }
-
-        Request::SetIssueLabels {
-            owner,
-            repo,
-            number,
-            labels,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueLabels")
-            else {
-                return;
-            };
-            let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Set labels on issue #{number}"),
-                format!("Set labels on issue #{number}"),
-                None,
-            )
-            .await;
-        }
-
-        Request::SetIssueAssignees {
-            owner,
-            repo,
-            number,
-            logins,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueAssignees")
-            else {
-                return;
-            };
-            let result =
-                issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Set assignees on issue #{number}"),
-                format!("Set assignees on issue #{number}"),
-                None,
-            )
-            .await;
-        }
-
-        // -----------------------------------------------------------------------
-        // Mutation operations — Actions
-        // -----------------------------------------------------------------------
-        Request::RerunWorkflowRun {
-            owner,
-            repo,
-            run_id,
-            failed_only,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RerunWorkflowRun")
-            else {
-                return;
-            };
-            let result =
-                gh_actions::rerun_workflow_run(&octocrab, &owner, &repo, run_id, failed_only).await;
-            let label = if failed_only {
-                "failed jobs"
-            } else {
-                "all jobs"
-            };
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Re-run {label} queued for run #{run_id}"),
-                format!("Re-run workflow run #{run_id}"),
-                None,
-            )
-            .await;
-        }
-
-        Request::CancelWorkflowRun {
-            owner,
-            repo,
-            run_id,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CancelWorkflowRun")
-            else {
-                return;
-            };
-            let result = gh_actions::cancel_workflow_run(&octocrab, &owner, &repo, run_id).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Cancelled run #{run_id}"),
-                format!("Cancel workflow run #{run_id}"),
-                None,
-            )
-            .await;
-        }
-
-        // -----------------------------------------------------------------------
-        // Mutation operations — Notification
-        // -----------------------------------------------------------------------
-        Request::MarkNotificationRead { id, reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "MarkNotificationRead")
-            else {
-                return;
-            };
-            let result = notif::mark_as_read(&octocrab, &id).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Marked notification {id} as read"),
-                format!("Mark notification {id} as read"),
-                None,
-            )
-            .await;
-        }
-
-        Request::MarkAllNotificationsRead { reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "MarkAllNotificationsRead")
-            else {
-                return;
-            };
-            let result = notif::mark_all_as_read(&octocrab).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                "Marked all notifications as read".to_owned(),
-                "Mark all notifications as read".to_owned(),
-                None,
-            )
-            .await;
-        }
-
-        Request::UnsubscribeNotification { id, reply_tx } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "UnsubscribeNotification")
-            else {
-                return;
-            };
-            let result = notif::unsubscribe(&octocrab, &id).await;
-            send_mutation_result(
-                client,
-                &reply_tx,
-                result,
-                format!("Unsubscribed from notification {id}"),
-                format!("Unsubscribe from notification {id}"),
-                None,
-            )
-            .await;
-        }
-
-        // --- Fetch Repo Labels ---
-        Request::FetchRepoLabels {
-            owner,
-            repo,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchRepoLabels")
-            else {
-                return;
-            };
-            let cache = client.cache();
-            match graphql::fetch_repo_labels(&octocrab, &owner, &repo, Some(&cache)).await {
-                Ok((labels, rate_limit)) => {
-                    tracing::debug!(
-                        "engine: sending RepoLabelsFetched {owner}/{repo} count={}",
-                        labels.len()
-                    );
-                    let _ = reply_tx.send(Event::RepoLabelsFetched {
-                        labels: labels.into_iter().map(|l| l.name).collect(),
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchRepoLabels {owner}/{repo} error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchRepoLabels {owner}/{repo}"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Fetch Repo Collaborators ---
-        Request::FetchRepoCollaborators {
-            owner,
-            repo,
-            reply_tx,
-        } => {
-            let Some(octocrab) =
-                get_octocrab(client, "github.com", &reply_tx, "FetchRepoCollaborators")
-            else {
-                return;
-            };
-            let cache = client.cache();
-            match graphql::fetch_repo_collaborators(&octocrab, &owner, &repo, Some(&cache)).await {
-                Ok((logins, rate_limit)) => {
-                    tracing::debug!(
-                        "engine: sending RepoCollaboratorsFetched {owner}/{repo} count={}",
-                        logins.len()
-                    );
-                    let _ = reply_tx.send(Event::RepoCollaboratorsFetched { logins, rate_limit });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchRepoCollaborators {owner}/{repo} error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("FetchRepoCollaborators {owner}/{repo}"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Refresh single PR (combined search-row + detail) ---
-        Request::RefreshPr {
-            owner,
-            repo,
-            number,
-            base_ref,
-            head_repo_owner,
-            head_ref,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RefreshPr") else {
-                return;
-            };
-            let cache = client.cache();
-            // Evict both cache keys so subsequent fetches also get fresh data.
-            let full_key = format!("full_pr:{owner}/{repo}#{number}");
-            let detail_key = format!("pr:{owner}/{repo}#{number}");
-            cache.remove(&full_key).await;
-            cache.remove(&detail_key).await;
-            match graphql::fetch_single_pr(&octocrab, &owner, &repo, number, Some(&cache)).await {
-                Ok((pr, mut detail, rate_limit)) => {
-                    if detail.behind_by.is_none()
-                        && let Some(ref head_owner) = head_repo_owner
-                    {
-                        match graphql::fetch_compare(
-                            &octocrab, &owner, &repo, &base_ref, head_owner, &head_ref,
-                        )
-                        .await
-                        {
-                            Ok(n) => detail.behind_by = n,
-                            Err(e) => {
-                                tracing::warn!("engine: compare API failed for #{number}: {e:#}");
-                            }
-                        }
-                    }
-                    tracing::debug!("engine: sending PrRefreshed #{number}");
-                    let _ = reply_tx.send(Event::PrRefreshed {
-                        number,
-                        pr: Box::new(pr),
-                        detail,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: RefreshPr #{number} error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("RefreshPr #{number}"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Refresh single Issue (combined search-row + detail) ---
-        Request::RefreshIssue {
-            owner,
-            repo,
-            number,
-            reply_tx,
-        } => {
-            let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RefreshIssue")
-            else {
-                return;
-            };
-            let cache = client.cache();
-            let full_key = format!("full_issue:{owner}/{repo}#{number}");
-            let detail_key = format!("issue:{owner}/{repo}#{number}");
-            cache.remove(&full_key).await;
-            cache.remove(&detail_key).await;
-            match graphql::fetch_single_issue(&octocrab, &owner, &repo, number, Some(&cache)).await
-            {
-                Ok((issue, detail, rate_limit)) => {
-                    tracing::debug!("engine: sending IssueRefreshed #{number}");
-                    let _ = reply_tx.send(Event::IssueRefreshed {
-                        number,
-                        issue: Box::new(issue),
-                        detail,
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: RefreshIssue #{number} error: {e}");
-                    let _ = reply_tx.send(Event::FetchError {
-                        context: format!("RefreshIssue #{number}"),
-                        message: if is_rate_limited(&e) {
-                            format_rate_limit_message(&e)
-                        } else {
-                            e.to_string()
-                        },
-                    });
-                }
-            }
-        }
-
-        // --- Fetch single run by ID (deep-link navigation) ---
-        Request::FetchRunById {
-            owner,
-            repo,
-            run_id,
-            host,
-            reply_tx,
-        } => {
-            let host = host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunById") else {
-                return;
-            };
-            match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
-                Ok((run, rate_limit)) => {
-                    tracing::debug!("engine: sending SingleRunFetched run_id={run_id}");
-                    let _ = reply_tx.send(Event::SingleRunFetched {
-                        run_id,
-                        run: Some(run),
-                        rate_limit,
-                    });
-                }
-                Err(e) => {
-                    tracing::warn!("engine: FetchRunById run_id={run_id} error: {e}");
-                    let _ = reply_tx.send(Event::SingleRunFetched {
-                        run_id,
-                        run: None,
-                        rate_limit: None,
-                    });
-                }
-            }
-        }
-
-        // --- Watch/Unwatch workflow run ---
-        Request::WatchRun {
-            owner,
-            repo,
-            run_id,
-            host,
-            reply_tx,
-        } => {
-            watch_scheduler.add(
-                owner.clone(),
-                repo.clone(),
-                run_id,
-                host.clone(),
-                reply_tx.clone(),
-            );
-            // Immediately fetch the run to catch already-completed runs.
-            let api_host = host.as_deref().unwrap_or("github.com");
-            let Some(octocrab) = get_octocrab(client, api_host, &reply_tx, "WatchRun") else {
-                return;
-            };
-            match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
-                Ok((run, rate_limit)) => {
-                    let completed = run.status == RunStatus::Completed;
-                    let _ = reply_tx.send(Event::WatchedRunUpdated {
-                        run_id,
-                        run: run.clone(),
-                        completed,
-                        rate_limit,
-                    });
-                    if completed {
-                        fire_watch_hook(complete_command, &run, &owner, &repo, &reply_tx);
-                        watch_scheduler.complete(run_id);
-                    } else {
-                        watch_scheduler.mark_polled(run_id);
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("engine: WatchRun initial fetch run_id={run_id} error: {e}");
-                }
-            }
-        }
-
+        Request::RefreshIssue { owner, repo, number, reply_tx } =>
+            handle_refresh_issue(client, owner, repo, number, reply_tx).await,
+        Request::FetchRunById { owner, repo, run_id, host, reply_tx } =>
+            handle_fetch_run_by_id(client, owner, repo, run_id, host, reply_tx).await,
+        Request::WatchRun { owner, repo, run_id, host, reply_tx } =>
+            handle_watch_run(client, watch_scheduler, complete_command, owner, repo, run_id, host, reply_tx).await,
         Request::UnwatchRun { run_id } => {
             watch_scheduler.remove(run_id);
             tracing::debug!("engine: unwatched run_id={run_id}");
         }
-
         Request::Shutdown => unreachable!("handled at run_loop level"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-request handler functions
+// ---------------------------------------------------------------------------
+
+/// Format an error for reply, using rate-limit info when available.
+fn format_fetch_error(e: &anyhow::Error) -> String {
+    if is_rate_limited(e) {
+        format_rate_limit_message(e)
+    } else {
+        e.to_string()
+    }
+}
+
+async fn handle_fetch_prs(
+    client: &mut GitHubClient,
+    scheduler: &mut RefreshScheduler,
+    filter_idx: usize,
+    filter: crate::config::types::PrFilter,
+    force: bool,
+    reply_tx: Sender<Event>,
+) {
+    let host = filter.host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchPrs") else {
+        return;
+    };
+    let cache = client.cache();
+    let limit = filter.limit.unwrap_or(100);
+    let cache_opt = if force { None } else { Some(&cache) };
+    match graphql::search_pull_requests_all(&octocrab, &filter.filters, limit, cache_opt).await {
+        Ok((prs, rate_limit)) => {
+            scheduler.mark_fetched(filter_idx, ViewKind::Prs);
+            tracing::debug!("engine: sending PrsFetched[{filter_idx}] count={}", prs.len());
+            let _ = reply_tx.send(Event::PrsFetched { filter_idx, prs, rate_limit });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchPrs[{filter_idx}] error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchPrs[{filter_idx}]"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_issues(
+    client: &mut GitHubClient,
+    scheduler: &mut RefreshScheduler,
+    filter_idx: usize,
+    filter: crate::config::types::IssueFilter,
+    force: bool,
+    reply_tx: Sender<Event>,
+) {
+    let host = filter.host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchIssues") else {
+        return;
+    };
+    let cache = client.cache();
+    let limit = filter.limit.unwrap_or(100);
+    let cache_opt = if force { None } else { Some(&cache) };
+    match graphql::search_issues_all(&octocrab, &filter.filters, limit, cache_opt).await {
+        Ok((issues, rate_limit)) => {
+            scheduler.mark_fetched(filter_idx, ViewKind::Issues);
+            tracing::debug!("engine: sending IssuesFetched[{filter_idx}] count={}", issues.len());
+            let _ = reply_tx.send(Event::IssuesFetched { filter_idx, issues, rate_limit });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchIssues[{filter_idx}] error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchIssues[{filter_idx}]"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_actions(
+    client: &mut GitHubClient,
+    scheduler: &mut RefreshScheduler,
+    filter_idx: usize,
+    filter: crate::config::types::ActionsFilter,
+    reply_tx: Sender<Event>,
+) {
+    let host = filter.host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchActions") else {
+        return;
+    };
+    match gh_actions::fetch_workflow_runs(&octocrab, &filter).await {
+        Ok((runs, rate_limit)) => {
+            scheduler.mark_fetched(filter_idx, ViewKind::Actions);
+            tracing::debug!("engine: sending ActionsFetched[{filter_idx}] count={}", runs.len());
+            let _ = reply_tx.send(Event::ActionsFetched { filter_idx, runs, rate_limit });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchActions[{filter_idx}] error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchActions[{filter_idx}]"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_alerts(
+    client: &mut GitHubClient,
+    scheduler: &mut RefreshScheduler,
+    filter_idx: usize,
+    filter: crate::config::types::AlertsFilter,
+    reply_tx: Sender<Event>,
+) {
+    let host = filter.host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchAlerts") else {
+        return;
+    };
+    let Some((owner, repo)) = filter.repo.split_once('/') else {
+        let _ = reply_tx.send(Event::FetchError {
+            context: format!("FetchAlerts[{filter_idx}]"),
+            message: format!("invalid repo format: {}", filter.repo),
+        });
+        return;
+    };
+    let limit = filter.limit.unwrap_or(30).min(100);
+
+    let mut all_alerts = Vec::new();
+    let mut last_rl = None;
+
+    match gh_security::fetch_dependabot_alerts(&octocrab, owner, repo, limit).await {
+        Ok((alerts, rl)) => {
+            all_alerts.extend(alerts);
+            if rl.is_some() { last_rl = rl; }
+        }
+        Err(e) => tracing::warn!("engine: FetchAlerts[{filter_idx}] dependabot: {e}"),
+    }
+    match gh_security::fetch_code_scanning_alerts(&octocrab, owner, repo, limit).await {
+        Ok((alerts, rl)) => {
+            all_alerts.extend(alerts);
+            if rl.is_some() { last_rl = rl; }
+        }
+        Err(e) => tracing::warn!("engine: FetchAlerts[{filter_idx}] code-scanning: {e}"),
+    }
+    match gh_security::fetch_secret_scanning_alerts(&octocrab, owner, repo, limit).await {
+        Ok((alerts, rl)) => {
+            all_alerts.extend(alerts);
+            if rl.is_some() { last_rl = rl; }
+        }
+        Err(e) => tracing::warn!("engine: FetchAlerts[{filter_idx}] secret-scanning: {e}"),
+    }
+
+    all_alerts.sort_by_key(|a| std::cmp::Reverse(a.created_at));
+
+    scheduler.mark_fetched(filter_idx, ViewKind::Alerts);
+    tracing::debug!("engine: sending AlertsFetched[{filter_idx}] count={}", all_alerts.len());
+    let _ = reply_tx.send(Event::AlertsFetched {
+        filter_idx,
+        alerts: all_alerts,
+        rate_limit: last_rl,
+    });
+}
+
+async fn handle_fetch_secret_locations(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    alert_number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchSecretLocations")
+    else {
+        return;
+    };
+    match gh_security::fetch_secret_alert_locations(&octocrab, &owner, &repo, alert_number).await {
+        Ok((locations, rate_limit)) => {
+            let _ = reply_tx.send(Event::SecretLocationsFetched {
+                alert_number,
+                locations,
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchSecretLocations[{alert_number}] error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchSecretLocations[{alert_number}]"),
+                message: e.to_string(),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_run_jobs(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    run_id: u64,
+    host: Option<String>,
+    reply_tx: Sender<Event>,
+) {
+    let host = host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunJobs") else {
+        return;
+    };
+    match gh_actions::fetch_run_jobs(&octocrab, &owner, &repo, run_id).await {
+        Ok((jobs, rate_limit)) => {
+            tracing::debug!("engine: sending RunJobsFetched run_id={run_id} count={}", jobs.len());
+            let _ = reply_tx.send(Event::RunJobsFetched { run_id, jobs, rate_limit });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchRunJobs run_id={run_id} error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchRunJobs[{run_id}]"),
+                message: e.to_string(),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_notifications(
+    client: &mut GitHubClient,
+    scheduler: &mut RefreshScheduler,
+    filter_idx: usize,
+    filter: crate::config::types::NotificationFilter,
+    reply_tx: Sender<Event>,
+) {
+    let host = filter.host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchNotifications") else {
+        return;
+    };
+    let limit = filter.limit.unwrap_or(50);
+    let params = notif::parse_filters(&filter.filters, limit);
+    match notif::fetch_notifications(&octocrab, &params).await {
+        Ok((notifications, rate_limit)) => {
+            scheduler.mark_fetched(filter_idx, ViewKind::Notifications);
+            tracing::debug!(
+                "engine: sending NotificationsFetched[{filter_idx}] count={}",
+                notifications.len()
+            );
+            let _ = reply_tx.send(Event::NotificationsFetched {
+                filter_idx,
+                notifications,
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchNotifications[{filter_idx}] error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchNotifications[{filter_idx}]"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_pr_detail(
+    client: &mut GitHubClient,
+    pr_ref: PrRef,
+    force: bool,
+    reply_tx: Sender<Event>,
+) {
+    let PrRef { owner, repo, number, base_ref, head_repo_owner, head_ref } = pr_ref;
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchPrDetail") else {
+        return;
+    };
+    let cache = client.cache();
+    if force {
+        let cache_key = format!("pr:{owner}/{repo}#{number}");
+        cache.remove(&cache_key).await;
+    }
+    match graphql::fetch_pr_detail(&octocrab, &owner, &repo, number, Some(&cache)).await {
+        Ok((mut detail, rate_limit)) => {
+            if detail.behind_by.is_none()
+                && let Some(ref head_owner) = head_repo_owner
+            {
+                match graphql::fetch_compare(
+                    &octocrab, &owner, &repo, &base_ref, head_owner, &head_ref,
+                )
+                .await
+                {
+                    Ok(n) => detail.behind_by = n,
+                    Err(e) => tracing::warn!("engine: compare API failed for #{number}: {e:#}"),
+                }
+            }
+            tracing::debug!("engine: sending PrDetailFetched #{number}");
+            let _ = reply_tx.send(Event::PrDetailFetched { number, detail, rate_limit });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchPrDetail #{number} error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchPrDetail #{number}"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_issue_detail(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchIssueDetail") else {
+        return;
+    };
+    let cache = client.cache();
+    match graphql::fetch_issue_detail(&octocrab, &owner, &repo, number, Some(&cache)).await {
+        Ok((detail, rate_limit)) => {
+            tracing::debug!("engine: sending IssueDetailFetched #{number}");
+            let _ = reply_tx.send(Event::IssueDetailFetched { number, detail, rate_limit });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchIssueDetail #{number} error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchIssueDetail #{number}"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_prefetch_pr_details(
+    client: &mut GitHubClient,
+    prs: Vec<PrRef>,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "PrefetchPrDetails") else {
+        return;
+    };
+    let cache = client.cache();
+    for pr in prs {
+        let number = pr.number;
+        match graphql::fetch_pr_detail(&octocrab, &pr.owner, &pr.repo, number, Some(&cache)).await
+        {
+            Ok((mut detail, rate_limit)) => {
+                if detail.behind_by.is_none()
+                    && let Some(ref head_owner) = pr.head_repo_owner
+                {
+                    match graphql::fetch_compare(
+                        &octocrab,
+                        &pr.owner,
+                        &pr.repo,
+                        &pr.base_ref,
+                        head_owner,
+                        &pr.head_ref,
+                    )
+                    .await
+                    {
+                        Ok(n) => detail.behind_by = n,
+                        Err(e) => {
+                            tracing::debug!("engine: compare API failed for #{number}: {e:#}");
+                        }
+                    }
+                }
+                tracing::debug!("engine: sending PrDetailFetched #{number} (prefetch)");
+                let _ = reply_tx.send(Event::PrDetailFetched { number, detail, rate_limit });
+            }
+            Err(e) => {
+                tracing::warn!("engine: PrefetchPrDetails #{number} error: {e}");
+            }
+        }
+    }
+}
+
+async fn handle_approve_pr(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    body: Option<String>,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ApprovePr") else {
+        return;
+    };
+    let result = pr_actions::approve(&octocrab, &owner, &repo, number, body.as_deref()).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Approved PR #{number}"),
+        format!("Approve PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_merge_pr(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MergePr") else {
+        return;
+    };
+    let result = pr_actions::merge(&octocrab, &owner, &repo, number).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Merged PR #{number}"),
+        format!("Merge PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_close_pr(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ClosePr") else {
+        return;
+    };
+    let result = pr_actions::close(&octocrab, &owner, &repo, number).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Closed PR #{number}"),
+        format!("Close PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_reopen_pr(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenPr") else {
+        return;
+    };
+    let result = pr_actions::reopen(&octocrab, &owner, &repo, number).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Reopened PR #{number}"),
+        format!("Reopen PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_add_pr_comment(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    body: String,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddPrComment") else {
+        return;
+    };
+    let result = pr_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Added comment to PR #{number}"),
+        format!("Add comment to PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_update_branch(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UpdateBranch") else {
+        return;
+    };
+    let result = pr_actions::update_branch(&octocrab, &owner, &repo, number).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Updated branch for PR #{number}"),
+        format!("Update branch for PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_ready_for_review(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReadyForReview") else {
+        return;
+    };
+    let result = pr_actions::ready_for_review(&octocrab, &owner, &repo, number).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Marked PR #{number} as ready for review"),
+        format!("Mark PR #{number} as ready for review"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_set_pr_assignees(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    logins: Vec<String>,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrAssignees") else {
+        return;
+    };
+    let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Set assignees on PR #{number}"),
+        format!("Set assignees on PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_set_pr_labels(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    labels: Vec<String>,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetPrLabels") else {
+        return;
+    };
+    let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
+    let ck = Some(format!("pr:{owner}/{repo}#{number}"));
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Set labels on PR #{number}"),
+        format!("Set labels on PR #{number}"),
+        ck,
+    )
+    .await;
+}
+
+async fn handle_close_issue(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CloseIssue") else {
+        return;
+    };
+    let result = issue_actions::close(&octocrab, &owner, &repo, number).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Closed issue #{number}"),
+        format!("Close issue #{number}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_reopen_issue(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "ReopenIssue") else {
+        return;
+    };
+    let result = issue_actions::reopen(&octocrab, &owner, &repo, number).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Reopened issue #{number}"),
+        format!("Reopen issue #{number}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_add_issue_comment(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    body: String,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "AddIssueComment") else {
+        return;
+    };
+    let result = issue_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Added comment to issue #{number}"),
+        format!("Add comment to issue #{number}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_set_issue_labels(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    labels: Vec<String>,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueLabels") else {
+        return;
+    };
+    let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Set labels on issue #{number}"),
+        format!("Set labels on issue #{number}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_set_issue_assignees(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    logins: Vec<String>,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "SetIssueAssignees") else {
+        return;
+    };
+    let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Set assignees on issue #{number}"),
+        format!("Set assignees on issue #{number}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_rerun_workflow_run(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    run_id: u64,
+    failed_only: bool,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RerunWorkflowRun") else {
+        return;
+    };
+    let result =
+        gh_actions::rerun_workflow_run(&octocrab, &owner, &repo, run_id, failed_only).await;
+    let label = if failed_only { "failed jobs" } else { "all jobs" };
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Re-run {label} queued for run #{run_id}"),
+        format!("Re-run workflow run #{run_id}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_cancel_workflow_run(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    run_id: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "CancelWorkflowRun") else {
+        return;
+    };
+    let result = gh_actions::cancel_workflow_run(&octocrab, &owner, &repo, run_id).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Cancelled run #{run_id}"),
+        format!("Cancel workflow run #{run_id}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_mark_notification_read(
+    client: &mut GitHubClient,
+    id: String,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MarkNotificationRead")
+    else {
+        return;
+    };
+    let result = notif::mark_as_read(&octocrab, &id).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Marked notification {id} as read"),
+        format!("Mark notification {id} as read"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_mark_all_notifications_read(
+    client: &mut GitHubClient,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MarkAllNotificationsRead")
+    else {
+        return;
+    };
+    let result = notif::mark_all_as_read(&octocrab).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        "Marked all notifications as read".to_owned(),
+        "Mark all notifications as read".to_owned(),
+        None,
+    )
+    .await;
+}
+
+async fn handle_unsubscribe_notification(
+    client: &mut GitHubClient,
+    id: String,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "UnsubscribeNotification")
+    else {
+        return;
+    };
+    let result = notif::unsubscribe(&octocrab, &id).await;
+    send_mutation_result(
+        client, &reply_tx, result,
+        format!("Unsubscribed from notification {id}"),
+        format!("Unsubscribe from notification {id}"),
+        None,
+    )
+    .await;
+}
+
+async fn handle_fetch_repo_labels(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchRepoLabels") else {
+        return;
+    };
+    let cache = client.cache();
+    match graphql::fetch_repo_labels(&octocrab, &owner, &repo, Some(&cache)).await {
+        Ok((labels, rate_limit)) => {
+            tracing::debug!(
+                "engine: sending RepoLabelsFetched {owner}/{repo} count={}",
+                labels.len()
+            );
+            let _ = reply_tx.send(Event::RepoLabelsFetched {
+                labels: labels.into_iter().map(|l| l.name).collect(),
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchRepoLabels {owner}/{repo} error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchRepoLabels {owner}/{repo}"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_repo_collaborators(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchRepoCollaborators")
+    else {
+        return;
+    };
+    let cache = client.cache();
+    match graphql::fetch_repo_collaborators(&octocrab, &owner, &repo, Some(&cache)).await {
+        Ok((logins, rate_limit)) => {
+            tracing::debug!(
+                "engine: sending RepoCollaboratorsFetched {owner}/{repo} count={}",
+                logins.len()
+            );
+            let _ = reply_tx.send(Event::RepoCollaboratorsFetched { logins, rate_limit });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchRepoCollaborators {owner}/{repo} error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("FetchRepoCollaborators {owner}/{repo}"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_refresh_pr(
+    client: &mut GitHubClient,
+    pr_ref: PrRef,
+    reply_tx: Sender<Event>,
+) {
+    let PrRef { owner, repo, number, base_ref, head_repo_owner, head_ref } = pr_ref;
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RefreshPr") else {
+        return;
+    };
+    let cache = client.cache();
+    let full_key = format!("full_pr:{owner}/{repo}#{number}");
+    let detail_key = format!("pr:{owner}/{repo}#{number}");
+    cache.remove(&full_key).await;
+    cache.remove(&detail_key).await;
+    match graphql::fetch_single_pr(&octocrab, &owner, &repo, number, Some(&cache)).await {
+        Ok((pr, mut detail, rate_limit)) => {
+            if detail.behind_by.is_none()
+                && let Some(ref head_owner) = head_repo_owner
+            {
+                match graphql::fetch_compare(
+                    &octocrab, &owner, &repo, &base_ref, head_owner, &head_ref,
+                )
+                .await
+                {
+                    Ok(n) => detail.behind_by = n,
+                    Err(e) => tracing::warn!("engine: compare API failed for #{number}: {e:#}"),
+                }
+            }
+            tracing::debug!("engine: sending PrRefreshed #{number}");
+            let _ = reply_tx.send(Event::PrRefreshed {
+                number,
+                pr: Box::new(pr),
+                detail,
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: RefreshPr #{number} error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("RefreshPr #{number}"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_refresh_issue(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    number: u64,
+    reply_tx: Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RefreshIssue") else {
+        return;
+    };
+    let cache = client.cache();
+    let full_key = format!("full_issue:{owner}/{repo}#{number}");
+    let detail_key = format!("issue:{owner}/{repo}#{number}");
+    cache.remove(&full_key).await;
+    cache.remove(&detail_key).await;
+    match graphql::fetch_single_issue(&octocrab, &owner, &repo, number, Some(&cache)).await {
+        Ok((issue, detail, rate_limit)) => {
+            tracing::debug!("engine: sending IssueRefreshed #{number}");
+            let _ = reply_tx.send(Event::IssueRefreshed {
+                number,
+                issue: Box::new(issue),
+                detail,
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: RefreshIssue #{number} error: {e}");
+            let _ = reply_tx.send(Event::FetchError {
+                context: format!("RefreshIssue #{number}"),
+                message: format_fetch_error(&e),
+            });
+        }
+    }
+}
+
+async fn handle_fetch_run_by_id(
+    client: &mut GitHubClient,
+    owner: String,
+    repo: String,
+    run_id: u64,
+    host: Option<String>,
+    reply_tx: Sender<Event>,
+) {
+    let host = host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, host, &reply_tx, "FetchRunById") else {
+        return;
+    };
+    match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
+        Ok((run, rate_limit)) => {
+            tracing::debug!("engine: sending SingleRunFetched run_id={run_id}");
+            let _ = reply_tx.send(Event::SingleRunFetched {
+                run_id,
+                run: Some(run),
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: FetchRunById run_id={run_id} error: {e}");
+            let _ = reply_tx.send(Event::SingleRunFetched {
+                run_id,
+                run: None,
+                rate_limit: None,
+            });
+        }
+    }
+}
+
+#[expect(clippy::too_many_arguments)]
+async fn handle_watch_run(
+    client: &mut GitHubClient,
+    watch_scheduler: &mut WatchScheduler,
+    complete_command: Option<&String>,
+    owner: String,
+    repo: String,
+    run_id: u64,
+    host: Option<String>,
+    reply_tx: Sender<Event>,
+) {
+    watch_scheduler.add(
+        owner.clone(),
+        repo.clone(),
+        run_id,
+        host.clone(),
+        reply_tx.clone(),
+    );
+    let api_host = host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, api_host, &reply_tx, "WatchRun") else {
+        return;
+    };
+    match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
+        Ok((run, rate_limit)) => {
+            let completed = run.status == RunStatus::Completed;
+            let _ = reply_tx.send(Event::WatchedRunUpdated {
+                run_id,
+                run: run.clone(),
+                completed,
+                rate_limit,
+            });
+            if completed {
+                fire_watch_hook(complete_command, &run, &owner, &repo, &reply_tx);
+                watch_scheduler.complete(run_id);
+            } else {
+                watch_scheduler.mark_polled(run_id);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("engine: WatchRun initial fetch run_id={run_id} error: {e}");
+        }
     }
 }
 

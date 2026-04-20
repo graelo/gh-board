@@ -937,23 +937,69 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         );
                     }
                     InputMode::Assign => {
-                        handle_assign_input(
+                        let mut im = input_ctx.input_mode;
+                        let eng = input_ctx.engine.cloned();
+                        let tx = input_ctx.event_tx.clone();
+                        let fi = input_ctx.filter_idx;
+                        let cur = input_ctx.cursor;
+                        let is = *input_ctx.issues_state;
+                        super::common::handle_multiselect_input(
                             code,
                             modifiers,
-                            &input_ctx,
-                            assignee_candidates,
-                            assignee_selection,
-                            assignee_selected,
+                            &mut super::common::MultiSelectState {
+                                input_buffer: input_ctx.input_buffer,
+                                candidates: assignee_candidates,
+                                selection: assignee_selection,
+                                selected: assignee_selected,
+                            },
+                            |logins| {
+                                if let Some((owner, repo, number)) =
+                                    get_current_issue_info(&is, fi, cur)
+                                    && let Some(eng) = eng
+                                {
+                                    eng.send(Request::SetIssueAssignees {
+                                        owner,
+                                        repo,
+                                        number,
+                                        logins,
+                                        reply_tx: tx,
+                                    });
+                                }
+                            },
+                            move || im.set(InputMode::Normal),
                         );
                     }
                     InputMode::Label => {
-                        handle_label_input(
+                        let mut im = input_ctx.input_mode;
+                        let eng = input_ctx.engine.cloned();
+                        let tx = input_ctx.event_tx.clone();
+                        let fi = input_ctx.filter_idx;
+                        let cur = input_ctx.cursor;
+                        let is = *input_ctx.issues_state;
+                        super::common::handle_multiselect_input(
                             code,
                             modifiers,
-                            &input_ctx,
-                            label_candidates,
-                            label_selection,
-                            label_selected,
+                            &mut super::common::MultiSelectState {
+                                input_buffer: input_ctx.input_buffer,
+                                candidates: label_candidates,
+                                selection: label_selection,
+                                selected: label_selected,
+                            },
+                            |labels| {
+                                if let Some((owner, repo, number)) =
+                                    get_current_issue_info(&is, fi, cur)
+                                    && let Some(eng) = eng
+                                {
+                                    eng.send(Request::SetIssueLabels {
+                                        owner,
+                                        repo,
+                                        number,
+                                        labels,
+                                        reply_tx: tx,
+                                    });
+                                }
+                            },
+                            move || im.set(InputMode::Normal),
                         );
                     }
                     InputMode::Confirm(ref pending) => match code {
@@ -1880,8 +1926,8 @@ fn build_issue_assignee_candidates(issue: &Issue) -> Vec<String> {
     pool
 }
 
-/// Groups the common parameters shared by `handle_assign_input`,
-/// `handle_text_input`, and `handle_label_input` in the Issues view.
+/// Groups the common parameters shared by multiselect input handling
+/// and `handle_text_input` in the Issues view.
 struct InputContext<'a> {
     input_mode: State<InputMode>,
     input_buffer: State<String>,
@@ -1890,131 +1936,6 @@ struct InputContext<'a> {
     cursor: usize,
     engine: Option<&'a EngineHandle>,
     event_tx: &'a std::sync::mpsc::Sender<Event>,
-}
-
-#[expect(clippy::too_many_lines)]
-fn handle_assign_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    ctx: &InputContext<'_>,
-    assignee_candidates: State<Vec<String>>,
-    mut assignee_selection: State<usize>,
-    mut assignee_selected: State<Vec<String>>,
-) {
-    let mut input_mode = ctx.input_mode;
-    let mut input_buffer = ctx.input_buffer;
-    let issues_state = ctx.issues_state;
-    let filter_idx = ctx.filter_idx;
-    let cursor = ctx.cursor;
-    let engine = ctx.engine;
-    let event_tx = ctx.event_tx;
-    match code {
-        KeyCode::Tab | KeyCode::Down => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
-            }
-        }
-        KeyCode::Up | KeyCode::BackTab => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = assignee_selection.get();
-                assignee_selection.set(if sel == 0 {
-                    filtered.len() - 1
-                } else {
-                    sel - 1
-                });
-            }
-        }
-        KeyCode::Char(' ') => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = assignee_selection
-                    .get()
-                    .min(filtered.len().saturating_sub(1));
-                let item = filtered[sel].clone();
-                let mut selected = assignee_selected.read().clone();
-                if let Some(pos) = selected.iter().position(|s| s == &item) {
-                    selected.remove(pos);
-                } else {
-                    selected.push(item);
-                }
-                assignee_selected.set(selected);
-            }
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-        }
-        KeyCode::Enter => {
-            let buf = input_buffer.read().clone();
-            let checked = assignee_selected.read().clone();
-            let logins: Vec<String> = if buf.is_empty() {
-                // No text typed → submit multiselect state as-is (may be empty = unassign all)
-                checked
-            } else {
-                // Text typed → resolve suggestion, merge into checked set
-                let candidates = assignee_candidates.read();
-                let filtered = text_input::filter_suggestions(&candidates, &buf);
-                let login = if filtered.is_empty() {
-                    buf
-                } else {
-                    let sel = assignee_selection
-                        .get()
-                        .min(filtered.len().saturating_sub(1));
-                    filtered[sel].clone()
-                };
-                if login.is_empty() {
-                    checked
-                } else {
-                    let mut all = checked;
-                    if !all.contains(&login) {
-                        all.push(login);
-                    }
-                    all
-                }
-            };
-            let info = get_current_issue_info(issues_state, filter_idx, cursor);
-            if let Some((owner, repo, number)) = info
-                && let Some(eng) = engine
-            {
-                eng.send(Request::SetIssueAssignees {
-                    owner,
-                    repo,
-                    number,
-                    logins,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-            assignee_selected.set(Vec::new());
-        }
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-            assignee_selected.set(Vec::new());
-        }
-        KeyCode::Backspace => {
-            let mut buf = input_buffer.read().clone();
-            buf.pop();
-            input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut buf = input_buffer.read().clone();
-            buf.push(ch);
-            input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        _ => {}
-    }
 }
 
 fn handle_text_input(
@@ -2070,127 +1991,6 @@ fn handle_text_input(
             let mut buf = input_buffer.read().clone();
             buf.push('\n');
             input_buffer.set(buf);
-        }
-        _ => {}
-    }
-}
-
-#[expect(clippy::too_many_lines)]
-fn handle_label_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    ctx: &InputContext<'_>,
-    label_candidates: State<Vec<String>>,
-    mut label_selection: State<usize>,
-    mut label_selected: State<Vec<String>>,
-) {
-    let mut input_mode = ctx.input_mode;
-    let mut input_buffer = ctx.input_buffer;
-    let issues_state = ctx.issues_state;
-    let filter_idx = ctx.filter_idx;
-    let cursor = ctx.cursor;
-    let engine = ctx.engine;
-    let event_tx = ctx.event_tx;
-    match code {
-        KeyCode::Tab | KeyCode::Down => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                label_selection.set((label_selection.get() + 1) % filtered.len());
-            }
-        }
-        KeyCode::Up | KeyCode::BackTab => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = label_selection.get();
-                label_selection.set(if sel == 0 {
-                    filtered.len() - 1
-                } else {
-                    sel - 1
-                });
-            }
-        }
-        KeyCode::Char(' ') => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                let item = filtered[sel].clone();
-                let mut selected = label_selected.read().clone();
-                if let Some(pos) = selected.iter().position(|s| s == &item) {
-                    selected.remove(pos);
-                } else {
-                    selected.push(item);
-                }
-                label_selected.set(selected);
-            }
-            input_buffer.set(String::new());
-            label_selection.set(0);
-        }
-        KeyCode::Enter => {
-            let buf = input_buffer.read().clone();
-            let checked = label_selected.read().clone();
-            let labels: Vec<String> = if buf.is_empty() {
-                // No text typed → submit multiselect state as-is (may be empty = clear all)
-                checked
-            } else {
-                // Text typed → resolve suggestion, merge into checked set
-                let candidates = label_candidates.read();
-                let filtered = text_input::filter_suggestions(&candidates, &buf);
-                let label = if filtered.is_empty() {
-                    buf
-                } else {
-                    let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                    filtered[sel].clone()
-                };
-                if label.is_empty() {
-                    checked
-                } else {
-                    let mut all = checked;
-                    if !all.contains(&label) {
-                        all.push(label);
-                    }
-                    all
-                }
-            };
-            let info = get_current_issue_info(issues_state, filter_idx, cursor);
-            if let Some((owner, repo, number)) = info
-                && let Some(engine) = engine
-            {
-                engine.send(Request::SetIssueLabels {
-                    owner,
-                    repo,
-                    number,
-                    labels,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            label_selected.set(Vec::new());
-        }
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            label_selected.set(Vec::new());
-        }
-        KeyCode::Backspace => {
-            let mut buf = input_buffer.read().clone();
-            buf.pop();
-            input_buffer.set(buf);
-            label_selection.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut buf = input_buffer.read().clone();
-            buf.push(ch);
-            input_buffer.set(buf);
-            label_selection.set(0);
         }
         _ => {}
     }

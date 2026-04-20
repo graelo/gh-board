@@ -725,4 +725,172 @@ mod tests {
         assert_eq!(visible.len(), 3);
         assert!(visible.iter().all(|c| c.id != "author"));
     }
+
+    // -------------------------------------------------------------------
+    // build_body_rows tests
+    // -------------------------------------------------------------------
+
+    fn make_row(pairs: &[(&str, &str)]) -> Row {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), Cell::plain(*v)))
+            .collect()
+    }
+
+    #[test]
+    fn build_body_rows_empty() {
+        let cols = make_columns();
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 100);
+        let rows: Vec<Row> = vec![];
+        let result = build_body_rows(
+            &rows,
+            0,
+            10,
+            0,
+            None,
+            &col_refs,
+            &widths,
+            100,
+            0,
+            None,
+            ColorDepth::default(),
+        );
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_body_rows_single_row_cells() {
+        let cols = make_columns();
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 100);
+        let rows = vec![make_row(&[
+            ("state", "open"),
+            ("title", "Fix bug"),
+            ("author", "alice"),
+            ("updated", "2d"),
+        ])];
+        let result = build_body_rows(
+            &rows,
+            0,
+            10,
+            0,
+            None,
+            &col_refs,
+            &widths,
+            100,
+            0,
+            None,
+            ColorDepth::default(),
+        );
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].key, 0);
+        // Should have 4 cells matching the 4 visible columns.
+        assert_eq!(result[0].cells.len(), 4);
+        // First cell is "state" column → text should contain "open".
+        let state_text: String = result[0].cells[0]
+            .spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect();
+        assert!(
+            state_text.contains("open"),
+            "expected 'open' in state cell, got '{state_text}'"
+        );
+    }
+
+    #[test]
+    fn build_body_rows_cursor_highlight() {
+        let cols = make_columns();
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 100);
+        let rows = vec![
+            make_row(&[("state", "open"), ("title", "First")]),
+            make_row(&[("state", "closed"), ("title", "Second")]),
+            make_row(&[("state", "open"), ("title", "Third")]),
+        ];
+        let selected_bg = Some(Color::Rgb {
+            r: 50,
+            g: 50,
+            b: 50,
+        });
+        // Cursor at row index 1.
+        let result = build_body_rows(
+            &rows,
+            0,
+            10,
+            1,
+            selected_bg,
+            &col_refs,
+            &widths,
+            100,
+            0,
+            None,
+            ColorDepth::default(),
+        );
+        assert_eq!(result.len(), 3);
+        // Row 0: not selected → bg = None.
+        assert!(result[0].bg.is_none());
+        // Row 1: selected → bg = Some(...).
+        assert!(result[1].bg.is_some());
+        // Row 2: not selected → bg = None.
+        assert!(result[2].bg.is_none());
+    }
+
+    #[test]
+    fn build_body_rows_subtitle_extraction() {
+        let cols = [
+            Column {
+                id: "number".to_owned(),
+                header: "#".to_owned(),
+                default_width_pct: 0.1,
+                align: TextAlign::Left,
+                fixed_width: Some(6),
+            },
+            Column {
+                id: "title".to_owned(),
+                header: "Title".to_owned(),
+                default_width_pct: 0.9,
+                align: TextAlign::Left,
+                fixed_width: None,
+            },
+        ];
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 80);
+        let mut row: Row = make_row(&[("number", "42"), ("title", "Main title")]);
+        row.insert("subtitle".to_owned(), Cell::plain("Sub info"));
+
+        let rows = vec![row];
+        let subtitle_padding = u32::from(*widths.first().unwrap());
+        let result = build_body_rows(
+            &rows,
+            0,
+            10,
+            0,
+            None,
+            &col_refs,
+            &widths,
+            80,
+            subtitle_padding,
+            Some("subtitle"),
+            ColorDepth::default(),
+        );
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].subtitle.is_some(),
+            "subtitle should be extracted when subtitle_column is set"
+        );
+        let sub_text: String = result[0]
+            .subtitle
+            .as_ref()
+            .unwrap()
+            .spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect();
+        assert!(
+            sub_text.contains("Sub info"),
+            "subtitle text should contain 'Sub info', got '{sub_text}'"
+        );
+    }
 }

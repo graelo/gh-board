@@ -203,4 +203,47 @@ mod tests {
         assert_eq!(start, 0);
         assert_eq!(size, 0);
     }
+
+    #[test]
+    fn no_scrollbar_returns_full_track() {
+        // visible >= total → thumb spans the entire track.
+        let info = ScrollInfo {
+            scroll_offset: 0,
+            visible_count: 50,
+            total_count: 30,
+        };
+        let (start, size) = info.thumb_geometry(15);
+        assert_eq!(start, 0);
+        assert_eq!(size, 15);
+    }
+
+    #[test]
+    fn thumb_never_exceeds_track() {
+        let info = ScrollInfo {
+            scroll_offset: 5,
+            visible_count: 10,
+            total_count: 20,
+        };
+        let (start, size) = info.thumb_geometry(10);
+        assert!(
+            start + size <= 10,
+            "thumb should not exceed track: start={start}, size={size}"
+        );
+    }
+
+    #[test]
+    fn mid_scroll_position() {
+        // Scroll at 50% of max → thumb should be roughly in the middle.
+        let info = ScrollInfo {
+            scroll_offset: 45,
+            visible_count: 10,
+            total_count: 100,
+        };
+        let (start, size) = info.thumb_geometry(20);
+        assert!(start > 0, "thumb should not be at the very top");
+        assert!(
+            start + size < 20,
+            "thumb should not be at the very bottom"
+        );
+    }
 }

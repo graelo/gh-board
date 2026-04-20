@@ -143,6 +143,7 @@ impl GitHubEngine {
 // Request dispatch
 // ---------------------------------------------------------------------------
 
+#[expect(clippy::too_many_lines)]
 async fn handle_request(
     req: Request,
     client: &mut GitHubClient,
@@ -206,10 +207,10 @@ async fn handle_request(
             reply_tx,
         } => handle_fetch_issue_detail(client, owner, repo, number, reply_tx).await,
         Request::PrefetchPrDetails { prs, reply_tx } => {
-            handle_prefetch_pr_details(client, prs, reply_tx).await
+            handle_prefetch_pr_details(client, prs, reply_tx).await;
         }
         Request::RegisterRefresh { configs, notify_tx } => {
-            scheduler.register(configs, refresh_interval, &notify_tx)
+            scheduler.register(configs, refresh_interval, &notify_tx);
         }
         Request::ApprovePr {
             owner,
@@ -316,14 +317,17 @@ async fn handle_request(
             reply_tx,
         } => handle_cancel_workflow_run(client, owner, repo, run_id, reply_tx).await,
         Request::MarkNotificationRead { id, reply_tx } => {
-            handle_mark_notification_read(client, id, reply_tx).await
+            handle_mark_notification_read(client, id, reply_tx).await;
         }
+
         Request::MarkAllNotificationsRead { reply_tx } => {
-            handle_mark_all_notifications_read(client, reply_tx).await
+            handle_mark_all_notifications_read(client, reply_tx).await;
         }
+
         Request::UnsubscribeNotification { id, reply_tx } => {
-            handle_unsubscribe_notification(client, id, reply_tx).await
+            handle_unsubscribe_notification(client, id, reply_tx).await;
         }
+
         Request::FetchRepoLabels {
             owner,
             repo,
@@ -383,7 +387,7 @@ async fn handle_request(
                 host,
                 reply_tx,
             )
-            .await
+            .await;
         }
         Request::UnwatchRun { run_id } => {
             watch_scheduler.remove(run_id);

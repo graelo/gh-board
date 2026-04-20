@@ -3225,4 +3225,250 @@ mod tests {
         let d = detail_with(Some(MergeableState::Conflicting), Some(5));
         assert_eq!(effective_update_status(&d), Some(MergeStateStatus::Dirty));
     }
+
+    // --- test helpers ---
+
+    fn test_theme() -> ResolvedTheme {
+        use crate::config::types::Theme;
+        use crate::theme::Background;
+        ResolvedTheme::resolve(&Theme::default(), Background::Dark)
+    }
+
+    fn test_pr() -> PullRequest {
+        pr_with_status(None)
+    }
+
+    // --- build_state_cell ---
+
+    #[test]
+    fn build_state_cell_open_pr() {
+        let theme = test_theme();
+        let pr = test_pr();
+        let cell = build_state_cell(&pr, &theme);
+        let text = cell.text();
+        assert_eq!(text, theme.icons.pr_open);
+    }
+
+    #[test]
+    fn build_state_cell_merged_pr() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.state = crate::github::types::PrState::Merged;
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_merged);
+    }
+
+    #[test]
+    fn build_state_cell_closed_pr() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.state = crate::github::types::PrState::Closed;
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_closed);
+    }
+
+    #[test]
+    fn build_state_cell_draft_pr() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.is_draft = true;
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_draft);
+    }
+
+    #[test]
+    fn build_state_cell_draft_overrides_state() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.is_draft = true;
+        pr.state = crate::github::types::PrState::Merged;
+        // Draft takes priority
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_draft);
+    }
+
+    // --- build_review_cell ---
+
+    #[test]
+    fn build_review_cell_approved() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = Some(crate::github::types::ReviewDecision::Approved);
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_approved);
+    }
+
+    #[test]
+    fn build_review_cell_changes_requested() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = Some(crate::github::types::ReviewDecision::ChangesRequested);
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_changes);
+    }
+
+    #[test]
+    fn build_review_cell_review_required() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = Some(crate::github::types::ReviewDecision::ReviewRequired);
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_required);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_with_approved_review() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![crate::types::Review {
+            author: None,
+            state: crate::types::ReviewState::Approved,
+            body: String::new(),
+            submitted_at: None,
+        }];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_approved);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_with_changes_requested() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![crate::types::Review {
+            author: None,
+            state: crate::types::ReviewState::ChangesRequested,
+            body: String::new(),
+            submitted_at: None,
+        }];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_changes);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_no_reviews() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_none);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_with_commented_review() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![crate::types::Review {
+            author: None,
+            state: crate::types::ReviewState::Commented,
+            body: String::new(),
+            submitted_at: None,
+        }];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_commented);
+    }
+
+    // --- build_lines_cell ---
+
+    #[test]
+    fn build_lines_cell_with_additions_deletions() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.additions = 42;
+        pr.deletions = 7;
+        let cell = build_lines_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("+42"), "expected +42 in '{text}'");
+        assert!(text.contains("-7"), "expected -7 in '{text}'");
+    }
+
+    #[test]
+    fn build_lines_cell_zero_changes() {
+        let theme = test_theme();
+        let pr = test_pr();
+        let cell = build_lines_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("+0"), "expected +0 in '{text}'");
+        assert!(text.contains("-0"), "expected -0 in '{text}'");
+    }
+
+    #[test]
+    fn build_lines_cell_has_three_spans() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.additions = 10;
+        pr.deletions = 5;
+        let cell = build_lines_cell(&pr, &theme);
+        // Should have 3 spans: additions, space, deletions
+        assert_eq!(cell.spans.len(), 3);
+        assert_eq!(cell.spans[0].text, "+10");
+        assert_eq!(cell.spans[1].text, " ");
+        assert_eq!(cell.spans[2].text, "-5");
+    }
+
+    // --- build_info_cell ---
+
+    #[test]
+    fn build_info_cell_contains_number() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.number = 123;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("#123"), "expected #123 in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_contains_author() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.author = Some(crate::types::Actor {
+            login: "octocat".to_owned(),
+            avatar_url: String::new(),
+        });
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("@octocat"), "expected @octocat in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_no_author_shows_unknown() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.author = None;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("@unknown"), "expected @unknown in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_contains_repo_name() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.repo = Some(crate::types::RepoRef {
+            owner: "org".to_owned(),
+            name: "repo".to_owned(),
+        });
+        pr.number = 42;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("org/repo"), "expected org/repo in '{text}'");
+        assert!(text.contains("#42"), "expected #42 in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_no_repo() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.repo = None;
+        pr.number = 1;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        // Should still have the number
+        assert!(text.contains("#1"), "expected #1 in '{text}'");
+        assert!(text.contains("by"), "expected 'by' in '{text}'");
+    }
 }

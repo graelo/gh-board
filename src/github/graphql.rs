@@ -2214,3 +2214,353 @@ pub async fn fetch_single_issue(
 
     Ok((issue, detail, rate_limit))
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- extract_labels ---
+
+    #[test]
+    fn extract_labels_none_returns_empty() {
+        let result = extract_labels(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_labels_some_with_labels() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawLabel {
+                    name: "bug".to_owned(),
+                    color: "d73a4a".to_owned(),
+                }),
+                None, // null nodes are filtered out
+                Some(RawLabel {
+                    name: "enhancement".to_owned(),
+                    color: "a2eeef".to_owned(),
+                }),
+            ],
+        };
+        let result = extract_labels(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "bug");
+        assert_eq!(result[0].color, "d73a4a");
+        assert_eq!(result[1].name, "enhancement");
+        assert_eq!(result[1].color, "a2eeef");
+    }
+
+    // --- extract_assignees ---
+
+    #[test]
+    fn extract_assignees_none_returns_empty() {
+        let result = extract_assignees(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_assignees_some_with_actors() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawAssignee {
+                    login: "alice".to_owned(),
+                }),
+                None,
+                Some(RawAssignee {
+                    login: "bob".to_owned(),
+                }),
+            ],
+        };
+        let result = extract_assignees(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].login, "alice");
+        assert!(result[0].avatar_url.is_empty(), "avatar_url should be empty for assignees");
+        assert_eq!(result[1].login, "bob");
+    }
+
+    // --- extract_check_runs ---
+
+    #[test]
+    fn extract_check_runs_none_returns_empty() {
+        let result = extract_check_runs(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_check_runs_empty_commits_returns_empty() {
+        let conn = Connection { nodes: vec![] };
+        let result = extract_check_runs(Some(conn));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_check_runs_with_check_run_contexts() {
+        let ctx_success = RawCheckContext {
+            name: Some("CI".to_owned()),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Success),
+            details_url: Some("https://example.com/ci".to_owned()),
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let ctx_failure = RawCheckContext {
+            name: Some("Lint".to_owned()),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Failure),
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let rollup = RawStatusCheckRollup {
+            contexts: Some(Connection {
+                nodes: vec![Some(ctx_success), Some(ctx_failure)],
+            }),
+        };
+        let commit = RawCommit {
+            status_check_rollup: Some(rollup),
+        };
+        let commit_node = RawCommitNode {
+            commit: Some(commit),
+        };
+        let conn = Connection {
+            nodes: vec![Some(commit_node)],
+        };
+        let result = extract_check_runs(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "CI");
+        assert_eq!(result[0].status, Some(CheckStatus::Completed));
+        assert_eq!(result[0].conclusion, Some(CheckConclusion::Success));
+        assert_eq!(result[0].url.as_deref(), Some("https://example.com/ci"));
+        assert_eq!(result[1].name, "Lint");
+        assert_eq!(result[1].conclusion, Some(CheckConclusion::Failure));
+    }
+
+    // --- convert_check_context ---
+
+    #[test]
+    fn convert_check_context_check_run() {
+        let ctx = RawCheckContext {
+            name: Some("build".to_owned()),
+            status: Some(CheckStatus::InProgress),
+            conclusion: None,
+            details_url: Some("https://ci.example.com".to_owned()),
+            started_at: None,
+            completed_at: None,
+            check_suite: Some(RawCheckSuite {
+                workflow_run: Some(RawCheckSuiteWorkflowRun {
+                    database_id: Some(42),
+                    workflow: Some(RawCheckSuiteWorkflow {
+                        name: Some("CI".to_owned()),
+                    }),
+                }),
+            }),
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "build");
+        assert_eq!(cr.status, Some(CheckStatus::InProgress));
+        assert!(cr.conclusion.is_none());
+        assert_eq!(cr.url.as_deref(), Some("https://ci.example.com"));
+        assert_eq!(cr.workflow_run_id, Some(42));
+        assert_eq!(cr.workflow_name.as_deref(), Some("CI"));
+    }
+
+    #[test]
+    fn convert_check_context_status_context_success() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: Some("ci/circleci".to_owned()),
+            state: Some("success".to_owned()),
+            target_url: Some("https://circleci.com/build/123".to_owned()),
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "ci/circleci");
+        assert_eq!(cr.status, Some(CheckStatus::Completed));
+        assert_eq!(cr.conclusion, Some(CheckConclusion::Success));
+        assert_eq!(cr.url.as_deref(), Some("https://circleci.com/build/123"));
+    }
+
+    #[test]
+    fn convert_check_context_status_context_failure() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: Some("deploy".to_owned()),
+            state: Some("failure".to_owned()),
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "deploy");
+        assert_eq!(cr.status, Some(CheckStatus::Completed));
+        assert_eq!(cr.conclusion, Some(CheckConclusion::Failure));
+    }
+
+    #[test]
+    fn convert_check_context_status_context_pending() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: Some("pending-job".to_owned()),
+            state: Some("pending".to_owned()),
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "pending-job");
+        assert_eq!(cr.status, Some(CheckStatus::InProgress));
+        assert!(cr.conclusion.is_none());
+    }
+
+    #[test]
+    fn convert_check_context_no_name_or_context_uses_unknown() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "<unknown>");
+    }
+
+    // --- extract_review_requests ---
+
+    #[test]
+    fn extract_review_requests_none_returns_empty() {
+        let result = extract_review_requests(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_review_requests_with_requests() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawReviewRequest {
+                    requested_reviewer: Some(RawReviewer {
+                        login: Some("reviewer1".to_owned()),
+                    }),
+                }),
+                // Reviewer without login (e.g. team) is filtered out
+                Some(RawReviewRequest {
+                    requested_reviewer: Some(RawReviewer { login: None }),
+                }),
+                None,
+                Some(RawReviewRequest {
+                    requested_reviewer: Some(RawReviewer {
+                        login: Some("reviewer2".to_owned()),
+                    }),
+                }),
+            ],
+        };
+        let result = extract_review_requests(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].login, "reviewer1");
+        assert_eq!(result[1].login, "reviewer2");
+    }
+
+    #[test]
+    fn extract_review_requests_no_reviewer_field() {
+        let conn = Connection {
+            nodes: vec![Some(RawReviewRequest {
+                requested_reviewer: None,
+            })],
+        };
+        let result = extract_review_requests(Some(conn));
+        assert!(result.is_empty());
+    }
+
+    // --- extract_latest_reviews ---
+
+    #[test]
+    fn extract_latest_reviews_none_returns_empty() {
+        let result = extract_latest_reviews(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_latest_reviews_with_reviews() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawLatestReview {
+                    state: Some(ReviewState::Approved),
+                    author: Some(RawActor {
+                        login: "alice".to_owned(),
+                        avatar_url: "https://avatar.example.com/alice".to_owned(),
+                    }),
+                }),
+                Some(RawLatestReview {
+                    state: None,
+                    author: None,
+                }),
+            ],
+        };
+        let result = extract_latest_reviews(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].state, ReviewState::Approved);
+        assert_eq!(result[0].author.as_ref().unwrap().login, "alice");
+        assert_eq!(
+            result[0].author.as_ref().unwrap().avatar_url,
+            "https://avatar.example.com/alice"
+        );
+        // None state defaults to Unknown
+        assert_eq!(result[1].state, ReviewState::Unknown);
+        assert!(result[1].author.is_none());
+    }
+
+    // --- ensure_type_qualifier ---
+
+    #[test]
+    fn ensure_type_qualifier_adds_missing_pr() {
+        let q = ensure_type_qualifier("repo:foo/bar", "pr");
+        assert!(q.starts_with("is:pr "));
+        assert!(q.contains("repo:foo/bar"));
+    }
+
+    #[test]
+    fn ensure_type_qualifier_does_not_duplicate() {
+        let q = ensure_type_qualifier("is:pr repo:foo/bar", "pr");
+        assert_eq!(q, "is:pr repo:foo/bar");
+    }
+
+    #[test]
+    fn ensure_type_qualifier_case_insensitive() {
+        let q = ensure_type_qualifier("Is:Pr repo:foo/bar", "pr");
+        // Should not add another is:pr
+        assert!(!q.starts_with("is:pr is:"));
+    }
+}

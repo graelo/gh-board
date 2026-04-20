@@ -146,3 +146,72 @@ filters = "is:unread reason:review_requested"
 "#
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_contains_theme_name() {
+        let content = generate_config_content("tokyo-night", "unicode");
+        assert!(
+            content.contains("tokyo-night"),
+            "config should contain the theme name"
+        );
+    }
+
+    #[test]
+    fn config_contains_github_section() {
+        let content = generate_config_content("nord", "unicode");
+        assert!(content.contains("[github]"));
+    }
+
+    #[test]
+    fn config_contains_pr_filters() {
+        let content = generate_config_content("nord", "unicode");
+        assert!(content.contains("[[pr_filters]]"));
+    }
+
+    #[test]
+    fn config_contains_issues_filters() {
+        let content = generate_config_content("nord", "unicode");
+        assert!(content.contains("[[issues_filters]]"));
+    }
+
+    #[test]
+    fn config_contains_notifications_filters() {
+        let content = generate_config_content("nord", "unicode");
+        assert!(content.contains("[[notifications_filters]]"));
+    }
+
+    #[test]
+    fn config_unicode_preset_no_icons_section() {
+        let content = generate_config_content("nord", "unicode");
+        assert!(
+            !content.contains("[theme.icons]"),
+            "unicode preset should not emit [theme.icons] section"
+        );
+    }
+
+    #[test]
+    fn config_nerdfont_preset_has_icons_section() {
+        let content = generate_config_content("nord", "nerdfont");
+        assert!(
+            content.contains("[theme.icons]"),
+            "nerdfont preset should emit [theme.icons] section"
+        );
+        assert!(content.contains("preset = \"nerdfont\""));
+    }
+
+    #[test]
+    fn config_is_valid_toml() {
+        let content = generate_config_content("catppuccin-mocha", "ascii");
+        // Parse as generic TOML to verify syntactic correctness.
+        let result: Result<toml::Value, _> = toml::from_str(&content);
+        assert!(
+            result.is_ok(),
+            "generated config should be valid TOML: {:?}",
+            result.err()
+        );
+    }
+}

@@ -757,3 +757,111 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
     }
     .into_any()
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color::Color as AppColor;
+    use crate::markdown::renderer::{StyledLine, StyledSpan};
+
+    fn line_of_width(width: usize) -> StyledLine {
+        let text = "x".repeat(width);
+        StyledLine::from_span(StyledSpan::text(text, AppColor::Ansi256(7)))
+    }
+
+    // -------------------------------------------------------------------
+    // compute_visual_layout
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn visual_layout_empty_lines() {
+        let layout = compute_visual_layout(&[], 0, 20, 40);
+        assert_eq!(layout.visual_total, 0);
+        assert_eq!(layout.visual_offset, 0);
+        assert_eq!(layout.clamped_scroll, 0);
+    }
+
+    #[test]
+    fn visual_layout_single_short_line() {
+        let lines = vec![line_of_width(5)];
+        let layout = compute_visual_layout(&lines, 0, 20, 40);
+        assert_eq!(layout.visual_total, 1);
+    }
+
+    #[test]
+    fn visual_layout_long_line_wraps() {
+        // Content width = width - 5 (border + padding + scrollbar).
+        // With width=20, content_width=15.  A 45-char line wraps to 3 visual rows.
+        let lines = vec![line_of_width(45)];
+        let layout = compute_visual_layout(&lines, 0, 20, 20);
+        assert!(
+            layout.visual_total > 1,
+            "expected wrapping, got visual_total={}",
+            layout.visual_total
+        );
+    }
+
+    #[test]
+    fn visual_layout_scroll_at_zero() {
+        let lines = vec![line_of_width(5); 30];
+        let layout = compute_visual_layout(&lines, 0, 10, 40);
+        assert_eq!(layout.visual_offset, 0);
+        assert_eq!(layout.clamped_scroll, 0);
+    }
+
+    #[test]
+    fn visual_layout_scroll_offset_clamped() {
+        let lines = vec![line_of_width(5); 5];
+        // visible_lines = 20 → everything fits, max_offset = 0.
+        let layout = compute_visual_layout(&lines, 100, 20, 40);
+        assert_eq!(
+            layout.clamped_scroll, 0,
+            "scroll should be clamped to 0 when all content fits"
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // build_tab_labels
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn tab_labels_no_active_tab() {
+        let labels = build_tab_labels(None, None, None, None);
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn tab_labels_with_active_tab() {
+        let tabs = &[SidebarTab::Overview, SidebarTab::Activity];
+        let labels = build_tab_labels(Some(SidebarTab::Activity), Some(tabs), None, None);
+        assert_eq!(labels.len(), 2);
+        // First tab (Overview) is not active.
+        assert!(!labels[0].1, "Overview should not be active");
+        assert_eq!(labels[0].0, "Overview");
+        // Second tab (Activity) is active.
+        assert!(labels[1].1, "Activity should be active");
+        assert_eq!(labels[1].0, "Activity");
+    }
+
+    #[test]
+    fn tab_labels_with_overrides() {
+        let tabs = &[SidebarTab::Overview, SidebarTab::Activity];
+        let overrides: HashMap<SidebarTab, String> =
+            [(SidebarTab::Activity, "Custom".to_owned())]
+                .into_iter()
+                .collect();
+        let labels = build_tab_labels(
+            Some(SidebarTab::Overview),
+            Some(tabs),
+            Some(&overrides),
+            None,
+        );
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0].0, "Overview");
+        assert_eq!(labels[1].0, "Custom");
+    }
+}

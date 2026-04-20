@@ -1689,3 +1689,302 @@ fn get_alert_at_cursor(
 fn default_theme() -> ResolvedTheme {
     super::default_theme()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_theme() -> ResolvedTheme {
+        use crate::config::types::Theme;
+        use crate::theme::Background;
+        ResolvedTheme::resolve(&Theme::default(), Background::Dark)
+    }
+
+    /// Helper to extract all text from styled lines.
+    fn lines_text(lines: &[StyledLine]) -> String {
+        lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    // --- build_dependabot_lines ---
+
+    #[test]
+    fn dependabot_lines_contains_ecosystem() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("npm", "GHSA-1234-5678", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Ecosystem: "), "should have Ecosystem label");
+        assert!(text.contains("npm"), "should contain ecosystem name");
+    }
+
+    #[test]
+    fn dependabot_lines_contains_ghsa_id() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("pip", "GHSA-abcd-efgh", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("GHSA ID: "), "should have GHSA ID label");
+        assert!(text.contains("GHSA-abcd-efgh"), "should contain GHSA ID");
+    }
+
+    #[test]
+    fn dependabot_lines_empty_ghsa_id_omitted() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("npm", "", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(!text.contains("GHSA ID: "), "empty GHSA ID should be omitted");
+    }
+
+    #[test]
+    fn dependabot_lines_with_all_fields() {
+        let theme = test_theme();
+        let cve = "CVE-2024-1234".to_owned();
+        let range = ">= 1.0, < 1.5".to_owned();
+        let patched = "1.5.0".to_owned();
+        let lines = build_dependabot_lines(
+            "cargo",
+            "GHSA-xxxx-yyyy",
+            Some(&cve),
+            Some(&range),
+            Some(&patched),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("CVE ID: "), "should have CVE ID label");
+        assert!(text.contains("CVE-2024-1234"), "should contain CVE ID");
+        assert!(text.contains("Vulnerable range: "), "should have vulnerable range");
+        assert!(text.contains(">= 1.0, < 1.5"), "should contain version range");
+        assert!(text.contains("Patched version: "), "should have patched version");
+        assert!(text.contains("1.5.0"), "should contain patched version");
+    }
+
+    #[test]
+    fn dependabot_lines_without_optional_fields() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("pip", "GHSA-1111-2222", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(!text.contains("CVE ID:"), "no CVE when None");
+        assert!(!text.contains("Vulnerable range:"), "no range when None");
+        assert!(!text.contains("Patched version:"), "no patched when None");
+    }
+
+    // --- build_code_scanning_lines ---
+
+    #[test]
+    fn code_scanning_lines_contains_tool_name() {
+        let theme = test_theme();
+        let lines = build_code_scanning_lines("CodeQL", None, "js/xss", "", &[], &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Tool: "), "should have Tool label");
+        assert!(text.contains("CodeQL"), "should contain tool name");
+    }
+
+    #[test]
+    fn code_scanning_lines_contains_rule() {
+        let theme = test_theme();
+        let lines =
+            build_code_scanning_lines("CodeQL", None, "js/sql-injection", "SQL injection", &[], &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Rule: "), "should have Rule label");
+        assert!(text.contains("js/sql-injection"), "should contain rule ID");
+        assert!(text.contains("SQL injection"), "should contain rule description");
+    }
+
+    #[test]
+    fn code_scanning_lines_with_version() {
+        let theme = test_theme();
+        let ver = "2.15.0".to_owned();
+        let lines = build_code_scanning_lines("CodeQL", Some(&ver), "rule-1", "", &[], &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Version: "), "should have Version label");
+        assert!(text.contains("2.15.0"), "should contain version");
+    }
+
+    #[test]
+    fn code_scanning_lines_with_instances() {
+        let theme = test_theme();
+        let instances = vec![
+            CodeScanningInstance {
+                ref_name: None,
+                path: Some("src/main.rs".to_owned()),
+                start_line: Some(10),
+                end_line: Some(15),
+                state: AlertState::Open,
+            },
+            CodeScanningInstance {
+                ref_name: None,
+                path: Some("src/lib.rs".to_owned()),
+                start_line: Some(42),
+                end_line: Some(42),
+                state: AlertState::Open,
+            },
+        ];
+        let lines = build_code_scanning_lines("Semgrep", None, "rule-1", "", &instances, &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Instances (2):"), "should show instance count");
+        assert!(text.contains("src/main.rs:10-15"), "should contain first instance path");
+        assert!(text.contains("src/lib.rs:42-42"), "should contain second instance path");
+    }
+
+    #[test]
+    fn code_scanning_lines_empty_instances() {
+        let theme = test_theme();
+        let lines = build_code_scanning_lines("CodeQL", None, "rule", "", &[], &theme);
+        let text = lines_text(&lines);
+        assert!(!text.contains("Instances"), "no Instances section when empty");
+    }
+
+    // --- build_secret_scanning_lines ---
+
+    #[test]
+    fn secret_scanning_lines_contains_secret_type() {
+        let theme = test_theme();
+        let lines = build_secret_scanning_lines(
+            "github_token",
+            "GitHub Token",
+            None,
+            None,
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("Secret type: "), "should have Secret type label");
+        assert!(text.contains("github_token"), "should contain secret type");
+    }
+
+    #[test]
+    fn secret_scanning_lines_contains_display_name() {
+        let theme = test_theme();
+        let lines = build_secret_scanning_lines(
+            "aws_access_key",
+            "AWS Access Key",
+            None,
+            None,
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("Display name: "), "should have Display name label");
+        assert!(text.contains("AWS Access Key"), "should contain display name");
+    }
+
+    #[test]
+    fn secret_scanning_lines_with_validity() {
+        let theme = test_theme();
+        let validity = "active".to_owned();
+        let lines = build_secret_scanning_lines(
+            "token",
+            "Token",
+            Some(&validity),
+            None,
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("Validity: "), "should have Validity label");
+        assert!(text.contains("active"), "should contain validity");
+    }
+
+    #[test]
+    fn secret_scanning_lines_with_resolution() {
+        let theme = test_theme();
+        let resolution = "revoked".to_owned();
+        let lines = build_secret_scanning_lines(
+            "token",
+            "Token",
+            None,
+            Some(&resolution),
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("Resolution: "), "should have Resolution label");
+        assert!(text.contains("revoked"), "should contain resolution");
+    }
+
+    #[test]
+    fn secret_scanning_lines_with_locations() {
+        let theme = test_theme();
+        let mut cache = HashMap::new();
+        cache.insert(
+            42,
+            vec![
+                SecretLocation {
+                    location_type: "commit".to_owned(),
+                    path: Some("config.yml".to_owned()),
+                    start_line: Some(5),
+                    end_line: Some(5),
+                },
+                SecretLocation {
+                    location_type: "commit".to_owned(),
+                    path: Some(".env".to_owned()),
+                    start_line: Some(1),
+                    end_line: Some(3),
+                },
+            ],
+        );
+        let lines = build_secret_scanning_lines(
+            "generic_secret",
+            "",
+            None,
+            None,
+            42,
+            &cache,
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("Locations (2):"), "should show location count");
+        assert!(text.contains("config.yml:5-5"), "should contain first location");
+        assert!(text.contains(".env:1-3"), "should contain second location");
+    }
+
+    #[test]
+    fn secret_scanning_lines_no_locations_yet() {
+        let theme = test_theme();
+        let lines = build_secret_scanning_lines(
+            "token",
+            "",
+            None,
+            None,
+            999,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(
+            text.contains("No locations loaded yet"),
+            "should show 'no locations' message"
+        );
+    }
+
+    #[test]
+    fn secret_scanning_lines_empty_display_name_omitted() {
+        let theme = test_theme();
+        let lines = build_secret_scanning_lines(
+            "token",
+            "",
+            None,
+            None,
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(
+            !text.contains("Display name:"),
+            "empty display name should be omitted"
+        );
+    }
+}

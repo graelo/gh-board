@@ -2042,7 +2042,6 @@ fn get_current_issue_assignees(
     issue.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
-#[expect(clippy::too_many_lines)]
 fn build_issue_sidebar_meta(
     issue: &Issue,
     theme: &ResolvedTheme,
@@ -2118,38 +2117,7 @@ fn build_issue_sidebar_meta(
         .to_string();
     let updated_age = crate::util::format_date(&issue.updated_at, "relative");
 
-    // Reactions
-    let r = &issue.reactions;
-    let reactions_text = if r.total() > 0 {
-        let mut parts = Vec::new();
-        if r.thumbs_up > 0 {
-            parts.push(format!("\u{1f44d} {}", r.thumbs_up));
-        }
-        if r.thumbs_down > 0 {
-            parts.push(format!("\u{1f44e} {}", r.thumbs_down));
-        }
-        if r.laugh > 0 {
-            parts.push(format!("\u{1f604} {}", r.laugh));
-        }
-        if r.hooray > 0 {
-            parts.push(format!("\u{1f389} {}", r.hooray));
-        }
-        if r.confused > 0 {
-            parts.push(format!("\u{1f615} {}", r.confused));
-        }
-        if r.heart > 0 {
-            parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
-        }
-        if r.rocket > 0 {
-            parts.push(format!("\u{1f680} {}", r.rocket));
-        }
-        if r.eyes > 0 {
-            parts.push(format!("\u{1f440} {}", r.eyes));
-        }
-        Some(parts.join("  "))
-    } else {
-        None
-    };
+    let reactions_text = format_reactions_text(&issue.reactions);
 
     SidebarMeta {
         pill_icon,
@@ -2187,6 +2155,41 @@ fn build_issue_sidebar_meta(
         actor_fg: theme.text_actor.to_crossterm_color(depth),
         reactions_fg: theme.text_primary.to_crossterm_color(depth),
     }
+}
+
+/// Format reaction counts into an emoji string (e.g. "👍 3  🎉 1").
+///
+/// Returns `None` when no reactions are present.
+fn format_reactions_text(r: &crate::types::ReactionGroups) -> Option<String> {
+    if r.total() == 0 {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if r.thumbs_up > 0 {
+        parts.push(format!("\u{1f44d} {}", r.thumbs_up));
+    }
+    if r.thumbs_down > 0 {
+        parts.push(format!("\u{1f44e} {}", r.thumbs_down));
+    }
+    if r.laugh > 0 {
+        parts.push(format!("\u{1f604} {}", r.laugh));
+    }
+    if r.hooray > 0 {
+        parts.push(format!("\u{1f389} {}", r.hooray));
+    }
+    if r.confused > 0 {
+        parts.push(format!("\u{1f615} {}", r.confused));
+    }
+    if r.heart > 0 {
+        parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
+    }
+    if r.rocket > 0 {
+        parts.push(format!("\u{1f680} {}", r.rocket));
+    }
+    if r.eyes > 0 {
+        parts.push(format!("\u{1f440} {}", r.eyes));
+    }
+    Some(parts.join("  "))
 }
 
 fn default_theme() -> ResolvedTheme {

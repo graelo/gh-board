@@ -183,7 +183,6 @@ pub struct TableBuildConfig<'a> {
 
 impl RenderedTable {
     /// Build a `RenderedTable` from a configuration.
-    #[expect(clippy::too_many_lines)]
     pub fn build(cfg: &TableBuildConfig<'_>) -> Self {
         let columns = cfg.columns;
         let rows = cfg.rows;
@@ -233,13 +232,6 @@ impl RenderedTable {
             .collect();
 
         // Build body rows.
-        let end = (scroll_offset + visible_rows).min(rows.len());
-        let visible_slice = if scroll_offset < rows.len() {
-            &rows[scroll_offset..end]
-        } else {
-            &[]
-        };
-
         let subtitle_column = cfg.subtitle_column;
 
         // Compute subtitle left-padding (width of first column) before the loop
@@ -250,60 +242,19 @@ impl RenderedTable {
             0
         };
 
-        let body_rows: Vec<RenderedRow> = visible_slice
-            .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let absolute_idx = scroll_offset + i;
-                let is_selected = absolute_idx == cursor;
-                let bg = if is_selected { selected_bg_color } else { None };
-
-                let cells: Vec<RenderedCell> = visible_columns
-                    .iter()
-                    .zip(col_widths.iter())
-                    .map(|(col, &w)| {
-                        let cell = row.get(&col.id);
-                        let spans = cell.map_or_else(
-                            || {
-                                vec![RenderedSpan {
-                                    text: String::new(),
-                                    fg: Color::Reset,
-                                    weight: Weight::Normal,
-                                }]
-                            },
-                            |c| render_spans(&c.spans, depth),
-                        );
-                        RenderedCell {
-                            spans: truncate_spans(spans, usize::from(w)),
-                            width: u32::from(w),
-                            align: col.align,
-                        }
-                    })
-                    .collect();
-
-                // Extract subtitle cell if configured.
-                let subtitle_available =
-                    usize::from(col_total_width).saturating_sub(subtitle_padding as usize);
-                let subtitle = subtitle_column.and_then(|col_id| {
-                    row.get(col_id).map(|cell| {
-                        let spans =
-                            truncate_spans(render_spans(&cell.spans, depth), subtitle_available);
-                        RenderedCell {
-                            spans,
-                            width: u32::from(col_total_width),
-                            align: TextAlign::Left,
-                        }
-                    })
-                });
-
-                RenderedRow {
-                    key: absolute_idx,
-                    bg,
-                    cells,
-                    subtitle,
-                }
-            })
-            .collect();
+        let body_rows = build_body_rows(
+            rows,
+            scroll_offset,
+            visible_rows,
+            cursor,
+            selected_bg_color,
+            &visible_columns,
+            &col_widths,
+            col_total_width,
+            subtitle_padding,
+            subtitle_column,
+            depth,
+        );
 
         let empty_message = if rows.is_empty() {
             cfg.empty_message.map(String::from)
@@ -325,7 +276,7 @@ impl RenderedTable {
 
         // Track height = number of rendered lines in the body area.
         // Each row is 1 line for cells + 1 optional subtitle + 1 optional separator.
-        
+
         let track_height: u32 = body_rows
             .iter()
             .enumerate()
@@ -491,6 +442,89 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
         }
     }
     .into_any()
+}
+
+// ---------------------------------------------------------------------------
+// Body row rendering
+// ---------------------------------------------------------------------------
+
+/// Build the visible body rows from the full row slice, applying scroll offset,
+/// cursor highlighting, and optional subtitle extraction.
+#[expect(clippy::too_many_arguments)]
+fn build_body_rows(
+    rows: &[Row],
+    scroll_offset: usize,
+    visible_rows: usize,
+    cursor: usize,
+    selected_bg_color: Option<Color>,
+    visible_columns: &[&Column],
+    col_widths: &[u16],
+    col_total_width: u16,
+    subtitle_padding: u32,
+    subtitle_column: Option<&str>,
+    depth: ColorDepth,
+) -> Vec<RenderedRow> {
+    let end = (scroll_offset + visible_rows).min(rows.len());
+    let visible_slice = if scroll_offset < rows.len() {
+        &rows[scroll_offset..end]
+    } else {
+        &[]
+    };
+
+    visible_slice
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let absolute_idx = scroll_offset + i;
+            let is_selected = absolute_idx == cursor;
+            let bg = if is_selected { selected_bg_color } else { None };
+
+            let cells: Vec<RenderedCell> = visible_columns
+                .iter()
+                .zip(col_widths.iter())
+                .map(|(col, &w)| {
+                    let cell = row.get(&col.id);
+                    let spans = cell.map_or_else(
+                        || {
+                            vec![RenderedSpan {
+                                text: String::new(),
+                                fg: Color::Reset,
+                                weight: Weight::Normal,
+                            }]
+                        },
+                        |c| render_spans(&c.spans, depth),
+                    );
+                    RenderedCell {
+                        spans: truncate_spans(spans, usize::from(w)),
+                        width: u32::from(w),
+                        align: col.align,
+                    }
+                })
+                .collect();
+
+            // Extract subtitle cell if configured.
+            let subtitle_available =
+                usize::from(col_total_width).saturating_sub(subtitle_padding as usize);
+            let subtitle = subtitle_column.and_then(|col_id| {
+                row.get(col_id).map(|cell| {
+                    let spans =
+                        truncate_spans(render_spans(&cell.spans, depth), subtitle_available);
+                    RenderedCell {
+                        spans,
+                        width: u32::from(col_total_width),
+                        align: TextAlign::Left,
+                    }
+                })
+            });
+
+            RenderedRow {
+                key: absolute_idx,
+                bg,
+                cells,
+                subtitle,
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

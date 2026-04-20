@@ -34,8 +34,8 @@ use crate::engine::{EngineHandle, Event, FilterConfig, Request};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::{
-    AlertCategory, AlertDetail, AlertSeverity, AlertState, RateLimitInfo, SecretLocation,
-    SecurityAlert,
+    AlertCategory, AlertDetail, AlertSeverity, AlertState, CodeScanningInstance, RateLimitInfo,
+    SecretLocation, SecurityAlert,
 };
 
 // ---------------------------------------------------------------------------
@@ -400,14 +400,157 @@ fn build_overview_lines(
     crate::markdown::renderer::render_markdown(&alert.summary, theme, depth)
 }
 
-#[expect(clippy::too_many_lines)]
+fn build_dependabot_lines(
+    ecosystem: &str,
+    ghsa_id: &str,
+    cve_id: Option<&String>,
+    vulnerable_version_range: Option<&String>,
+    patched_version: Option<&String>,
+    theme: &ResolvedTheme,
+) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Ecosystem: ", theme.text_faint),
+        StyledSpan::text(ecosystem.to_owned(), theme.text_primary),
+    ]));
+    if !ghsa_id.is_empty() {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("GHSA ID: ", theme.text_faint),
+            StyledSpan::text(ghsa_id.to_owned(), theme.text_primary),
+        ]));
+    }
+    if let Some(cve) = cve_id {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("CVE ID: ", theme.text_faint),
+            StyledSpan::text(cve.clone(), theme.text_primary),
+        ]));
+    }
+    if let Some(range) = vulnerable_version_range {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Vulnerable range: ", theme.text_faint),
+            StyledSpan::text(range.clone(), theme.text_error),
+        ]));
+    }
+    if let Some(patched) = patched_version {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Patched version: ", theme.text_faint),
+            StyledSpan::text(patched.clone(), theme.text_success),
+        ]));
+    }
+    lines
+}
+
+fn build_code_scanning_lines(
+    tool_name: &str,
+    tool_version: Option<&String>,
+    rule_id: &str,
+    rule_description: &str,
+    instances: &[CodeScanningInstance],
+    theme: &ResolvedTheme,
+) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Tool: ", theme.text_faint),
+        StyledSpan::text(tool_name.to_owned(), theme.text_primary),
+    ]));
+    if let Some(ver) = tool_version {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Version: ", theme.text_faint),
+            StyledSpan::text(ver.clone(), theme.text_faint),
+        ]));
+    }
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Rule: ", theme.text_faint),
+        StyledSpan::text(rule_id.to_owned(), theme.text_primary),
+    ]));
+    if !rule_description.is_empty() {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            rule_description.to_owned(),
+            theme.text_secondary,
+        )));
+    }
+    if !instances.is_empty() {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            format!("Instances ({}):", instances.len()),
+            theme.text_faint,
+        )));
+        for inst in instances {
+            let path = inst.path.as_deref().unwrap_or("<unknown>");
+            let start = inst.start_line.unwrap_or(0);
+            let end = inst.end_line.unwrap_or(start);
+            lines.push(StyledLine::from_spans(vec![
+                StyledSpan::text("  ", theme.text_faint),
+                StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
+            ]));
+        }
+    }
+    lines
+}
+
+fn build_secret_scanning_lines(
+    secret_type: &str,
+    secret_type_display_name: &str,
+    validity: Option<&String>,
+    resolution: Option<&String>,
+    alert_number: u64,
+    locations_cache: &HashMap<u64, Vec<SecretLocation>>,
+    theme: &ResolvedTheme,
+) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Secret type: ", theme.text_faint),
+        StyledSpan::text(secret_type.to_owned(), theme.text_primary),
+    ]));
+    if !secret_type_display_name.is_empty() {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Display name: ", theme.text_faint),
+            StyledSpan::text(secret_type_display_name.to_owned(), theme.text_primary),
+        ]));
+    }
+    if let Some(val) = validity {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Validity: ", theme.text_faint),
+            StyledSpan::text(val.clone(), theme.text_warning),
+        ]));
+    }
+    if let Some(res) = resolution {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Resolution: ", theme.text_faint),
+            StyledSpan::text(res.clone(), theme.text_secondary),
+        ]));
+    }
+    if let Some(locs) = locations_cache.get(&alert_number) {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            format!("Locations ({}):", locs.len()),
+            theme.text_faint,
+        )));
+        for loc in locs {
+            let path = loc.path.as_deref().unwrap_or("<unknown>");
+            let start = loc.start_line.unwrap_or(0);
+            let end = loc.end_line.unwrap_or(start);
+            lines.push(StyledLine::from_spans(vec![
+                StyledSpan::text("  ", theme.text_faint),
+                StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
+            ]));
+        }
+    } else {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            "No locations loaded yet",
+            theme.text_faint,
+        )));
+    }
+    lines
+}
+
 fn build_detail_lines(
     alert: &SecurityAlert,
     locations_cache: &HashMap<u64, Vec<SecretLocation>>,
     theme: &ResolvedTheme,
 ) -> Vec<StyledLine> {
-    let mut lines = Vec::new();
-
     match &alert.detail {
         AlertDetail::Dependabot {
             ecosystem,
@@ -415,137 +558,43 @@ fn build_detail_lines(
             cve_id,
             vulnerable_version_range,
             patched_version,
-        } => {
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Ecosystem: ", theme.text_faint),
-                StyledSpan::text(ecosystem.clone(), theme.text_primary),
-            ]));
-            if !ghsa_id.is_empty() {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("GHSA ID: ", theme.text_faint),
-                    StyledSpan::text(ghsa_id.clone(), theme.text_primary),
-                ]));
-            }
-            if let Some(cve) = cve_id {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("CVE ID: ", theme.text_faint),
-                    StyledSpan::text(cve.clone(), theme.text_primary),
-                ]));
-            }
-            if let Some(range) = vulnerable_version_range {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Vulnerable range: ", theme.text_faint),
-                    StyledSpan::text(range.clone(), theme.text_error),
-                ]));
-            }
-            if let Some(patched) = patched_version {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Patched version: ", theme.text_faint),
-                    StyledSpan::text(patched.clone(), theme.text_success),
-                ]));
-            }
-        }
+        } => build_dependabot_lines(
+            ecosystem,
+            ghsa_id,
+            cve_id.as_ref(),
+            vulnerable_version_range.as_ref(),
+            patched_version.as_ref(),
+            theme,
+        ),
         AlertDetail::CodeScanning {
             tool_name,
             tool_version,
             rule_id,
             rule_description,
             instances,
-        } => {
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Tool: ", theme.text_faint),
-                StyledSpan::text(tool_name.clone(), theme.text_primary),
-            ]));
-            if let Some(ver) = tool_version {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Version: ", theme.text_faint),
-                    StyledSpan::text(ver.clone(), theme.text_faint),
-                ]));
-            }
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Rule: ", theme.text_faint),
-                StyledSpan::text(rule_id.clone(), theme.text_primary),
-            ]));
-            if !rule_description.is_empty() {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    rule_description.clone(),
-                    theme.text_secondary,
-                )));
-            }
-            if !instances.is_empty() {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    format!("Instances ({}):", instances.len()),
-                    theme.text_faint,
-                )));
-                for inst in instances {
-                    let path = inst.path.as_deref().unwrap_or("<unknown>");
-                    let start = inst.start_line.unwrap_or(0);
-                    let end = inst.end_line.unwrap_or(start);
-                    lines.push(StyledLine::from_spans(vec![
-                        StyledSpan::text("  ", theme.text_faint),
-                        StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
-                    ]));
-                }
-            }
-        }
+        } => build_code_scanning_lines(
+            tool_name,
+            tool_version.as_ref(),
+            rule_id,
+            rule_description,
+            instances,
+            theme,
+        ),
         AlertDetail::SecretScanning {
             secret_type,
             secret_type_display_name,
             validity,
             resolution,
-        } => {
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Secret type: ", theme.text_faint),
-                StyledSpan::text(secret_type.clone(), theme.text_primary),
-            ]));
-            if !secret_type_display_name.is_empty() {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Display name: ", theme.text_faint),
-                    StyledSpan::text(secret_type_display_name.clone(), theme.text_primary),
-                ]));
-            }
-            if let Some(val) = validity {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Validity: ", theme.text_faint),
-                    StyledSpan::text(val.clone(), theme.text_warning),
-                ]));
-            }
-            if let Some(res) = resolution {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Resolution: ", theme.text_faint),
-                    StyledSpan::text(res.clone(), theme.text_secondary),
-                ]));
-            }
-
-            // Show cached locations if available.
-            if let Some(locs) = locations_cache.get(&alert.number) {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    format!("Locations ({}):", locs.len()),
-                    theme.text_faint,
-                )));
-                for loc in locs {
-                    let path = loc.path.as_deref().unwrap_or("<unknown>");
-                    let start = loc.start_line.unwrap_or(0);
-                    let end = loc.end_line.unwrap_or(start);
-                    lines.push(StyledLine::from_spans(vec![
-                        StyledSpan::text("  ", theme.text_faint),
-                        StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
-                    ]));
-                }
-            } else {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    "No locations loaded yet",
-                    theme.text_faint,
-                )));
-            }
-        }
+        } => build_secret_scanning_lines(
+            secret_type,
+            secret_type_display_name,
+            validity.as_ref(),
+            resolution.as_ref(),
+            alert.number,
+            locations_cache,
+            theme,
+        ),
     }
-
-    lines
 }
 
 // ---------------------------------------------------------------------------

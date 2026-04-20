@@ -154,80 +154,237 @@ async fn handle_request(
     let label = req.label();
     tracing::debug!("engine: received request: {label}");
     match req {
-        Request::FetchPrs { filter_idx, filter, force, reply_tx } =>
-            handle_fetch_prs(client, scheduler, filter_idx, filter, force, reply_tx).await,
-        Request::FetchIssues { filter_idx, filter, force, reply_tx } =>
-            handle_fetch_issues(client, scheduler, filter_idx, filter, force, reply_tx).await,
-        Request::FetchActions { filter_idx, filter, reply_tx } =>
-            handle_fetch_actions(client, scheduler, filter_idx, filter, reply_tx).await,
-        Request::FetchAlerts { filter_idx, filter, reply_tx } =>
-            handle_fetch_alerts(client, scheduler, filter_idx, filter, reply_tx).await,
-        Request::FetchSecretLocations { owner, repo, alert_number, reply_tx } =>
-            handle_fetch_secret_locations(client, owner, repo, alert_number, reply_tx).await,
-        Request::FetchRunJobs { owner, repo, run_id, host, reply_tx } =>
-            handle_fetch_run_jobs(client, owner, repo, run_id, host, reply_tx).await,
-        Request::FetchNotifications { filter_idx, filter, reply_tx } =>
-            handle_fetch_notifications(client, scheduler, filter_idx, filter, reply_tx).await,
-        Request::FetchPrDetail { pr_ref, force, reply_tx } =>
-            handle_fetch_pr_detail(client, pr_ref, force, reply_tx).await,
-        Request::FetchIssueDetail { owner, repo, number, reply_tx } =>
-            handle_fetch_issue_detail(client, owner, repo, number, reply_tx).await,
-        Request::PrefetchPrDetails { prs, reply_tx } =>
-            handle_prefetch_pr_details(client, prs, reply_tx).await,
-        Request::RegisterRefresh { configs, notify_tx } =>
-            scheduler.register(configs, refresh_interval, &notify_tx),
-        Request::ApprovePr { owner, repo, number, body, reply_tx } =>
-            handle_approve_pr(client, owner, repo, number, body, reply_tx).await,
-        Request::MergePr { owner, repo, number, reply_tx } =>
-            handle_merge_pr(client, owner, repo, number, reply_tx).await,
-        Request::ClosePr { owner, repo, number, reply_tx } =>
-            handle_close_pr(client, owner, repo, number, reply_tx).await,
-        Request::ReopenPr { owner, repo, number, reply_tx } =>
-            handle_reopen_pr(client, owner, repo, number, reply_tx).await,
-        Request::AddPrComment { owner, repo, number, body, reply_tx } =>
-            handle_add_pr_comment(client, owner, repo, number, body, reply_tx).await,
-        Request::UpdateBranch { owner, repo, number, reply_tx } =>
-            handle_update_branch(client, owner, repo, number, reply_tx).await,
-        Request::ReadyForReview { owner, repo, number, reply_tx } =>
-            handle_ready_for_review(client, owner, repo, number, reply_tx).await,
-        Request::SetPrAssignees { owner, repo, number, logins, reply_tx } =>
-            handle_set_pr_assignees(client, owner, repo, number, logins, reply_tx).await,
-        Request::SetPrLabels { owner, repo, number, labels, reply_tx } =>
-            handle_set_pr_labels(client, owner, repo, number, labels, reply_tx).await,
-        Request::CloseIssue { owner, repo, number, reply_tx } =>
-            handle_close_issue(client, owner, repo, number, reply_tx).await,
-        Request::ReopenIssue { owner, repo, number, reply_tx } =>
-            handle_reopen_issue(client, owner, repo, number, reply_tx).await,
-        Request::AddIssueComment { owner, repo, number, body, reply_tx } =>
-            handle_add_issue_comment(client, owner, repo, number, body, reply_tx).await,
-        Request::SetIssueLabels { owner, repo, number, labels, reply_tx } =>
-            handle_set_issue_labels(client, owner, repo, number, labels, reply_tx).await,
-        Request::SetIssueAssignees { owner, repo, number, logins, reply_tx } =>
-            handle_set_issue_assignees(client, owner, repo, number, logins, reply_tx).await,
-        Request::RerunWorkflowRun { owner, repo, run_id, failed_only, reply_tx } =>
-            handle_rerun_workflow_run(client, owner, repo, run_id, failed_only, reply_tx).await,
-        Request::CancelWorkflowRun { owner, repo, run_id, reply_tx } =>
-            handle_cancel_workflow_run(client, owner, repo, run_id, reply_tx).await,
-        Request::MarkNotificationRead { id, reply_tx } =>
-            handle_mark_notification_read(client, id, reply_tx).await,
-        Request::MarkAllNotificationsRead { reply_tx } =>
-            handle_mark_all_notifications_read(client, reply_tx).await,
-        Request::UnsubscribeNotification { id, reply_tx } =>
-            handle_unsubscribe_notification(client, id, reply_tx).await,
-        Request::FetchRepoLabels { owner, repo, reply_tx } =>
-            handle_fetch_repo_labels(client, owner, repo, reply_tx).await,
-        Request::FetchRepoCollaborators { owner, repo, reply_tx } =>
-            handle_fetch_repo_collaborators(client, owner, repo, reply_tx).await,
-        Request::RefreshPr { owner, repo, number, base_ref, head_repo_owner, head_ref, reply_tx } => {
-            let pr_ref = PrRef { owner, repo, number, base_ref, head_repo_owner, head_ref };
+        Request::FetchPrs {
+            filter_idx,
+            filter,
+            force,
+            reply_tx,
+        } => handle_fetch_prs(client, scheduler, filter_idx, filter, force, reply_tx).await,
+        Request::FetchIssues {
+            filter_idx,
+            filter,
+            force,
+            reply_tx,
+        } => handle_fetch_issues(client, scheduler, filter_idx, filter, force, reply_tx).await,
+        Request::FetchActions {
+            filter_idx,
+            filter,
+            reply_tx,
+        } => handle_fetch_actions(client, scheduler, filter_idx, filter, reply_tx).await,
+        Request::FetchAlerts {
+            filter_idx,
+            filter,
+            reply_tx,
+        } => handle_fetch_alerts(client, scheduler, filter_idx, filter, reply_tx).await,
+        Request::FetchSecretLocations {
+            owner,
+            repo,
+            alert_number,
+            reply_tx,
+        } => handle_fetch_secret_locations(client, owner, repo, alert_number, reply_tx).await,
+        Request::FetchRunJobs {
+            owner,
+            repo,
+            run_id,
+            host,
+            reply_tx,
+        } => handle_fetch_run_jobs(client, owner, repo, run_id, host, reply_tx).await,
+        Request::FetchNotifications {
+            filter_idx,
+            filter,
+            reply_tx,
+        } => handle_fetch_notifications(client, scheduler, filter_idx, filter, reply_tx).await,
+        Request::FetchPrDetail {
+            pr_ref,
+            force,
+            reply_tx,
+        } => handle_fetch_pr_detail(client, pr_ref, force, reply_tx).await,
+        Request::FetchIssueDetail {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_fetch_issue_detail(client, owner, repo, number, reply_tx).await,
+        Request::PrefetchPrDetails { prs, reply_tx } => {
+            handle_prefetch_pr_details(client, prs, reply_tx).await
+        }
+        Request::RegisterRefresh { configs, notify_tx } => {
+            scheduler.register(configs, refresh_interval, &notify_tx)
+        }
+        Request::ApprovePr {
+            owner,
+            repo,
+            number,
+            body,
+            reply_tx,
+        } => handle_approve_pr(client, owner, repo, number, body, reply_tx).await,
+        Request::MergePr {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_merge_pr(client, owner, repo, number, reply_tx).await,
+        Request::ClosePr {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_close_pr(client, owner, repo, number, reply_tx).await,
+        Request::ReopenPr {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_reopen_pr(client, owner, repo, number, reply_tx).await,
+        Request::AddPrComment {
+            owner,
+            repo,
+            number,
+            body,
+            reply_tx,
+        } => handle_add_pr_comment(client, owner, repo, number, body, reply_tx).await,
+        Request::UpdateBranch {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_update_branch(client, owner, repo, number, reply_tx).await,
+        Request::ReadyForReview {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_ready_for_review(client, owner, repo, number, reply_tx).await,
+        Request::SetPrAssignees {
+            owner,
+            repo,
+            number,
+            logins,
+            reply_tx,
+        } => handle_set_pr_assignees(client, owner, repo, number, logins, reply_tx).await,
+        Request::SetPrLabels {
+            owner,
+            repo,
+            number,
+            labels,
+            reply_tx,
+        } => handle_set_pr_labels(client, owner, repo, number, labels, reply_tx).await,
+        Request::CloseIssue {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_close_issue(client, owner, repo, number, reply_tx).await,
+        Request::ReopenIssue {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_reopen_issue(client, owner, repo, number, reply_tx).await,
+        Request::AddIssueComment {
+            owner,
+            repo,
+            number,
+            body,
+            reply_tx,
+        } => handle_add_issue_comment(client, owner, repo, number, body, reply_tx).await,
+        Request::SetIssueLabels {
+            owner,
+            repo,
+            number,
+            labels,
+            reply_tx,
+        } => handle_set_issue_labels(client, owner, repo, number, labels, reply_tx).await,
+        Request::SetIssueAssignees {
+            owner,
+            repo,
+            number,
+            logins,
+            reply_tx,
+        } => handle_set_issue_assignees(client, owner, repo, number, logins, reply_tx).await,
+        Request::RerunWorkflowRun {
+            owner,
+            repo,
+            run_id,
+            failed_only,
+            reply_tx,
+        } => handle_rerun_workflow_run(client, owner, repo, run_id, failed_only, reply_tx).await,
+        Request::CancelWorkflowRun {
+            owner,
+            repo,
+            run_id,
+            reply_tx,
+        } => handle_cancel_workflow_run(client, owner, repo, run_id, reply_tx).await,
+        Request::MarkNotificationRead { id, reply_tx } => {
+            handle_mark_notification_read(client, id, reply_tx).await
+        }
+        Request::MarkAllNotificationsRead { reply_tx } => {
+            handle_mark_all_notifications_read(client, reply_tx).await
+        }
+        Request::UnsubscribeNotification { id, reply_tx } => {
+            handle_unsubscribe_notification(client, id, reply_tx).await
+        }
+        Request::FetchRepoLabels {
+            owner,
+            repo,
+            reply_tx,
+        } => handle_fetch_repo_labels(client, owner, repo, reply_tx).await,
+        Request::FetchRepoCollaborators {
+            owner,
+            repo,
+            reply_tx,
+        } => handle_fetch_repo_collaborators(client, owner, repo, reply_tx).await,
+        Request::RefreshPr {
+            owner,
+            repo,
+            number,
+            base_ref,
+            head_repo_owner,
+            head_ref,
+            reply_tx,
+        } => {
+            let pr_ref = PrRef {
+                owner,
+                repo,
+                number,
+                base_ref,
+                head_repo_owner,
+                head_ref,
+            };
             handle_refresh_pr(client, pr_ref, reply_tx).await;
         }
-        Request::RefreshIssue { owner, repo, number, reply_tx } =>
-            handle_refresh_issue(client, owner, repo, number, reply_tx).await,
-        Request::FetchRunById { owner, repo, run_id, host, reply_tx } =>
-            handle_fetch_run_by_id(client, owner, repo, run_id, host, reply_tx).await,
-        Request::WatchRun { owner, repo, run_id, host, reply_tx } =>
-            handle_watch_run(client, watch_scheduler, complete_command, owner, repo, run_id, host, reply_tx).await,
+        Request::RefreshIssue {
+            owner,
+            repo,
+            number,
+            reply_tx,
+        } => handle_refresh_issue(client, owner, repo, number, reply_tx).await,
+        Request::FetchRunById {
+            owner,
+            repo,
+            run_id,
+            host,
+            reply_tx,
+        } => handle_fetch_run_by_id(client, owner, repo, run_id, host, reply_tx).await,
+        Request::WatchRun {
+            owner,
+            repo,
+            run_id,
+            host,
+            reply_tx,
+        } => {
+            handle_watch_run(
+                client,
+                watch_scheduler,
+                complete_command,
+                owner,
+                repo,
+                run_id,
+                host,
+                reply_tx,
+            )
+            .await
+        }
         Request::UnwatchRun { run_id } => {
             watch_scheduler.remove(run_id);
             tracing::debug!("engine: unwatched run_id={run_id}");
@@ -267,8 +424,15 @@ async fn handle_fetch_prs(
     match graphql::search_pull_requests_all(&octocrab, &filter.filters, limit, cache_opt).await {
         Ok((prs, rate_limit)) => {
             scheduler.mark_fetched(filter_idx, ViewKind::Prs);
-            tracing::debug!("engine: sending PrsFetched[{filter_idx}] count={}", prs.len());
-            let _ = reply_tx.send(Event::PrsFetched { filter_idx, prs, rate_limit });
+            tracing::debug!(
+                "engine: sending PrsFetched[{filter_idx}] count={}",
+                prs.len()
+            );
+            let _ = reply_tx.send(Event::PrsFetched {
+                filter_idx,
+                prs,
+                rate_limit,
+            });
         }
         Err(e) => {
             tracing::warn!("engine: FetchPrs[{filter_idx}] error: {e}");
@@ -298,8 +462,15 @@ async fn handle_fetch_issues(
     match graphql::search_issues_all(&octocrab, &filter.filters, limit, cache_opt).await {
         Ok((issues, rate_limit)) => {
             scheduler.mark_fetched(filter_idx, ViewKind::Issues);
-            tracing::debug!("engine: sending IssuesFetched[{filter_idx}] count={}", issues.len());
-            let _ = reply_tx.send(Event::IssuesFetched { filter_idx, issues, rate_limit });
+            tracing::debug!(
+                "engine: sending IssuesFetched[{filter_idx}] count={}",
+                issues.len()
+            );
+            let _ = reply_tx.send(Event::IssuesFetched {
+                filter_idx,
+                issues,
+                rate_limit,
+            });
         }
         Err(e) => {
             tracing::warn!("engine: FetchIssues[{filter_idx}] error: {e}");
@@ -325,8 +496,15 @@ async fn handle_fetch_actions(
     match gh_actions::fetch_workflow_runs(&octocrab, &filter).await {
         Ok((runs, rate_limit)) => {
             scheduler.mark_fetched(filter_idx, ViewKind::Actions);
-            tracing::debug!("engine: sending ActionsFetched[{filter_idx}] count={}", runs.len());
-            let _ = reply_tx.send(Event::ActionsFetched { filter_idx, runs, rate_limit });
+            tracing::debug!(
+                "engine: sending ActionsFetched[{filter_idx}] count={}",
+                runs.len()
+            );
+            let _ = reply_tx.send(Event::ActionsFetched {
+                filter_idx,
+                runs,
+                rate_limit,
+            });
         }
         Err(e) => {
             tracing::warn!("engine: FetchActions[{filter_idx}] error: {e}");
@@ -364,21 +542,27 @@ async fn handle_fetch_alerts(
     match gh_security::fetch_dependabot_alerts(&octocrab, owner, repo, limit).await {
         Ok((alerts, rl)) => {
             all_alerts.extend(alerts);
-            if rl.is_some() { last_rl = rl; }
+            if rl.is_some() {
+                last_rl = rl;
+            }
         }
         Err(e) => tracing::warn!("engine: FetchAlerts[{filter_idx}] dependabot: {e}"),
     }
     match gh_security::fetch_code_scanning_alerts(&octocrab, owner, repo, limit).await {
         Ok((alerts, rl)) => {
             all_alerts.extend(alerts);
-            if rl.is_some() { last_rl = rl; }
+            if rl.is_some() {
+                last_rl = rl;
+            }
         }
         Err(e) => tracing::warn!("engine: FetchAlerts[{filter_idx}] code-scanning: {e}"),
     }
     match gh_security::fetch_secret_scanning_alerts(&octocrab, owner, repo, limit).await {
         Ok((alerts, rl)) => {
             all_alerts.extend(alerts);
-            if rl.is_some() { last_rl = rl; }
+            if rl.is_some() {
+                last_rl = rl;
+            }
         }
         Err(e) => tracing::warn!("engine: FetchAlerts[{filter_idx}] secret-scanning: {e}"),
     }
@@ -386,7 +570,10 @@ async fn handle_fetch_alerts(
     all_alerts.sort_by_key(|a| std::cmp::Reverse(a.created_at));
 
     scheduler.mark_fetched(filter_idx, ViewKind::Alerts);
-    tracing::debug!("engine: sending AlertsFetched[{filter_idx}] count={}", all_alerts.len());
+    tracing::debug!(
+        "engine: sending AlertsFetched[{filter_idx}] count={}",
+        all_alerts.len()
+    );
     let _ = reply_tx.send(Event::AlertsFetched {
         filter_idx,
         alerts: all_alerts,
@@ -437,8 +624,15 @@ async fn handle_fetch_run_jobs(
     };
     match gh_actions::fetch_run_jobs(&octocrab, &owner, &repo, run_id).await {
         Ok((jobs, rate_limit)) => {
-            tracing::debug!("engine: sending RunJobsFetched run_id={run_id} count={}", jobs.len());
-            let _ = reply_tx.send(Event::RunJobsFetched { run_id, jobs, rate_limit });
+            tracing::debug!(
+                "engine: sending RunJobsFetched run_id={run_id} count={}",
+                jobs.len()
+            );
+            let _ = reply_tx.send(Event::RunJobsFetched {
+                run_id,
+                jobs,
+                rate_limit,
+            });
         }
         Err(e) => {
             tracing::warn!("engine: FetchRunJobs run_id={run_id} error: {e}");
@@ -492,7 +686,14 @@ async fn handle_fetch_pr_detail(
     force: bool,
     reply_tx: Sender<Event>,
 ) {
-    let PrRef { owner, repo, number, base_ref, head_repo_owner, head_ref } = pr_ref;
+    let PrRef {
+        owner,
+        repo,
+        number,
+        base_ref,
+        head_repo_owner,
+        head_ref,
+    } = pr_ref;
     let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "FetchPrDetail") else {
         return;
     };
@@ -516,7 +717,11 @@ async fn handle_fetch_pr_detail(
                 }
             }
             tracing::debug!("engine: sending PrDetailFetched #{number}");
-            let _ = reply_tx.send(Event::PrDetailFetched { number, detail, rate_limit });
+            let _ = reply_tx.send(Event::PrDetailFetched {
+                number,
+                detail,
+                rate_limit,
+            });
         }
         Err(e) => {
             tracing::warn!("engine: FetchPrDetail #{number} error: {e}");
@@ -542,7 +747,11 @@ async fn handle_fetch_issue_detail(
     match graphql::fetch_issue_detail(&octocrab, &owner, &repo, number, Some(&cache)).await {
         Ok((detail, rate_limit)) => {
             tracing::debug!("engine: sending IssueDetailFetched #{number}");
-            let _ = reply_tx.send(Event::IssueDetailFetched { number, detail, rate_limit });
+            let _ = reply_tx.send(Event::IssueDetailFetched {
+                number,
+                detail,
+                rate_limit,
+            });
         }
         Err(e) => {
             tracing::warn!("engine: FetchIssueDetail #{number} error: {e}");
@@ -565,8 +774,7 @@ async fn handle_prefetch_pr_details(
     let cache = client.cache();
     for pr in prs {
         let number = pr.number;
-        match graphql::fetch_pr_detail(&octocrab, &pr.owner, &pr.repo, number, Some(&cache)).await
-        {
+        match graphql::fetch_pr_detail(&octocrab, &pr.owner, &pr.repo, number, Some(&cache)).await {
             Ok((mut detail, rate_limit)) => {
                 if detail.behind_by.is_none()
                     && let Some(ref head_owner) = pr.head_repo_owner
@@ -588,7 +796,11 @@ async fn handle_prefetch_pr_details(
                     }
                 }
                 tracing::debug!("engine: sending PrDetailFetched #{number} (prefetch)");
-                let _ = reply_tx.send(Event::PrDetailFetched { number, detail, rate_limit });
+                let _ = reply_tx.send(Event::PrDetailFetched {
+                    number,
+                    detail,
+                    rate_limit,
+                });
             }
             Err(e) => {
                 tracing::warn!("engine: PrefetchPrDetails #{number} error: {e}");
@@ -611,7 +823,9 @@ async fn handle_approve_pr(
     let result = pr_actions::approve(&octocrab, &owner, &repo, number, body.as_deref()).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Approved PR #{number}"),
         format!("Approve PR #{number}"),
         ck,
@@ -632,7 +846,9 @@ async fn handle_merge_pr(
     let result = pr_actions::merge(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Merged PR #{number}"),
         format!("Merge PR #{number}"),
         ck,
@@ -653,7 +869,9 @@ async fn handle_close_pr(
     let result = pr_actions::close(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Closed PR #{number}"),
         format!("Close PR #{number}"),
         ck,
@@ -674,7 +892,9 @@ async fn handle_reopen_pr(
     let result = pr_actions::reopen(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Reopened PR #{number}"),
         format!("Reopen PR #{number}"),
         ck,
@@ -696,7 +916,9 @@ async fn handle_add_pr_comment(
     let result = pr_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Added comment to PR #{number}"),
         format!("Add comment to PR #{number}"),
         ck,
@@ -717,7 +939,9 @@ async fn handle_update_branch(
     let result = pr_actions::update_branch(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Updated branch for PR #{number}"),
         format!("Update branch for PR #{number}"),
         ck,
@@ -738,7 +962,9 @@ async fn handle_ready_for_review(
     let result = pr_actions::ready_for_review(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Marked PR #{number} as ready for review"),
         format!("Mark PR #{number} as ready for review"),
         ck,
@@ -760,7 +986,9 @@ async fn handle_set_pr_assignees(
     let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Set assignees on PR #{number}"),
         format!("Set assignees on PR #{number}"),
         ck,
@@ -782,7 +1010,9 @@ async fn handle_set_pr_labels(
     let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Set labels on PR #{number}"),
         format!("Set labels on PR #{number}"),
         ck,
@@ -802,7 +1032,9 @@ async fn handle_close_issue(
     };
     let result = issue_actions::close(&octocrab, &owner, &repo, number).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Closed issue #{number}"),
         format!("Close issue #{number}"),
         None,
@@ -822,7 +1054,9 @@ async fn handle_reopen_issue(
     };
     let result = issue_actions::reopen(&octocrab, &owner, &repo, number).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Reopened issue #{number}"),
         format!("Reopen issue #{number}"),
         None,
@@ -843,7 +1077,9 @@ async fn handle_add_issue_comment(
     };
     let result = issue_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Added comment to issue #{number}"),
         format!("Add comment to issue #{number}"),
         None,
@@ -864,7 +1100,9 @@ async fn handle_set_issue_labels(
     };
     let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Set labels on issue #{number}"),
         format!("Set labels on issue #{number}"),
         None,
@@ -885,7 +1123,9 @@ async fn handle_set_issue_assignees(
     };
     let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Set assignees on issue #{number}"),
         format!("Set assignees on issue #{number}"),
         None,
@@ -906,9 +1146,15 @@ async fn handle_rerun_workflow_run(
     };
     let result =
         gh_actions::rerun_workflow_run(&octocrab, &owner, &repo, run_id, failed_only).await;
-    let label = if failed_only { "failed jobs" } else { "all jobs" };
+    let label = if failed_only {
+        "failed jobs"
+    } else {
+        "all jobs"
+    };
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Re-run {label} queued for run #{run_id}"),
         format!("Re-run workflow run #{run_id}"),
         None,
@@ -928,7 +1174,9 @@ async fn handle_cancel_workflow_run(
     };
     let result = gh_actions::cancel_workflow_run(&octocrab, &owner, &repo, run_id).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Cancelled run #{run_id}"),
         format!("Cancel workflow run #{run_id}"),
         None,
@@ -947,7 +1195,9 @@ async fn handle_mark_notification_read(
     };
     let result = notif::mark_as_read(&octocrab, &id).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Marked notification {id} as read"),
         format!("Mark notification {id} as read"),
         None,
@@ -955,17 +1205,16 @@ async fn handle_mark_notification_read(
     .await;
 }
 
-async fn handle_mark_all_notifications_read(
-    client: &mut GitHubClient,
-    reply_tx: Sender<Event>,
-) {
+async fn handle_mark_all_notifications_read(client: &mut GitHubClient, reply_tx: Sender<Event>) {
     let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "MarkAllNotificationsRead")
     else {
         return;
     };
     let result = notif::mark_all_as_read(&octocrab).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         "Marked all notifications as read".to_owned(),
         "Mark all notifications as read".to_owned(),
         None,
@@ -984,7 +1233,9 @@ async fn handle_unsubscribe_notification(
     };
     let result = notif::unsubscribe(&octocrab, &id).await;
     send_mutation_result(
-        client, &reply_tx, result,
+        client,
+        &reply_tx,
+        result,
         format!("Unsubscribed from notification {id}"),
         format!("Unsubscribe from notification {id}"),
         None,
@@ -1052,12 +1303,15 @@ async fn handle_fetch_repo_collaborators(
     }
 }
 
-async fn handle_refresh_pr(
-    client: &mut GitHubClient,
-    pr_ref: PrRef,
-    reply_tx: Sender<Event>,
-) {
-    let PrRef { owner, repo, number, base_ref, head_repo_owner, head_ref } = pr_ref;
+async fn handle_refresh_pr(client: &mut GitHubClient, pr_ref: PrRef, reply_tx: Sender<Event>) {
+    let PrRef {
+        owner,
+        repo,
+        number,
+        base_ref,
+        head_repo_owner,
+        head_ref,
+    } = pr_ref;
     let Some(octocrab) = get_octocrab(client, "github.com", &reply_tx, "RefreshPr") else {
         return;
     };

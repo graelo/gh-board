@@ -610,125 +610,251 @@ struct RawReactionGroup {
 }
 
 // ---------------------------------------------------------------------------
+// Conversion helpers: Raw → Domain
+// ---------------------------------------------------------------------------
+
+fn extract_labels(labels: Option<Connection<RawLabel>>) -> Vec<Label> {
+    labels
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|l| Label {
+                    name: l.name,
+                    color: l.color,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_assignees(assignees: Option<Connection<RawAssignee>>) -> Vec<Actor> {
+    assignees
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|a| Actor {
+                    login: a.login,
+                    avatar_url: String::new(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_review_requests(requests: Option<Connection<RawReviewRequest>>) -> Vec<Actor> {
+    requests
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .filter_map(|rr| {
+                    rr.requested_reviewer.and_then(|r| {
+                        r.login.map(|login| Actor {
+                            login,
+                            avatar_url: String::new(),
+                        })
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_latest_reviews(reviews: Option<Connection<RawLatestReview>>) -> Vec<Review> {
+    reviews
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|r| Review {
+                    author: r.author.map(|a| Actor {
+                        login: a.login,
+                        avatar_url: a.avatar_url,
+                    }),
+                    state: r.state.unwrap_or(ReviewState::Unknown),
+                    body: String::new(),
+                    submitted_at: None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Convert a single `RawCheckContext` into a domain `CheckRun`.
+fn convert_check_context(ctx: RawCheckContext) -> CheckRun {
+    let name = ctx
+        .name
+        .or(ctx.context)
+        .unwrap_or_else(|| "<unknown>".to_owned());
+    let url = ctx.details_url.or(ctx.target_url);
+
+    // StatusContext uses "state" (string) instead of typed status/conclusion.
+    let (status, conclusion) = if ctx.status.is_some() {
+        (ctx.status, ctx.conclusion)
+    } else if let Some(ref state) = ctx.state {
+        match state.as_str() {
+            "success" => (Some(CheckStatus::Completed), Some(CheckConclusion::Success)),
+            "failure" | "error" => (Some(CheckStatus::Completed), Some(CheckConclusion::Failure)),
+            "pending" => (Some(CheckStatus::InProgress), None),
+            _ => (None, None),
+        }
+    } else {
+        (None, None)
+    };
+
+    let (workflow_run_id, workflow_name) = ctx
+        .check_suite
+        .and_then(|cs| cs.workflow_run)
+        .map_or((None, None), |wr| {
+            (wr.database_id, wr.workflow.and_then(|w| w.name))
+        });
+
+    CheckRun {
+        name,
+        status,
+        conclusion,
+        url,
+        workflow_run_id,
+        workflow_name,
+        started_at: ctx.started_at,
+        completed_at: ctx.completed_at,
+    }
+}
+
+/// Extract check runs from the commits connection (last-commit rollup).
+fn extract_check_runs(commits: Option<Connection<RawCommitNode>>) -> Vec<CheckRun> {
+    commits
+        .and_then(|c| c.nodes.into_iter().flatten().next())
+        .and_then(|cn| cn.commit)
+        .and_then(|c| c.status_check_rollup)
+        .and_then(|sr| sr.contexts)
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(convert_check_context)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_participants(participants: Option<Connection<RawAssignee>>) -> Vec<String> {
+    participants
+        .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
+        .unwrap_or_default()
+}
+
+fn extract_timeline_events(
+    timeline_items: Option<Connection<RawTimelineItem>>,
+) -> Vec<TimelineEvent> {
+    timeline_items
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .filter_map(convert_timeline_item)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_detail_commits(all_commits: Option<Connection<RawDetailCommitNode>>) -> Vec<Commit> {
+    all_commits
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .filter_map(|cn| {
+                    let c = cn.commit?;
+                    Some(Commit {
+                        sha: c.oid,
+                        message: c.message_headline,
+                        author: c.author.and_then(|a| a.name),
+                        committed_date: c.committed_date,
+                        check_state: c.status_check_rollup.and_then(|r| r.state),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_files(files: Option<Connection<RawFile>>) -> Vec<File> {
+    files
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|f| File {
+                    path: f.path,
+                    additions: f.additions,
+                    deletions: f.deletions,
+                    status: f.change_type,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_review_threads(
+    review_threads: Option<Connection<RawReviewThread>>,
+) -> Vec<ReviewThread> {
+    review_threads
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|rt| ReviewThread {
+                    is_resolved: rt.is_resolved,
+                    comments: rt
+                        .comments
+                        .map(|cc| {
+                            cc.nodes
+                                .into_iter()
+                                .flatten()
+                                .map(|rc| crate::github::types::Comment {
+                                    author: rc.author.map(raw_actor_to_actor),
+                                    body: rc.body,
+                                    created_at: rc.created_at,
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_detail_reviews(reviews: Option<Connection<RawReview>>) -> Vec<Review> {
+    reviews
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|r| Review {
+                    author: r.author.map(raw_actor_to_actor),
+                    state: r.state,
+                    body: r.body,
+                    submitted_at: r.submitted_at,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Conversion: Raw → Domain
 // ---------------------------------------------------------------------------
 
 impl RawPullRequest {
-    #[expect(clippy::too_many_lines)]
     fn into_domain(self) -> PullRequest {
         let author = self.author.map(|a| Actor {
             login: a.login,
             avatar_url: a.avatar_url,
         });
-
-        let labels = self
-            .labels
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|l| Label {
-                        name: l.name,
-                        color: l.color,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let assignees = self
-            .assignees
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|a| Actor {
-                        login: a.login,
-                        avatar_url: String::new(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let comment_count = self.comments.map_or(0, |c| c.total_count);
-
-        let review_requests = self
-            .review_requests
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|rr| {
-                        rr.requested_reviewer.and_then(|r| {
-                            r.login.map(|login| Actor {
-                                login,
-                                avatar_url: String::new(),
-                            })
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let check_runs = self
-            .commits
-            .and_then(|c| c.nodes.into_iter().flatten().next())
-            .and_then(|cn| cn.commit)
-            .and_then(|c| c.status_check_rollup)
-            .and_then(|sr| sr.contexts)
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|ctx| {
-                        // Unify CheckRun and StatusContext into our CheckRun type.
-                        let name = ctx
-                            .name
-                            .or(ctx.context)
-                            .unwrap_or_else(|| "<unknown>".to_owned());
-                        let url = ctx.details_url.or(ctx.target_url);
-
-                        // StatusContext uses "state" (string) instead of typed
-                        // status/conclusion. Map common values.
-                        let (status, conclusion) = if ctx.status.is_some() {
-                            (ctx.status, ctx.conclusion)
-                        } else if let Some(ref state) = ctx.state {
-                            match state.as_str() {
-                                "success" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Success))
-                                }
-                                "failure" | "error" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Failure))
-                                }
-                                "pending" => (Some(CheckStatus::InProgress), None),
-                                _ => (None, None),
-                            }
-                        } else {
-                            (None, None)
-                        };
-
-                        // Extract workflow_run_id and workflow_name from
-                        // checkSuite.workflowRun nesting (null for non-Actions checks).
-                        let (workflow_run_id, workflow_name) = ctx
-                            .check_suite
-                            .and_then(|cs| cs.workflow_run)
-                            .map_or((None, None), |wr| {
-                                (wr.database_id, wr.workflow.and_then(|w| w.name))
-                            });
-
-                        CheckRun {
-                            name,
-                            status,
-                            conclusion,
-                            url,
-                            workflow_run_id,
-                            workflow_name,
-                            started_at: ctx.started_at,
-                            completed_at: ctx.completed_at,
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
 
         let repo = self
             .repository
@@ -747,43 +873,23 @@ impl RawPullRequest {
             deletions: self.deletions,
             head_ref: self.head_ref_name,
             base_ref: self.base_ref_name,
-            labels,
-            assignees,
+            labels: extract_labels(self.labels),
+            assignees: extract_assignees(self.assignees),
             commits: Vec::new(),
             comments: Vec::new(),
             review_threads: Vec::new(),
-            review_requests,
-            reviews: self
-                .latest_reviews
-                .map(|c| {
-                    c.nodes
-                        .into_iter()
-                        .flatten()
-                        .map(|r| Review {
-                            author: r.author.map(|a| Actor {
-                                login: a.login,
-                                avatar_url: a.avatar_url,
-                            }),
-                            state: r.state.unwrap_or(ReviewState::Unknown),
-                            body: String::new(),
-                            submitted_at: None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
+            review_requests: extract_review_requests(self.review_requests),
+            reviews: extract_latest_reviews(self.latest_reviews),
             timeline_events: Vec::new(),
             files: Vec::new(),
-            check_runs,
+            check_runs: extract_check_runs(self.commits),
             updated_at: self.updated_at,
             created_at: self.created_at,
             url: self.url,
             repo,
-            comment_count,
+            comment_count: self.comments.map_or(0, |c| c.total_count),
             author_association: self.author_association,
-            participants: self
-                .participants
-                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
-                .unwrap_or_default(),
+            participants: extract_participants(self.participants),
             merge_state_status: self.merge_state_status,
             head_repo_owner: self.head_repository.as_ref().map(|r| r.owner.login.clone()),
             head_repo_name: self.head_repository.map(|r| r.name),
@@ -1186,103 +1292,13 @@ fn convert_timeline_item(item: RawTimelineItem) -> Option<TimelineEvent> {
 
 impl RawPrDetail {
     fn into_domain(self) -> PrDetail {
-        let reviews = self
-            .reviews
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|r| Review {
-                        author: r.author.map(raw_actor_to_actor),
-                        state: r.state,
-                        body: r.body,
-                        submitted_at: r.submitted_at,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let review_threads = self
-            .review_threads
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|rt| ReviewThread {
-                        is_resolved: rt.is_resolved,
-                        comments: rt
-                            .comments
-                            .map(|cc| {
-                                cc.nodes
-                                    .into_iter()
-                                    .flatten()
-                                    .map(|rc| crate::github::types::Comment {
-                                        author: rc.author.map(raw_actor_to_actor),
-                                        body: rc.body,
-                                        created_at: rc.created_at,
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let timeline_events = self
-            .timeline_items
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(convert_timeline_item)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let commits = self
-            .commits
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|cn| {
-                        let c = cn.commit?;
-                        Some(Commit {
-                            sha: c.oid,
-                            message: c.message_headline,
-                            author: c.author.and_then(|a| a.name),
-                            committed_date: c.committed_date,
-                            check_state: c.status_check_rollup.and_then(|r| r.state),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let files = self
-            .files
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|f| File {
-                        path: f.path,
-                        additions: f.additions,
-                        deletions: f.deletions,
-                        status: f.change_type,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         PrDetail {
             body: self.body,
-            reviews,
-            review_threads,
-            timeline_events,
-            commits,
-            files,
+            reviews: extract_detail_reviews(self.reviews),
+            review_threads: extract_review_threads(self.review_threads),
+            timeline_events: extract_timeline_events(self.timeline_items),
+            commits: extract_detail_commits(self.commits),
+            files: extract_files(self.files),
             mergeable: self.mergeable,
             behind_by: None, // Populated by fetch_compare after the GraphQL call.
         }
@@ -1891,137 +1907,15 @@ struct RawFullPullRequest {
 
 impl RawFullPullRequest {
     /// Split the combined response into a search-row `PullRequest` and a `PrDetail`.
-    #[expect(clippy::too_many_lines)]
     fn into_domain(self) -> (PullRequest, PrDetail) {
-        // --- Build PullRequest (search-row) ---
         let author = self.author.map(|a| Actor {
             login: a.login,
             avatar_url: a.avatar_url,
         });
 
-        let labels: Vec<Label> = self
-            .labels
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|l| Label {
-                        name: l.name,
-                        color: l.color,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let assignees: Vec<Actor> = self
-            .assignees
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|a| Actor {
-                        login: a.login,
-                        avatar_url: String::new(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let comment_count = self.comments.map_or(0, |c| c.total_count);
-
-        let review_requests: Vec<Actor> = self
-            .review_requests
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|rr| {
-                        rr.requested_reviewer.and_then(|r| {
-                            r.login.map(|login| Actor {
-                                login,
-                                avatar_url: String::new(),
-                            })
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let check_runs = self
-            .last_commit
-            .and_then(|c| c.nodes.into_iter().flatten().next())
-            .and_then(|cn| cn.commit)
-            .and_then(|c| c.status_check_rollup)
-            .and_then(|sr| sr.contexts)
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|ctx| {
-                        let name = ctx
-                            .name
-                            .or(ctx.context)
-                            .unwrap_or_else(|| "<unknown>".to_owned());
-                        let url = ctx.details_url.or(ctx.target_url);
-                        let (status, conclusion) = if ctx.status.is_some() {
-                            (ctx.status, ctx.conclusion)
-                        } else if let Some(ref state) = ctx.state {
-                            match state.as_str() {
-                                "success" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Success))
-                                }
-                                "failure" | "error" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Failure))
-                                }
-                                "pending" => (Some(CheckStatus::InProgress), None),
-                                _ => (None, None),
-                            }
-                        } else {
-                            (None, None)
-                        };
-                        let (workflow_run_id, workflow_name) = ctx
-                            .check_suite
-                            .and_then(|cs| cs.workflow_run)
-                            .map_or((None, None), |wr| {
-                                (wr.database_id, wr.workflow.and_then(|w| w.name))
-                            });
-                        CheckRun {
-                            name,
-                            status,
-                            conclusion,
-                            url,
-                            workflow_run_id,
-                            workflow_name,
-                            started_at: ctx.started_at,
-                            completed_at: ctx.completed_at,
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         let repo = self
             .repository
             .and_then(|r| RepoRef::from_full_name(&r.name_with_owner));
-
-        let latest_reviews_for_row: Vec<Review> = self
-            .latest_reviews
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|r| Review {
-                        author: r.author.map(|a| Actor {
-                            login: a.login,
-                            avatar_url: a.avatar_url,
-                        }),
-                        state: r.state.unwrap_or(ReviewState::Unknown),
-                        body: String::new(),
-                        submitted_at: None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
 
         let pr = PullRequest {
             number: self.number,
@@ -2036,129 +1930,35 @@ impl RawFullPullRequest {
             deletions: self.deletions,
             head_ref: self.head_ref_name,
             base_ref: self.base_ref_name,
-            labels,
-            assignees,
+            labels: extract_labels(self.labels),
+            assignees: extract_assignees(self.assignees),
             commits: Vec::new(),
             comments: Vec::new(),
             review_threads: Vec::new(),
-            review_requests,
-            reviews: latest_reviews_for_row,
+            review_requests: extract_review_requests(self.review_requests),
+            reviews: extract_latest_reviews(self.latest_reviews),
             timeline_events: Vec::new(),
             files: Vec::new(),
-            check_runs,
+            check_runs: extract_check_runs(self.last_commit),
             updated_at: self.updated_at,
             created_at: self.created_at,
             url: self.url,
             repo,
-            comment_count,
+            comment_count: self.comments.map_or(0, |c| c.total_count),
             author_association: self.author_association,
-            participants: self
-                .participants
-                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
-                .unwrap_or_default(),
+            participants: extract_participants(self.participants),
             merge_state_status: self.merge_state_status,
             head_repo_owner: self.head_repository.as_ref().map(|r| r.owner.login.clone()),
             head_repo_name: self.head_repository.map(|r| r.name),
         };
 
-        // --- Build PrDetail ---
-        let detail_reviews = self
-            .reviews
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|r| Review {
-                        author: r.author.map(raw_actor_to_actor),
-                        state: r.state,
-                        body: r.body,
-                        submitted_at: r.submitted_at,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let detail_review_threads = self
-            .review_threads
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|rt| ReviewThread {
-                        is_resolved: rt.is_resolved,
-                        comments: rt
-                            .comments
-                            .map(|cc| {
-                                cc.nodes
-                                    .into_iter()
-                                    .flatten()
-                                    .map(|rc| crate::github::types::Comment {
-                                        author: rc.author.map(raw_actor_to_actor),
-                                        body: rc.body,
-                                        created_at: rc.created_at,
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let timeline_events = self
-            .timeline_items
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(convert_timeline_item)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let commits = self
-            .all_commits
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|cn| {
-                        let c = cn.commit?;
-                        Some(Commit {
-                            sha: c.oid,
-                            message: c.message_headline,
-                            author: c.author.and_then(|a| a.name),
-                            committed_date: c.committed_date,
-                            check_state: c.status_check_rollup.and_then(|r| r.state),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let files = self
-            .files
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|f| File {
-                        path: f.path,
-                        additions: f.additions,
-                        deletions: f.deletions,
-                        status: f.change_type,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         let detail = PrDetail {
             body: self.body,
-            reviews: detail_reviews,
-            review_threads: detail_review_threads,
-            timeline_events,
-            commits,
-            files,
+            reviews: extract_detail_reviews(self.reviews),
+            review_threads: extract_review_threads(self.review_threads),
+            timeline_events: extract_timeline_events(self.timeline_items),
+            commits: extract_detail_commits(self.all_commits),
+            files: extract_files(self.files),
             mergeable: self.mergeable,
             behind_by: None,
         };

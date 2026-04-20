@@ -109,20 +109,8 @@ fn pr_columns(icons: &ResolvedIcons) -> Vec<Column> {
     ]
 }
 
-/// Convert a `PullRequest` into a table `Row`.
-///
-/// When `detail` is provided the "update" cell is derived from the refined detail
-/// data; otherwise the coarse `merge_state_status` from the PR itself is used.
-#[expect(clippy::too_many_lines)]
-fn pr_to_row(
-    pr: &PullRequest,
-    theme: &ResolvedTheme,
-    date_format: &str,
-    detail: Option<&PrDetail>,
-) -> Row {
-    let mut row = HashMap::new();
-
-    // State indicator
+/// Build the state indicator cell for a PR row.
+fn build_state_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
     let icons = &theme.icons;
     let (state_icon, state_color) = if pr.is_draft {
         (&icons.pr_draft, theme.text_faint)
@@ -133,61 +121,43 @@ fn pr_to_row(
             crate::github::types::PrState::Merged => (&icons.pr_merged, theme.text_actor),
         }
     };
-    row.insert(
-        "state".to_owned(),
-        Cell::colored(state_icon.clone(), state_color),
-    );
+    Cell::colored(state_icon.clone(), state_color)
+}
 
-    // Info line: repo/name #N by @author
+/// Build the info cell: `repo/name #N by @author`.
+fn build_info_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
     let repo_name = pr
         .repo
         .as_ref()
         .map_or_else(String::new, crate::github::types::RepoRef::full_name);
     let author = pr.author.as_ref().map_or("unknown", |a| a.login.as_str());
-    row.insert(
-        "info".to_owned(),
-        Cell::from_spans(vec![
-            Span {
-                text: repo_name,
-                color: Some(theme.text_secondary),
-                bold: false,
-            },
-            Span {
-                text: format!(" #{}", pr.number),
-                color: Some(theme.text_primary),
-                bold: false,
-            },
-            Span {
-                text: " by ".to_owned(),
-                color: Some(theme.text_faint),
-                bold: false,
-            },
-            Span {
-                text: format!("@{author}"),
-                color: Some(theme.text_actor),
-                bold: false,
-            },
-        ]),
-    );
+    Cell::from_spans(vec![
+        Span {
+            text: repo_name,
+            color: Some(theme.text_secondary),
+            bold: false,
+        },
+        Span {
+            text: format!(" #{}", pr.number),
+            color: Some(theme.text_primary),
+            bold: false,
+        },
+        Span {
+            text: " by ".to_owned(),
+            color: Some(theme.text_faint),
+            bold: false,
+        },
+        Span {
+            text: format!("@{author}"),
+            color: Some(theme.text_actor),
+            bold: false,
+        },
+    ])
+}
 
-    // Subtitle: PR title (extracted by subtitle_column)
-    row.insert(
-        "subtitle".to_owned(),
-        Cell::colored(crate::util::expand_emoji(&pr.title), theme.text_primary),
-    );
-
-    // Comments
-    let comments = if pr.comment_count > 0 {
-        pr.comment_count.to_string()
-    } else {
-        String::new()
-    };
-    row.insert(
-        "comments".to_owned(),
-        Cell::colored(comments, theme.text_secondary),
-    );
-
-    // Review status: prefer reviewDecision, fall back to latestReviews.
+/// Build the review status cell: prefer `reviewDecision`, fall back to `latestReviews`.
+fn build_review_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
+    let icons = &theme.icons;
     let (review_text, review_color) = match pr.review_decision {
         Some(crate::github::types::ReviewDecision::Approved) => {
             (&icons.review_approved, theme.text_success)
@@ -199,8 +169,6 @@ fn pr_to_row(
             (&icons.review_required, theme.text_faint)
         }
         None => {
-            // Infer from latestReviews when reviewDecision is null
-            // (repos without required review branch protection).
             use crate::types::ReviewState;
             if pr
                 .reviews
@@ -217,45 +185,71 @@ fn pr_to_row(
             }
         }
     };
+    Cell::colored(review_text.clone(), review_color)
+}
+
+/// Build the lines-changed cell: `+N -N` in green/red.
+fn build_lines_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
+    Cell::from_spans(vec![
+        Span {
+            text: format!("+{}", pr.additions),
+            color: Some(theme.text_success),
+            bold: false,
+        },
+        Span {
+            text: " ".to_owned(),
+            color: None,
+            bold: false,
+        },
+        Span {
+            text: format!("-{}", pr.deletions),
+            color: Some(theme.text_error),
+            bold: false,
+        },
+    ])
+}
+
+/// Convert a `PullRequest` into a table `Row`.
+///
+/// When `detail` is provided the "update" cell is derived from the refined detail
+/// data; otherwise the coarse `merge_state_status` from the PR itself is used.
+fn pr_to_row(
+    pr: &PullRequest,
+    theme: &ResolvedTheme,
+    date_format: &str,
+    detail: Option<&PrDetail>,
+) -> Row {
+    let mut row = HashMap::new();
+
+    row.insert("state".to_owned(), build_state_cell(pr, theme));
+    row.insert("info".to_owned(), build_info_cell(pr, theme));
     row.insert(
-        "review".to_owned(),
-        Cell::colored(review_text.clone(), review_color),
+        "subtitle".to_owned(),
+        Cell::colored(crate::util::expand_emoji(&pr.title), theme.text_primary),
     );
 
-    // CI status (aggregate from check runs)
+    let comments = if pr.comment_count > 0 {
+        pr.comment_count.to_string()
+    } else {
+        String::new()
+    };
+    row.insert(
+        "comments".to_owned(),
+        Cell::colored(comments, theme.text_secondary),
+    );
+
+    row.insert("review".to_owned(), build_review_cell(pr, theme));
+
     let (ci_text, ci_color) = aggregate_ci_status(&pr.check_runs, theme);
     row.insert("ci".to_owned(), Cell::colored(ci_text, ci_color));
 
-    // Lines changed: green/red like gh-dash
-    row.insert(
-        "lines".to_owned(),
-        Cell::from_spans(vec![
-            Span {
-                text: format!("+{}", pr.additions),
-                color: Some(theme.text_success),
-                bold: false,
-            },
-            Span {
-                text: " ".to_owned(),
-                color: None,
-                bold: false,
-            },
-            Span {
-                text: format!("-{}", pr.deletions),
-                color: Some(theme.text_error),
-                bold: false,
-            },
-        ]),
-    );
+    row.insert("lines".to_owned(), build_lines_cell(pr, theme));
 
-    // Updated
     let updated = crate::util::format_date(&pr.updated_at, date_format);
     row.insert(
         "updated".to_owned(),
         Cell::colored(updated, theme.text_faint),
     );
-
-    // Created
     let created = crate::util::format_date(&pr.created_at, date_format);
     row.insert(
         "created".to_owned(),

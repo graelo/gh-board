@@ -264,8 +264,8 @@ fn expand_tilde(path: &str) -> PathBuf {
 }
 
 fn expand_repo_paths(
-    paths: std::collections::HashMap<String, PathBuf>,
-) -> std::collections::HashMap<String, PathBuf> {
+    paths: indexmap::IndexMap<String, PathBuf>,
+) -> indexmap::IndexMap<String, PathBuf> {
     paths
         .into_iter()
         .map(|(k, v)| {

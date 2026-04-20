@@ -25,7 +25,7 @@ impl GitHubClient {
     pub fn new(cache_ttl_minutes: u32) -> Self {
         let cache = Cache::builder()
             .max_capacity(500)
-            .time_to_live(Duration::from_secs(u64::from(cache_ttl_minutes) * 60))
+            .time_to_live(Duration::from_mins(u64::from(cache_ttl_minutes)))
             .build();
 
         Self {

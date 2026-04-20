@@ -65,8 +65,7 @@ impl GitHubEngine {
         let mut watch_scheduler = WatchScheduler::new(Duration::from_secs(watch_poll_secs));
         let complete_command = self.config.actions.watch_complete_command.clone();
 
-        let interval_mins = u64::from(refetch_mins);
-        let refresh_interval = Duration::from_secs((interval_mins * 60).max(60));
+        let refresh_interval = Duration::from_mins(u64::from(refetch_mins).max(1));
         let poll_dur = Duration::from_secs(30);
         let mut refresh_tick = tokio::time::interval(poll_dur);
         // Consume the first immediate tick so refresh fires after one full interval.

@@ -171,11 +171,11 @@ fn format_key_display(key: &str) -> String {
 }
 
 fn description_for_keybinding(kb: &Keybinding) -> String {
-    if let Some(ref builtin) = kb.builtin {
-        use crate::config::keybindings::BuiltinAction;
-        if let Some(action) = BuiltinAction::from_name(builtin) {
-            return action.description().to_owned();
-        }
+    use crate::config::keybindings::BuiltinAction;
+    if let Some(ref builtin) = kb.builtin
+        && let Some(action) = BuiltinAction::from_name(builtin)
+    {
+        return action.description().to_owned();
     }
     if let Some(ref cmd) = kb.command {
         return format!("Run: {cmd}");

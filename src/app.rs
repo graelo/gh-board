@@ -13,6 +13,9 @@ use std::path::Path;
 use iocraft::prelude::*;
 
 use crate::color::ColorDepth;
+use crate::components::selection_overlay::{
+    RenderedSelectionOverlay, SelectionOverlay, SelectionOverlayBuildConfig, SelectionOverlayItem,
+};
 use crate::config::keybindings::MergedBindings;
 use crate::config::types::{AppConfig, Scope};
 use crate::engine::EngineHandle;
@@ -238,21 +241,113 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     };
     let mut repo_scoped = hooks.use_state(move || initial_scoped);
 
+    // Repo picker: user-selected repo override (persists until changed).
+    let mut selected_repo: State<Option<String>> = hooks.use_state(|| None);
+
+    // The effective repo name for scope purposes: user selection overrides detection.
+    let effective_repo_name: Option<String> = {
+        let sel = selected_repo.read();
+        if sel.is_some() {
+            sel.clone()
+        } else {
+            detected_repo.map(RepoRef::full_name)
+        }
+    };
+
     // Scope toggle signal: when a child view sets this to true, we toggle.
     let mut scope_toggle_signal = hooks.use_state(|| false);
     if scope_toggle_signal.get() {
         scope_toggle_signal.set(false);
-        if detected_repo.is_some() {
+        if effective_repo_name.is_some() {
             repo_scoped.set(!repo_scoped.get());
         }
     }
 
     // Effective scope repo string to pass to views.
     let scope_repo: Option<String> = if repo_scoped.get() {
-        detected_repo.map(RepoRef::full_name)
+        effective_repo_name.clone()
     } else {
         None
     };
+
+    // Repo picker overlay state.
+    let mut picker_visible = hooks.use_state(|| false);
+    let mut picker_cursor = hooks.use_state(|| 0_usize);
+
+    // Repo picker signal: child views set this to request the picker overlay.
+    let mut picker_signal = hooks.use_state(|| false);
+    if picker_signal.get() {
+        picker_signal.set(false);
+        // Build items list: detected repo first, then repo_paths keys.
+        let has_items = detected_repo.is_some() || config.is_some_and(|c| !c.repo_paths.is_empty());
+        if has_items {
+            picker_cursor.set(0);
+            picker_visible.set(true);
+        }
+    }
+
+    // Repo picker: pre-compute item list (repo names) for the closure.
+    let picker_items: Vec<String> = {
+        let mut items = Vec::new();
+        if let Some(d) = detected_repo {
+            items.push(d.full_name());
+        }
+        if let Some(c) = config {
+            for key in c.repo_paths.keys() {
+                // Skip detected repo if already in the list.
+                if detected_repo.is_none_or(|d| d.full_name() != *key) {
+                    items.push(key.clone());
+                }
+            }
+        }
+        items
+    };
+    let picker_items_len = picker_items.len();
+    let picker_items_for_closure = picker_items.clone();
+    let detected_repo_name = detected_repo.map(RepoRef::full_name);
+
+    // Repo picker keyboard handling.
+    hooks.use_terminal_events({
+        move |event| {
+            if !picker_visible.get() {
+                return;
+            }
+            if let TerminalEvent::Key(KeyEvent { code, kind, .. }) = event {
+                if kind == KeyEventKind::Release {
+                    return;
+                }
+                match code {
+                    KeyCode::Char('j') | KeyCode::Down => {
+                        picker_cursor
+                            .set((picker_cursor.get() + 1).min(picker_items_len.saturating_sub(1)));
+                    }
+                    KeyCode::Char('k') | KeyCode::Up => {
+                        picker_cursor.set(picker_cursor.get().saturating_sub(1));
+                    }
+                    KeyCode::Enter => {
+                        let idx = picker_cursor.get();
+                        if let Some(name) = picker_items_for_closure.get(idx) {
+                            // If selecting the originally detected repo, clear override.
+                            let is_detected =
+                                detected_repo_name.as_ref().is_some_and(|d| d == name);
+                            if is_detected {
+                                selected_repo.set(None);
+                            } else {
+                                selected_repo.set(Some(name.clone()));
+                            }
+                            // Activate scope so the selection takes effect immediately.
+                            repo_scoped.set(true);
+                        }
+                        picker_visible.set(false);
+                    }
+                    KeyCode::Esc => {
+                        picker_visible.set(false);
+                    }
+                    _ => {}
+                }
+            }
+        }
+    });
 
     // Exit handling.
     if should_exit.get() {
@@ -282,6 +377,41 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let filters_alerts = config.map(|c| c.alerts_filters.as_slice());
     let repo_path = props.repo_path;
 
+    // Build repo picker overlay when visible.
+    let rendered_repo_picker: Option<RenderedSelectionOverlay> = if picker_visible.get() {
+        let theme_ref = theme.unwrap();
+        let anchor_icon = &theme_ref.icons.repo_anchor;
+        let overlay_items: Vec<SelectionOverlayItem> = picker_items
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                let label = if i == 0 && detected_repo.is_some() {
+                    format!("{name} {anchor_icon}")
+                } else {
+                    name.clone()
+                };
+                SelectionOverlayItem { label }
+            })
+            .collect();
+        Some(RenderedSelectionOverlay::build(
+            SelectionOverlayBuildConfig {
+                title: "Select repo".to_owned(),
+                items: overlay_items,
+                cursor: picker_cursor.get(),
+                depth,
+                title_color: Some(theme_ref.text_primary),
+                item_color: Some(theme_ref.text_secondary),
+                cursor_color: Some(theme_ref.text_primary),
+                selected_bg: Some(theme_ref.bg_selected),
+                border_color: Some(theme_ref.border_primary),
+                hint_color: Some(theme_ref.text_faint),
+                cursor_marker: theme_ref.icons.select_cursor.clone(),
+            },
+        ))
+    } else {
+        None
+    };
+
     element! {
         View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
             View(
@@ -305,10 +435,11 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     switch_view_back: switch_back_signal,
                     goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
+                    repo_picker: picker_signal,
                     scope_repo: scope_repo.clone(),
                     repo_paths,
                     date_format,
-                    is_active: active == ViewKind::Prs,
+                    is_active: active == ViewKind::Prs && !picker_visible.get(),
                     refetch_interval_minutes: refetch_minutes,
                     prefetch_pr_details,
                     auto_clone,
@@ -338,9 +469,10 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     switch_view_back: switch_back_signal,
                     goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
+                    repo_picker: picker_signal,
                     scope_repo: scope_repo.clone(),
                     date_format,
-                    is_active: active == ViewKind::Issues,
+                    is_active: active == ViewKind::Issues && !picker_visible.get(),
                     refetch_interval_minutes: refetch_minutes,
                     nav_target,
                     go_back: go_back_signal,
@@ -370,7 +502,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     switch_view_back: switch_back_signal,
                     goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
-                    is_active: active == ViewKind::Actions,
+                    repo_picker: picker_signal,
+                    is_active: active == ViewKind::Actions && !picker_visible.get(),
                     refetch_interval_minutes: refetch_minutes,
                     nav_target,
                     go_back: go_back_signal,
@@ -400,7 +533,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     switch_view_back: switch_back_signal,
                     goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
-                    is_active: active == ViewKind::Alerts,
+                    repo_picker: picker_signal,
+                    is_active: active == ViewKind::Alerts && !picker_visible.get(),
                     refetch_interval_minutes: refetch_minutes,
                     date_format,
                     rate_limit: rest_rate_limit,
@@ -425,9 +559,10 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     switch_view_back: switch_back_signal,
                     goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
+                    repo_picker: picker_signal,
                     scope_repo: scope_repo.clone(),
                     date_format,
-                    is_active: active == ViewKind::Notifications,
+                    is_active: active == ViewKind::Notifications && !picker_visible.get(),
                     refetch_interval_minutes: refetch_minutes,
                     rate_limit: rest_rate_limit,
                 )
@@ -450,6 +585,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     switch_view_back: switch_back_signal,
                     goto_view: goto_view_signal,
                     scope_toggle: scope_toggle_signal,
+                    repo_picker: picker_signal,
                     scope_repo: scope_repo.clone(),
                     repo_path,
                     detected_repo,
@@ -457,11 +593,12 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     engine: props.engine,
                     nav_target,
                     date_format,
-                    is_active: active == ViewKind::Repo,
+                    is_active: active == ViewKind::Repo && !picker_visible.get(),
                     refetch_interval_minutes: refetch_minutes,
                     rate_limit: graphql_rate_limit,
                 )
             }
+            SelectionOverlay(overlay: rendered_repo_picker, width, height)
         }
     }
 }

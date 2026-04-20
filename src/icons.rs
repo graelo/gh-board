@@ -99,6 +99,8 @@ pub struct ResolvedIcons {
     pub action_running: String,
     pub action_queued: String,
     pub action_watched: String,
+    // Repo picker (1)
+    pub repo_anchor: String,
 }
 
 impl ResolvedIcons {
@@ -200,6 +202,8 @@ impl ResolvedIcons {
             action_running: "\u{21ba}".to_owned(),  // ↺
             action_queued: "\u{25cb}".to_owned(),   // ○
             action_watched: "\u{1f441}".to_owned(), // 👁 (U+1F441 EYE)
+            // Repo picker
+            repo_anchor: "\u{2693}".to_owned(), // ⚓
         }
     }
 
@@ -302,6 +306,8 @@ impl ResolvedIcons {
             action_running: "\u{ea77}".to_owned(), //  nf-cod-sync
             action_queued: "\u{e641}".to_owned(),  //  nf-seti-clock
             action_watched: "\u{e68f}".to_owned(), //  nf-seti-search
+            // Repo picker
+            repo_anchor: "\u{f13d}".to_owned(), //  nf-fa-anchor
         }
     }
 
@@ -402,6 +408,8 @@ impl ResolvedIcons {
             action_skipped: "-".to_owned(),
             action_running: "~".to_owned(),
             action_queued: "o".to_owned(),
+            // Repo picker
+            repo_anchor: "@".to_owned(),
             action_watched: "O".to_owned(),
         }
     }
@@ -545,6 +553,7 @@ impl ResolvedIcons {
             action_running: config.action_running.clone().unwrap_or(base.action_running),
             action_queued: config.action_queued.clone().unwrap_or(base.action_queued),
             action_watched: config.action_watched.clone().unwrap_or(base.action_watched),
+            repo_anchor: config.repo_anchor.clone().unwrap_or(base.repo_anchor),
         }
     }
 }

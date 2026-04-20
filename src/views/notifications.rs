@@ -213,6 +213,8 @@ pub struct NotificationsViewProps<'a> {
     pub goto_view: Option<State<Option<ViewKind>>>,
     /// Signal to toggle repo scope.
     pub scope_toggle: Option<State<bool>>,
+    /// Signal to open the repo picker overlay.
+    pub repo_picker: Option<State<bool>>,
     /// Active scope repo (e.g. `"owner/repo"`), or `None` for global.
     pub scope_repo: Option<String>,
     /// Date format string (from `config.defaults.date_format`).
@@ -238,6 +240,7 @@ pub fn NotificationsView<'a>(
     let switch_view_back = props.switch_view_back;
     let goto_view = props.goto_view;
     let scope_toggle = props.scope_toggle;
+    let repo_picker = props.repo_picker;
     let scope_repo = &props.scope_repo;
     let filter_count = filters_cfg.len();
     let is_active = props.is_active;
@@ -640,6 +643,11 @@ pub fn NotificationsView<'a>(
                                     BuiltinAction::ToggleScope => {
                                         if let Some(mut st) = scope_toggle {
                                             st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SelectRepo => {
+                                        if let Some(mut rp) = repo_picker {
+                                            rp.set(true);
                                         }
                                     }
                                     BuiltinAction::CopyNumber => {

@@ -73,7 +73,7 @@ impl RenderedHelpOverlay {
             .into_iter()
             .map(|g| {
                 // Compute max key width per group for independent column alignment.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation)]
                 let key_col_width = g
                     .rows
                     .iter()

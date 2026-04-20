@@ -614,7 +614,7 @@ struct RawReactionGroup {
 // ---------------------------------------------------------------------------
 
 impl RawPullRequest {
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     fn into_domain(self) -> PullRequest {
         let author = self.author.map(|a| Actor {
             login: a.login,
@@ -1891,7 +1891,7 @@ struct RawFullPullRequest {
 
 impl RawFullPullRequest {
     /// Split the combined response into a search-row `PullRequest` and a `PrDetail`.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     fn into_domain(self) -> (PullRequest, PrDetail) {
         // --- Build PullRequest (search-row) ---
         let author = self.author.map(|a| Actor {

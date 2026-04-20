@@ -143,7 +143,7 @@ impl GitHubEngine {
 // Request dispatch
 // ---------------------------------------------------------------------------
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 async fn handle_request(
     req: Request,
     client: &mut GitHubClient,

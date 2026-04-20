@@ -28,20 +28,20 @@ impl ScrollInfo {
             return (0, track_height);
         }
 
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss)]
         let ratio = self.visible_count as f64 / self.total_count as f64;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let thumb_size = (ratio * f64::from(track_height)).round().max(1.0) as u32;
         let thumb_size = thumb_size.min(track_height);
 
         let max_scroll = self.total_count.saturating_sub(self.visible_count);
         let available = track_height.saturating_sub(thumb_size);
 
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss)]
         let thumb_start = if max_scroll == 0 {
             0
         } else {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let start = (self.scroll_offset as f64 / max_scroll as f64 * f64::from(available))
                 .round() as u32;
             start.min(available)

@@ -237,6 +237,7 @@ impl RenderedSidebar {
     }
 
     /// Build a pre-rendered sidebar with optional tab bar.
+    #[expect(clippy::too_many_lines)]
     pub fn build_tabbed(
         title: &str,
         lines: &[StyledLine],
@@ -361,7 +362,7 @@ impl RenderedSidebar {
             None
         };
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         let track_height = visible_lines as u32;
 
         Self {

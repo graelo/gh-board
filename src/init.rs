@@ -8,7 +8,7 @@ use crate::config::builtin_themes;
 ///
 /// Prompts for a theme and icon preset, then writes a starter config to
 /// `~/.config/gh-board/config.toml`.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 pub fn run() -> Result<()> {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_owned());
     let config_path = std::path::PathBuf::from(&home).join(".config/gh-board/config.toml");

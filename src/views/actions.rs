@@ -377,7 +377,6 @@ pub struct ActionsViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn ActionsView<'a>(
     props: &ActionsViewProps<'a>,
     mut hooks: Hooks,
@@ -1879,7 +1878,7 @@ pub fn ActionsView<'a>(
     // -----------------------------------------------------------------------
 
     let nav_w: u16 = if nav_open.get() { NAV_W } else { 0 };
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let (table_w, sidebar_w) = if detail_open.get() {
         let sb = (f64::from(props.width) * preview_pct).round() as u16;
         let tb = props.width.saturating_sub(nav_w).saturating_sub(sb);

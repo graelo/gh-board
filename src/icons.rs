@@ -408,7 +408,7 @@ impl ResolvedIcons {
 
     /// Build a resolved icon set from user config: pick a preset, then apply
     /// per-icon overrides.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     pub fn resolve(config: &IconConfig) -> Self {
         let base = match config.preset.as_deref() {
             Some("nerdfont") => Self::nerdfont(),

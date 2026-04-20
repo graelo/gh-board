@@ -113,7 +113,7 @@ fn pr_columns(icons: &ResolvedIcons) -> Vec<Column> {
 ///
 /// When `detail` is provided the "update" cell is derived from the refined detail
 /// data; otherwise the coarse `merge_state_status` from the PR itself is used.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn pr_to_row(
     pr: &PullRequest,
     theme: &ResolvedTheme,
@@ -488,7 +488,7 @@ fn merged_pr_filters<'a>(
 // ---------------------------------------------------------------------------
 
 #[derive(Default, Props)]
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct PrsViewProps<'a> {
     /// PR filter configs.
     pub filters: Option<&'a [PrFilter]>,
@@ -545,7 +545,6 @@ pub struct PrsViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
@@ -2338,7 +2337,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Compute widths for table vs sidebar.
     let is_preview_open = preview_open.get();
     let (table_width, sidebar_width) = if is_preview_open {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let sb_w = (f64::from(props.width) * preview_pct).round() as u16;
         let tb_w = props.width.saturating_sub(sb_w);
         (tb_w, sb_w)
@@ -2483,7 +2482,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         };
 
         // Account for tab bar (2 extra lines) + meta in sidebar height.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
         let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
@@ -2820,7 +2819,7 @@ struct InputContext<'a> {
 }
 
 /// Handle text input for assigning PRs to users.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn handle_assign_input(
     code: KeyCode,
     modifiers: KeyModifiers,
@@ -2946,7 +2945,7 @@ fn handle_assign_input(
 }
 
 /// Handle text input for adding a label to a PR.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn handle_label_input(
     code: KeyCode,
     modifiers: KeyModifiers,
@@ -3162,7 +3161,7 @@ fn sidebar_update_status(
 }
 
 /// Build the `SidebarMeta` header from a pull request.
-#[allow(clippy::too_many_lines, clippy::similar_names)]
+#[expect(clippy::too_many_lines, clippy::similar_names)]
 fn build_sidebar_meta(
     pr: &PullRequest,
     detail: Option<&PrDetail>,

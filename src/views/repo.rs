@@ -648,7 +648,6 @@ pub struct RepoViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
     let depth = props.color_depth;
@@ -1320,7 +1319,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     // Compute widths for table vs sidebar.
     let is_preview_open = preview_open.get();
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let (table_width, sidebar_width) = if is_preview_open {
         let sb_w = (f64::from(props.width) * preview_pct).round() as u16;
         (props.width.saturating_sub(sb_w), sb_w)
@@ -1538,7 +1537,6 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             }
         }
 
-        #[allow(clippy::cast_possible_truncation)]
         let sidebar_visible_lines = props.height.saturating_sub(8) as usize;
 
         let tab_overrides_ref = if tab_overrides.is_empty() {

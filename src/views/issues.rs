@@ -309,7 +309,6 @@ pub struct IssuesViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
@@ -1493,7 +1492,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     let is_preview_open = preview_open.get();
     let (table_width, sidebar_width) = if is_preview_open {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let sb_w = (f64::from(props.width) * preview_pct).round() as u16;
         let tb_w = props.width.saturating_sub(sb_w);
         (tb_w, sb_w)
@@ -1605,7 +1604,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         };
 
         // Account for tab bar (2 extra lines) + meta in sidebar height.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
         let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
@@ -1893,7 +1892,7 @@ struct InputContext<'a> {
     event_tx: &'a std::sync::mpsc::Sender<Event>,
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn handle_assign_input(
     code: KeyCode,
     modifiers: KeyModifiers,
@@ -2076,7 +2075,7 @@ fn handle_text_input(
     }
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn handle_label_input(
     code: KeyCode,
     modifiers: KeyModifiers,
@@ -2243,7 +2242,7 @@ fn get_current_issue_assignees(
     issue.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn build_issue_sidebar_meta(
     issue: &Issue,
     theme: &ResolvedTheme,

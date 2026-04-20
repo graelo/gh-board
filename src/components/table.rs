@@ -183,7 +183,7 @@ pub struct TableBuildConfig<'a> {
 
 impl RenderedTable {
     /// Build a `RenderedTable` from a configuration.
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     pub fn build(cfg: &TableBuildConfig<'_>) -> Self {
         let columns = cfg.columns;
         let rows = cfg.rows;
@@ -325,7 +325,7 @@ impl RenderedTable {
 
         // Track height = number of rendered lines in the body area.
         // Each row is 1 line for cells + 1 optional subtitle + 1 optional separator.
-        #[allow(clippy::cast_possible_truncation)]
+        
         let track_height: u32 = body_rows
             .iter()
             .enumerate()
@@ -584,12 +584,12 @@ fn compute_column_widths(
             let ratio = if unfixed_pct_sum > 0.0 {
                 col.default_width_pct / unfixed_pct_sum
             } else {
-                #[allow(clippy::cast_precision_loss)]
+                #[expect(clippy::cast_precision_loss)]
                 {
                     1.0 / columns.len() as f32
                 }
             };
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let w = (f32::from(remaining) * ratio).round() as u16;
             widths[i] = Some(w);
         }

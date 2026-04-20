@@ -400,7 +400,7 @@ fn build_overview_lines(
     crate::markdown::renderer::render_markdown(&alert.summary, theme, depth)
 }
 
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn build_detail_lines(
     alert: &SecurityAlert,
     locations_cache: &HashMap<u64, Vec<SecretLocation>>,
@@ -598,7 +598,6 @@ pub struct AlertsViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
@@ -1289,7 +1288,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
     // -----------------------------------------------------------------------
 
     let nav_w: u16 = if nav_open.get() { NAV_W } else { 0 };
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let (table_w, sidebar_w) = if preview_open.get() {
         let sb = (f64::from(props.width) * preview_pct).round() as u16;
         let tb = props.width.saturating_sub(nav_w).saturating_sub(sb);

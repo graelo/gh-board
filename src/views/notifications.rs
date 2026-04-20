@@ -226,7 +226,6 @@ pub struct NotificationsViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn NotificationsView<'a>(
     props: &NotificationsViewProps<'a>,
     mut hooks: Hooks,

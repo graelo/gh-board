@@ -13,7 +13,7 @@ use crate::theme::ResolvedTheme;
 
 /// A single styled span of text.
 #[derive(Debug, Clone)]
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct StyledSpan {
     pub text: String,
     pub color: AppColor,
@@ -146,7 +146,7 @@ pub fn render_markdown(
     ctx.lines
 }
 
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools)]
 struct RenderContext<'t> {
     theme: &'t ResolvedTheme,
     depth: ColorDepth,
@@ -412,7 +412,7 @@ impl<'t> RenderContext<'t> {
         self.in_table = false;
     }
 
-    #[allow(clippy::too_many_lines)]
+    #[expect(clippy::too_many_lines)]
     fn process<'a>(&mut self, parser: impl Iterator<Item = Event<'a>>) {
         for event in parser {
             match event {

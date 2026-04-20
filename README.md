@@ -1,5 +1,10 @@
 # gh-board
 
+[![crate](https://img.shields.io/crates/v/gh-board.svg)](https://crates.io/crates/gh-board)
+[![minimum rustc 1.95](https://img.shields.io/badge/rustc-1.95+-red.svg)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
+[![rust 2024 edition](https://img.shields.io/badge/edition-2024-blue.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
+[![build status](https://github.com/graelo/gh-board/actions/workflows/essentials.yml/badge.svg)](https://github.com/graelo/gh-board/actions/workflows/essentials.yml)
+
 A fast terminal dashboard for GitHub pull requests, issues, notifications, and
 repository branches.
 

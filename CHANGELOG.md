@@ -5,6 +5,47 @@ All notable changes to gh-board are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this
 project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [0.11.1] - 2026-04-20
+
+### Changed
+
+- **MSRV bumped to 1.95.0** — enables `Duration::from_mins`, let-chains, and
+  `#[expect]` lint attributes
+- **Clippy suppression overhaul** — all 51 `#[allow(clippy::...)]` eliminated;
+  25 unavoidable suppressions converted to `#[expect]` which errors if the lint
+  no longer fires. Introduced color config structs (`SidebarColors`,
+  `FooterColors`, `TabBarColors`, `TextInputColors`) and param bundles
+  (`FooterContent`, `SidebarTabConfig`, `InputContext`, `RunContext`) to reduce
+  argument counts. Extracted helpers from long functions: `handle_request` split
+  into 35 per-variant async handlers, shared GraphQL extraction helpers,
+  `handle_multiselect_input` replacing 4 duplicated assign/label input handlers,
+  PR cell builders, alert detail formatters, sidebar visual layout, init wizard
+  prompts
+- **CI hardening** — install cargo-nextest via `taiki-e/install-action`
+  (SHA-pinned) instead of curl; add `.config/nextest.toml` with ci profile; move
+  poutine config to `.github/poutine.yml`; add `CODEOWNERS`; clippy with
+  `--all-targets --all-features`; fix poutine-action pin to v1.1.4 for config
+  discovery
+- **Renovate** — switch to daily schedule, enable `platformAutomerge` and
+  `automerge` on patch/minor updates
+
+### Added
+
+- **80 new unit tests** covering GraphQL extraction helpers, PR cell builders,
+  alert detail formatters, table body row rendering, sidebar visual layout,
+  scrollbar geometry, and init config generation
+- **4 doc tests** for `Color::parse`, `RepoRef::full_name`,
+  `RepoRef::from_full_name`, and `parse_github_url`
+
+### Fixed
+
+- Resolve nightly clippy lints (`duration_suboptimal_units`,
+  `float_literal_f32_fallback`)
+- Pin poutine-action to v1.1.4 (was v1.1.2) so `.github/poutine.yml` skip list
+  is discovered — fixes 12 false-positive code scanning alerts
+
 ## [0.11.0] - 2026-04-15
 
 ### Added
@@ -271,6 +312,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.11.1...HEAD
+[0.11.1]: https://github.com/graelo/gh-board/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/graelo/gh-board/compare/v0.10.3...v0.11.0
 [0.10.3]: https://github.com/graelo/gh-board/compare/v0.10.2...v0.10.3
 [0.10.2]: https://github.com/graelo/gh-board/compare/v0.10.1...v0.10.2

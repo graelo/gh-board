@@ -37,6 +37,7 @@ any of them — or add custom shell commands — in your `config.toml`.
 | `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
 | `1`–`6` | `go_to_prs` … `go_to_repo` | Jump directly to a view |
 | `S` | `toggle_scope` | Toggle repo scope |
+| `s` | `select_repo` | Select active repo |
 
 ### PR view
 

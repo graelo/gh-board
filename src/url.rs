@@ -49,6 +49,26 @@ pub(crate) fn owner_repo_from_url(url: &str) -> Option<(String, String)> {
 /// parsing, so browser-copied URLs work as expected.
 ///
 /// Returns `None` for unrecognised or malformed URLs.
+///
+/// # Examples
+///
+/// ```
+/// use gh_board::url::{parse_github_url, ParsedGitHubUrl};
+///
+/// let parsed = parse_github_url("https://github.com/owner/repo/pull/42").unwrap();
+/// assert_eq!(parsed, ParsedGitHubUrl::PullRequest {
+///     host: None,
+///     owner: "owner".into(),
+///     repo: "repo".into(),
+///     number: 42,
+/// });
+///
+/// // Query strings and fragments are stripped.
+/// let parsed = parse_github_url("https://github.com/o/r/issues/7?tab=body#L1").unwrap();
+/// assert!(matches!(parsed, ParsedGitHubUrl::Issue { number: 7, .. }));
+///
+/// assert!(parse_github_url("https://example.com/not/github").is_none());
+/// ```
 pub fn parse_github_url(url: &str) -> Option<ParsedGitHubUrl> {
     let after_scheme = url
         .strip_prefix("https://")

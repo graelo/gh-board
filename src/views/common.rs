@@ -17,7 +17,7 @@ pub type EventChannel = (Sender<Event>, Arc<Mutex<std::sync::mpsc::Receiver<Even
 ///
 /// Call this exactly once per view component, inside a `hooks.use_state`:
 ///
-/// ```ignore
+/// ```text
 /// let event_channel = hooks.use_state(common::new_event_channel);
 /// let (event_tx, event_rx_arc) = event_channel.read().clone();
 /// ```

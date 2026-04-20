@@ -82,11 +82,33 @@ pub struct RepoRef {
 }
 
 impl RepoRef {
+    /// Format as `"owner/name"`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gh_board::types::common::RepoRef;
+    ///
+    /// let r = RepoRef { owner: "rust-lang".into(), name: "rust".into() };
+    /// assert_eq!(r.full_name(), "rust-lang/rust");
+    /// ```
     pub fn full_name(&self) -> String {
         format!("{}/{}", self.owner, self.name)
     }
 
     /// Parse `"owner/name"` into a `RepoRef`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gh_board::types::common::RepoRef;
+    ///
+    /// let r = RepoRef::from_full_name("rust-lang/rust").unwrap();
+    /// assert_eq!(r.owner, "rust-lang");
+    /// assert_eq!(r.name, "rust");
+    ///
+    /// assert!(RepoRef::from_full_name("no-slash").is_none());
+    /// ```
     pub fn from_full_name(s: &str) -> Option<Self> {
         let (owner, name) = s.split_once('/')?;
         Some(Self {

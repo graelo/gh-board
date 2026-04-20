@@ -34,6 +34,24 @@ impl Color {
     /// # Errors
     ///
     /// Returns `ColorParseError` if the string is not a valid color.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use gh_board::color::Color;
+    ///
+    /// let c = Color::parse("42", "bg").unwrap();
+    /// assert_eq!(c, Color::Ansi256(42));
+    ///
+    /// let c = Color::parse("#FF8000", "accent").unwrap();
+    /// assert_eq!(c, Color::Hex { r: 255, g: 128, b: 0 });
+    ///
+    /// // Short hex (#RGB) expands each nibble: 0xA → 0xAA
+    /// let c = Color::parse("#F80", "accent").unwrap();
+    /// assert_eq!(c, Color::Hex { r: 255, g: 136, b: 0 });
+    ///
+    /// assert!(Color::parse("not-a-color", "fg").is_err());
+    /// ```
     pub fn parse(s: &str, field: &str) -> Result<Self, ColorParseError> {
         let make_err = || ColorParseError {
             field: field.to_owned(),

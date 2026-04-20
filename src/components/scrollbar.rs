@@ -241,9 +241,6 @@ mod tests {
         };
         let (start, size) = info.thumb_geometry(20);
         assert!(start > 0, "thumb should not be at the very top");
-        assert!(
-            start + size < 20,
-            "thumb should not be at the very bottom"
-        );
+        assert!(start + size < 20, "thumb should not be at the very bottom");
     }
 }

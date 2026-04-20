@@ -850,10 +850,9 @@ mod tests {
     #[test]
     fn tab_labels_with_overrides() {
         let tabs = &[SidebarTab::Overview, SidebarTab::Activity];
-        let overrides: HashMap<SidebarTab, String> =
-            [(SidebarTab::Activity, "Custom".to_owned())]
-                .into_iter()
-                .collect();
+        let overrides: HashMap<SidebarTab, String> = [(SidebarTab::Activity, "Custom".to_owned())]
+            .into_iter()
+            .collect();
         let labels = build_tab_labels(
             Some(SidebarTab::Overview),
             Some(tabs),

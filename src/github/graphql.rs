@@ -2278,7 +2278,10 @@ mod tests {
         let result = extract_assignees(Some(conn));
         assert_eq!(result.len(), 2);
         assert_eq!(result[0].login, "alice");
-        assert!(result[0].avatar_url.is_empty(), "avatar_url should be empty for assignees");
+        assert!(
+            result[0].avatar_url.is_empty(),
+            "avatar_url should be empty for assignees"
+        );
         assert_eq!(result[1].login, "bob");
     }
 

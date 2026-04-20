@@ -1740,7 +1740,10 @@ mod tests {
         let theme = test_theme();
         let lines = build_dependabot_lines("npm", "", None, None, None, &theme);
         let text = lines_text(&lines);
-        assert!(!text.contains("GHSA ID: "), "empty GHSA ID should be omitted");
+        assert!(
+            !text.contains("GHSA ID: "),
+            "empty GHSA ID should be omitted"
+        );
     }
 
     #[test]
@@ -1760,9 +1763,18 @@ mod tests {
         let text = lines_text(&lines);
         assert!(text.contains("CVE ID: "), "should have CVE ID label");
         assert!(text.contains("CVE-2024-1234"), "should contain CVE ID");
-        assert!(text.contains("Vulnerable range: "), "should have vulnerable range");
-        assert!(text.contains(">= 1.0, < 1.5"), "should contain version range");
-        assert!(text.contains("Patched version: "), "should have patched version");
+        assert!(
+            text.contains("Vulnerable range: "),
+            "should have vulnerable range"
+        );
+        assert!(
+            text.contains(">= 1.0, < 1.5"),
+            "should contain version range"
+        );
+        assert!(
+            text.contains("Patched version: "),
+            "should have patched version"
+        );
         assert!(text.contains("1.5.0"), "should contain patched version");
     }
 
@@ -1790,12 +1802,21 @@ mod tests {
     #[test]
     fn code_scanning_lines_contains_rule() {
         let theme = test_theme();
-        let lines =
-            build_code_scanning_lines("CodeQL", None, "js/sql-injection", "SQL injection", &[], &theme);
+        let lines = build_code_scanning_lines(
+            "CodeQL",
+            None,
+            "js/sql-injection",
+            "SQL injection",
+            &[],
+            &theme,
+        );
         let text = lines_text(&lines);
         assert!(text.contains("Rule: "), "should have Rule label");
         assert!(text.contains("js/sql-injection"), "should contain rule ID");
-        assert!(text.contains("SQL injection"), "should contain rule description");
+        assert!(
+            text.contains("SQL injection"),
+            "should contain rule description"
+        );
     }
 
     #[test]
@@ -1829,9 +1850,18 @@ mod tests {
         ];
         let lines = build_code_scanning_lines("Semgrep", None, "rule-1", "", &instances, &theme);
         let text = lines_text(&lines);
-        assert!(text.contains("Instances (2):"), "should show instance count");
-        assert!(text.contains("src/main.rs:10-15"), "should contain first instance path");
-        assert!(text.contains("src/lib.rs:42-42"), "should contain second instance path");
+        assert!(
+            text.contains("Instances (2):"),
+            "should show instance count"
+        );
+        assert!(
+            text.contains("src/main.rs:10-15"),
+            "should contain first instance path"
+        );
+        assert!(
+            text.contains("src/lib.rs:42-42"),
+            "should contain second instance path"
+        );
     }
 
     #[test]
@@ -1839,7 +1869,10 @@ mod tests {
         let theme = test_theme();
         let lines = build_code_scanning_lines("CodeQL", None, "rule", "", &[], &theme);
         let text = lines_text(&lines);
-        assert!(!text.contains("Instances"), "no Instances section when empty");
+        assert!(
+            !text.contains("Instances"),
+            "no Instances section when empty"
+        );
     }
 
     // --- build_secret_scanning_lines ---
@@ -1857,7 +1890,10 @@ mod tests {
             &theme,
         );
         let text = lines_text(&lines);
-        assert!(text.contains("Secret type: "), "should have Secret type label");
+        assert!(
+            text.contains("Secret type: "),
+            "should have Secret type label"
+        );
         assert!(text.contains("github_token"), "should contain secret type");
     }
 
@@ -1874,8 +1910,14 @@ mod tests {
             &theme,
         );
         let text = lines_text(&lines);
-        assert!(text.contains("Display name: "), "should have Display name label");
-        assert!(text.contains("AWS Access Key"), "should contain display name");
+        assert!(
+            text.contains("Display name: "),
+            "should have Display name label"
+        );
+        assert!(
+            text.contains("AWS Access Key"),
+            "should contain display name"
+        );
     }
 
     #[test]
@@ -1910,7 +1952,10 @@ mod tests {
             &theme,
         );
         let text = lines_text(&lines);
-        assert!(text.contains("Resolution: "), "should have Resolution label");
+        assert!(
+            text.contains("Resolution: "),
+            "should have Resolution label"
+        );
         assert!(text.contains("revoked"), "should contain resolution");
     }
 
@@ -1935,33 +1980,25 @@ mod tests {
                 },
             ],
         );
-        let lines = build_secret_scanning_lines(
-            "generic_secret",
-            "",
-            None,
-            None,
-            42,
-            &cache,
-            &theme,
-        );
+        let lines =
+            build_secret_scanning_lines("generic_secret", "", None, None, 42, &cache, &theme);
         let text = lines_text(&lines);
-        assert!(text.contains("Locations (2):"), "should show location count");
-        assert!(text.contains("config.yml:5-5"), "should contain first location");
+        assert!(
+            text.contains("Locations (2):"),
+            "should show location count"
+        );
+        assert!(
+            text.contains("config.yml:5-5"),
+            "should contain first location"
+        );
         assert!(text.contains(".env:1-3"), "should contain second location");
     }
 
     #[test]
     fn secret_scanning_lines_no_locations_yet() {
         let theme = test_theme();
-        let lines = build_secret_scanning_lines(
-            "token",
-            "",
-            None,
-            None,
-            999,
-            &HashMap::new(),
-            &theme,
-        );
+        let lines =
+            build_secret_scanning_lines("token", "", None, None, 999, &HashMap::new(), &theme);
         let text = lines_text(&lines);
         assert!(
             text.contains("No locations loaded yet"),
@@ -1972,15 +2009,8 @@ mod tests {
     #[test]
     fn secret_scanning_lines_empty_display_name_omitted() {
         let theme = test_theme();
-        let lines = build_secret_scanning_lines(
-            "token",
-            "",
-            None,
-            None,
-            1,
-            &HashMap::new(),
-            &theme,
-        );
+        let lines =
+            build_secret_scanning_lines("token", "", None, None, 1, &HashMap::new(), &theme);
         let text = lines_text(&lines);
         assert!(
             !text.contains("Display name:"),

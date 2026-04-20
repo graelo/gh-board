@@ -35,12 +35,7 @@ pub struct RenderedSuggestion {
 }
 
 impl RenderedTextInput {
-    pub fn build(
-        prompt: &str,
-        text: &str,
-        depth: ColorDepth,
-        colors: &TextInputColors,
-    ) -> Self {
+    pub fn build(prompt: &str, text: &str, depth: ColorDepth, colors: &TextInputColors) -> Self {
         Self::build_with_suggestions(prompt, text, depth, colors, &[], None)
     }
 

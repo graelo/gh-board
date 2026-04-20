@@ -9,9 +9,13 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::ColorDepth;
-use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarColors, SidebarTab};
+use crate::components::sidebar::{
+    RenderedSidebar, Sidebar, SidebarColors, SidebarTab, SidebarTabConfig,
+};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
@@ -1446,10 +1450,12 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let rendered_footer = RenderedFooter::build(
         ViewKind::Repo,
         &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        footer::format_rate_limit(rate_limit_state.read().as_ref()),
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text: footer::format_rate_limit(rate_limit_state.read().as_ref()),
+        },
         action_status.read().as_ref(),
         &theme,
         depth,
@@ -1546,6 +1552,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             border: Some(theme.border_faint),
             indicator: Some(theme.text_faint),
             thumb: Some(theme.border_primary),
+            depth,
         };
         let sidebar = RenderedSidebar::build_tabbed(
             title,
@@ -1553,13 +1560,14 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_width,
-            depth,
             &sidebar_colors,
-            Some(current_tab),
-            Some(&theme.icons),
-            None,
-            Some(BRANCH_TABS),
-            tab_overrides_ref,
+            Some(SidebarTabConfig {
+                active_tab: Some(current_tab),
+                icons: Some(&theme.icons),
+                meta: None,
+                visible_tabs: Some(BRANCH_TABS),
+                tab_label_overrides: tab_overrides_ref,
+            }),
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);

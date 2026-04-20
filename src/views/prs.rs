@@ -5,13 +5,15 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::selection_overlay::{
     RenderedSelectionOverlay, SelectionOverlay, SelectionOverlayBuildConfig, SelectionOverlayItem,
 };
 use crate::components::sidebar::{
-    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab,
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab, SidebarTabConfig,
 };
 use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
@@ -1360,18 +1362,21 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
                 // Read input mode into a local to avoid borrow conflict.
                 let current_mode = input_mode.read().clone();
+                let input_ctx = InputContext {
+                    input_mode,
+                    input_buffer,
+                    prs_state: &prs_state,
+                    filter_idx: current_filter_idx,
+                    cursor: cursor.get(),
+                    engine: engine.as_ref(),
+                    event_tx: &event_tx,
+                };
                 match current_mode {
                     InputMode::Assign => {
                         handle_assign_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
-                            &prs_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx,
+                            &input_ctx,
                             assignee_candidates,
                             assignee_selection,
                             assignee_selected,
@@ -1381,16 +1386,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         handle_label_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
+                            &input_ctx,
                             label_candidates,
                             label_selection,
                             label_selected,
-                            &prs_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx,
                         );
                     }
                     InputMode::Comment => match code {
@@ -2493,6 +2492,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             border: Some(theme.border_faint),
             indicator: Some(theme.text_faint),
             thumb: Some(theme.border_primary),
+            depth,
         };
         let sidebar = RenderedSidebar::build_tabbed(
             title,
@@ -2500,13 +2500,14 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_width,
-            depth,
             &sidebar_colors,
-            Some(current_tab),
-            Some(&theme.icons),
-            sidebar_meta,
-            None, // Show all tabs for PRs
-            None, // No tab label overrides
+            Some(SidebarTabConfig {
+                active_tab: Some(current_tab),
+                icons: Some(&theme.icons),
+                meta: sidebar_meta,
+                visible_tabs: None,
+                tab_label_overrides: None,
+            }),
         );
         // Store the clamped offset so ctrl+u works immediately.
         if preview_scroll.get() != sidebar.clamped_scroll {
@@ -2704,10 +2705,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     let rendered_footer = RenderedFooter::build(
         ViewKind::Prs,
         &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
         action_status.read().as_ref(),
         &theme,
         depth,
@@ -2804,22 +2807,35 @@ fn build_pr_assignee_candidates(pr: &PullRequest) -> Vec<String> {
     pool
 }
 
+/// Groups the common parameters shared by `handle_assign_input` and
+/// `handle_label_input` in the PRs view.
+struct InputContext<'a> {
+    input_mode: State<InputMode>,
+    input_buffer: State<String>,
+    prs_state: &'a State<PrsState>,
+    filter_idx: usize,
+    cursor: usize,
+    engine: Option<&'a EngineHandle>,
+    event_tx: &'a std::sync::mpsc::Sender<Event>,
+}
+
 /// Handle text input for assigning PRs to users.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_lines)]
 fn handle_assign_input(
     code: KeyCode,
     modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    prs_state: &State<PrsState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
+    ctx: &InputContext<'_>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
     mut assignee_selected: State<Vec<String>>,
 ) {
+    let mut input_mode = ctx.input_mode;
+    let mut input_buffer = ctx.input_buffer;
+    let prs_state = ctx.prs_state;
+    let filter_idx = ctx.filter_idx;
+    let cursor = ctx.cursor;
+    let engine = ctx.engine;
+    let event_tx = ctx.event_tx;
     match code {
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
@@ -2930,21 +2946,22 @@ fn handle_assign_input(
 }
 
 /// Handle text input for adding a label to a PR.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_lines)]
 fn handle_label_input(
     code: KeyCode,
     modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
+    ctx: &InputContext<'_>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
     mut label_selected: State<Vec<String>>,
-    prs_state: &State<PrsState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
 ) {
+    let mut input_mode = ctx.input_mode;
+    let mut input_buffer = ctx.input_buffer;
+    let prs_state = ctx.prs_state;
+    let filter_idx = ctx.filter_idx;
+    let cursor = ctx.cursor;
+    let engine = ctx.engine;
+    let event_tx = ctx.event_tx;
     match code {
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();

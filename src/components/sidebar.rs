@@ -12,7 +12,7 @@ use crate::markdown::renderer::StyledLine;
 // Sidebar color config
 // ---------------------------------------------------------------------------
 
-/// Groups the four color parameters shared by `RenderedSidebar::build` and
+/// Groups the color + depth parameters shared by `RenderedSidebar::build` and
 /// `build_tabbed`, reducing argument count.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SidebarColors {
@@ -20,6 +20,21 @@ pub struct SidebarColors {
     pub border: Option<AppColor>,
     pub indicator: Option<AppColor>,
     pub thumb: Option<AppColor>,
+    pub depth: ColorDepth,
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar tab config (groups tab-related params for `build_tabbed`)
+// ---------------------------------------------------------------------------
+
+/// Groups the five tab-related parameters of `build_tabbed` into a single
+/// struct, reducing the overall argument count.
+pub struct SidebarTabConfig<'a> {
+    pub active_tab: Option<SidebarTab>,
+    pub icons: Option<&'a ResolvedIcons>,
+    pub meta: Option<SidebarMeta>,
+    pub visible_tabs: Option<&'a [SidebarTab]>,
+    pub tab_label_overrides: Option<&'a HashMap<SidebarTab, String>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -208,7 +223,6 @@ impl RenderedSidebar {
         scroll_offset: usize,
         visible_lines: usize,
         width: u16,
-        depth: ColorDepth,
         colors: &SidebarColors,
     ) -> Self {
         Self::build_tabbed(
@@ -217,34 +231,38 @@ impl RenderedSidebar {
             scroll_offset,
             visible_lines,
             width,
-            depth,
             colors,
-            None,
-            None,
-            None,
-            None,
             None,
         )
     }
 
     /// Build a pre-rendered sidebar with optional tab bar.
-    #[allow(clippy::too_many_arguments)]
     pub fn build_tabbed(
         title: &str,
         lines: &[StyledLine],
         scroll_offset: usize,
         visible_lines: usize,
         width: u16,
-        depth: ColorDepth,
         colors: &SidebarColors,
-        active_tab: Option<SidebarTab>,
-        icons: Option<&ResolvedIcons>,
-        meta: Option<SidebarMeta>,
-        visible_tabs: Option<&[SidebarTab]>,
-        tab_label_overrides: Option<&HashMap<SidebarTab, String>>,
+        tab_config: Option<SidebarTabConfig<'_>>,
     ) -> Self {
-        let title_fg = colors.title.map_or(Color::White, |c| c.to_crossterm_color(depth));
-        let border_fg = colors.border.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let depth = colors.depth;
+        let (active_tab, icons, meta, visible_tabs, tab_label_overrides) =
+            tab_config.map_or((None, None, None, None, None), |tc| {
+                (
+                    tc.active_tab,
+                    tc.icons,
+                    tc.meta,
+                    tc.visible_tabs,
+                    tc.tab_label_overrides,
+                )
+            });
+        let title_fg = colors
+            .title
+            .map_or(Color::White, |c| c.to_crossterm_color(depth));
+        let border_fg = colors
+            .border
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let indicator_fg = colors
             .indicator
             .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));

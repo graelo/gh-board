@@ -59,6 +59,15 @@ pub struct FooterView {
     pub color: Color,
 }
 
+/// Groups the four text content parameters of `RenderedFooter::build`,
+/// reducing its argument count.
+pub struct FooterContent {
+    pub scope_label: String,
+    pub context_text: String,
+    pub updated_text: String,
+    pub rate_limit_text: String,
+}
+
 pub struct RenderedFooter {
     pub views: Vec<FooterView>,
     pub inactive_fg: Color,
@@ -75,14 +84,10 @@ pub struct RenderedFooter {
 }
 
 impl RenderedFooter {
-    #[allow(clippy::too_many_arguments)]
     pub fn build(
         active_view: ViewKind,
         icons: &ResolvedIcons,
-        scope_label: String,
-        context_text: String,
-        updated_text: String,
-        rate_limit_text: String,
+        content: FooterContent,
         status: Option<&ActionFeedback>,
         theme: &ResolvedTheme,
         depth: ColorDepth,
@@ -117,10 +122,10 @@ impl RenderedFooter {
         Self {
             views,
             inactive_fg,
-            scope_label,
-            context_text,
-            updated_text,
-            rate_limit_text,
+            scope_label: content.scope_label,
+            context_text: content.context_text,
+            updated_text: content.updated_text,
+            rate_limit_text: content.rate_limit_text,
             status_text,
             status_fg,
             help_hint: "? help".to_owned(),

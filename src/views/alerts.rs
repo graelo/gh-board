@@ -13,10 +13,12 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{
-    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab,
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab, SidebarTabConfig,
 };
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
@@ -1411,10 +1413,12 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
     let rendered_footer = RenderedFooter::build(
         ViewKind::Alerts,
         &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
         action_status.read().as_ref(),
         &theme,
         depth,
@@ -1500,6 +1504,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
             border: Some(theme.border_faint),
             indicator: Some(theme.text_faint),
             thumb: Some(theme.border_primary),
+            depth,
         };
         let sidebar = RenderedSidebar::build_tabbed(
             &sidebar_title,
@@ -1507,13 +1512,14 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_w,
-            depth,
             &sidebar_colors,
-            Some(sidebar_tab.get().to_sidebar_tab()),
-            Some(&theme.icons),
-            sidebar_meta,
-            Some(ALERTS_SIDEBAR_TABS),
-            Some(&tab_overrides),
+            Some(SidebarTabConfig {
+                active_tab: Some(sidebar_tab.get().to_sidebar_tab()),
+                icons: Some(&theme.icons),
+                meta: sidebar_meta,
+                visible_tabs: Some(ALERTS_SIDEBAR_TABS),
+                tab_label_overrides: Some(&tab_overrides),
+            }),
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);

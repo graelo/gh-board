@@ -5,7 +5,9 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarColors};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
@@ -1251,14 +1253,17 @@ pub fn ActionsView<'a>(
                     },
                     InputMode::Confirm(ref pending) => match code {
                         KeyCode::Char('y' | 'Y') => {
+                            let run_ctx = RunContext {
+                                actions_state: &actions_state,
+                                filter_idx: current_filter_idx,
+                                cursor: cursor.get(),
+                                run_indices: &filtered_run_indices_for_kb,
+                                filter: current_filter_cfg_for_kb.as_ref(),
+                            };
                             match pending {
                                 BuiltinAction::RerunFailed => {
                                     send_rerun(
-                                        &actions_state,
-                                        current_filter_idx,
-                                        cursor.get(),
-                                        &filtered_run_indices_for_kb,
-                                        current_filter_cfg_for_kb.as_ref(),
+                                        &run_ctx,
                                         true,
                                         engine_for_keys.as_ref(),
                                         &event_tx_for_keys,
@@ -1266,11 +1271,7 @@ pub fn ActionsView<'a>(
                                 }
                                 BuiltinAction::RerunAll => {
                                     send_rerun(
-                                        &actions_state,
-                                        current_filter_idx,
-                                        cursor.get(),
-                                        &filtered_run_indices_for_kb,
-                                        current_filter_cfg_for_kb.as_ref(),
+                                        &run_ctx,
                                         false,
                                         engine_for_keys.as_ref(),
                                         &event_tx_for_keys,
@@ -1278,11 +1279,7 @@ pub fn ActionsView<'a>(
                                 }
                                 BuiltinAction::CancelRun => {
                                     send_cancel(
-                                        &actions_state,
-                                        current_filter_idx,
-                                        cursor.get(),
-                                        &filtered_run_indices_for_kb,
-                                        current_filter_cfg_for_kb.as_ref(),
+                                        &run_ctx,
                                         engine_for_keys.as_ref(),
                                         &event_tx_for_keys,
                                     );
@@ -2025,10 +2022,12 @@ pub fn ActionsView<'a>(
     let rendered_footer = RenderedFooter::build(
         ViewKind::Actions,
         &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
         action_status.read().as_ref(),
         &theme,
         depth,
@@ -2070,6 +2069,7 @@ pub fn ActionsView<'a>(
             border: Some(theme.border_faint),
             indicator: Some(theme.text_faint),
             thumb: Some(theme.border_primary),
+            depth,
         };
         let sidebar = RenderedSidebar::build(
             &sidebar_title,
@@ -2077,7 +2077,6 @@ pub fn ActionsView<'a>(
             detail_scroll.get(),
             sidebar_visible_lines,
             sidebar_w,
-            depth,
             &sidebar_colors,
         );
         if detail_scroll.get() != sidebar.clamped_scroll {
@@ -2204,21 +2203,30 @@ fn get_run_at_cursor(
     state.filters.get(filter_idx)?.runs.get(orig_idx).cloned()
 }
 
-#[allow(clippy::too_many_arguments)]
-fn send_rerun(
-    actions_state: &State<ActionsState>,
+/// Groups the common parameters shared by `send_rerun` and `send_cancel`.
+struct RunContext<'a> {
+    actions_state: &'a State<ActionsState>,
     filter_idx: usize,
     cursor: usize,
-    run_indices: &[usize],
-    filter: Option<&ActionsFilter>,
+    run_indices: &'a [usize],
+    filter: Option<&'a ActionsFilter>,
+}
+
+fn send_rerun(
+    ctx: &RunContext<'_>,
     failed_only: bool,
     engine: Option<&EngineHandle>,
     reply_tx: &std::sync::mpsc::Sender<Event>,
 ) {
-    let Some(run) = get_run_at_cursor(actions_state, filter_idx, cursor, run_indices) else {
+    let Some(run) = get_run_at_cursor(
+        ctx.actions_state,
+        ctx.filter_idx,
+        ctx.cursor,
+        ctx.run_indices,
+    ) else {
         return;
     };
-    let Some((owner, repo)) = owner_repo_for_run(&run, filter) else {
+    let Some((owner, repo)) = owner_repo_for_run(&run, ctx.filter) else {
         return;
     };
     let Some(eng) = engine else { return };
@@ -2231,20 +2239,20 @@ fn send_rerun(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 fn send_cancel(
-    actions_state: &State<ActionsState>,
-    filter_idx: usize,
-    cursor: usize,
-    run_indices: &[usize],
-    filter: Option<&ActionsFilter>,
+    ctx: &RunContext<'_>,
     engine: Option<&EngineHandle>,
     reply_tx: &std::sync::mpsc::Sender<Event>,
 ) {
-    let Some(run) = get_run_at_cursor(actions_state, filter_idx, cursor, run_indices) else {
+    let Some(run) = get_run_at_cursor(
+        ctx.actions_state,
+        ctx.filter_idx,
+        ctx.cursor,
+        ctx.run_indices,
+    ) else {
         return;
     };
-    let Some((owner, repo)) = owner_repo_for_run(&run, filter) else {
+    let Some((owner, repo)) = owner_repo_for_run(&run, ctx.filter) else {
         return;
     };
     let Some(eng) = engine else { return };

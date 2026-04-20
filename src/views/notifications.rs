@@ -5,7 +5,9 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::ViewKind;
 use crate::color::ColorDepth;
-use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
@@ -964,10 +966,12 @@ pub fn NotificationsView<'a>(
     let rendered_footer = RenderedFooter::build(
         ViewKind::Notifications,
         &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
         action_status.read().as_ref(),
         &theme,
         depth,

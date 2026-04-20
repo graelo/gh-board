@@ -5,10 +5,12 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::ColorDepth;
-use crate::components::footer::{self, ActionFeedback, Footer, FooterColors, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::sidebar::{
-    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab,
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab, SidebarTabConfig,
 };
 use crate::components::sidebar_tabs;
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
@@ -916,33 +918,30 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 }
 
                 let current_mode = input_mode.read().clone();
+                let input_ctx = InputContext {
+                    input_mode,
+                    input_buffer,
+                    issues_state: &issues_state,
+                    filter_idx: current_filter_idx,
+                    cursor: cursor.get(),
+                    engine: engine.as_ref(),
+                    event_tx: &event_tx_kb,
+                };
                 match current_mode {
                     InputMode::Comment => {
                         handle_text_input(
                             code,
                             modifiers,
                             &current_mode,
-                            input_mode,
-                            input_buffer,
+                            &input_ctx,
                             action_status,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx_kb,
                         );
                     }
                     InputMode::Assign => {
                         handle_assign_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx_kb,
+                            &input_ctx,
                             assignee_candidates,
                             assignee_selection,
                             assignee_selected,
@@ -952,16 +951,10 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         handle_label_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
+                            &input_ctx,
                             label_candidates,
                             label_selection,
                             label_selected,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx_kb,
                         );
                     }
                     InputMode::Confirm(ref pending) => match code {
@@ -1621,6 +1614,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             border: Some(theme.border_faint),
             indicator: Some(theme.text_faint),
             thumb: Some(theme.border_primary),
+            depth,
         };
         let sidebar = RenderedSidebar::build_tabbed(
             title,
@@ -1628,13 +1622,14 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_width,
-            depth,
             &sidebar_colors,
-            Some(current_tab),
-            Some(&theme.icons),
-            sidebar_meta,
-            Some(ISSUE_TABS),
-            None,
+            Some(SidebarTabConfig {
+                active_tab: Some(current_tab),
+                icons: Some(&theme.icons),
+                meta: sidebar_meta,
+                visible_tabs: Some(ISSUE_TABS),
+                tab_label_overrides: None,
+            }),
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);
@@ -1813,10 +1808,12 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let rendered_footer = RenderedFooter::build(
         ViewKind::Issues,
         &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
         action_status.read().as_ref(),
         &theme,
         depth,
@@ -1884,21 +1881,34 @@ fn build_issue_assignee_candidates(issue: &Issue) -> Vec<String> {
     pool
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+/// Groups the common parameters shared by `handle_assign_input`,
+/// `handle_text_input`, and `handle_label_input` in the Issues view.
+struct InputContext<'a> {
+    input_mode: State<InputMode>,
+    input_buffer: State<String>,
+    issues_state: &'a State<IssuesState>,
+    filter_idx: usize,
+    cursor: usize,
+    engine: Option<&'a EngineHandle>,
+    event_tx: &'a std::sync::mpsc::Sender<Event>,
+}
+
+#[allow(clippy::too_many_lines)]
 fn handle_assign_input(
     code: KeyCode,
     modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    issues_state: &State<IssuesState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
+    ctx: &InputContext<'_>,
     assignee_candidates: State<Vec<String>>,
     mut assignee_selection: State<usize>,
     mut assignee_selected: State<Vec<String>>,
 ) {
+    let mut input_mode = ctx.input_mode;
+    let mut input_buffer = ctx.input_buffer;
+    let issues_state = ctx.issues_state;
+    let filter_idx = ctx.filter_idx;
+    let cursor = ctx.cursor;
+    let engine = ctx.engine;
+    let event_tx = ctx.event_tx;
     match code {
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();
@@ -2008,20 +2018,20 @@ fn handle_assign_input(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_text_input(
     code: KeyCode,
     modifiers: KeyModifiers,
     current_mode: &InputMode,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
+    ctx: &InputContext<'_>,
     _action_status: State<Option<ActionFeedback>>,
-    issues_state: &State<IssuesState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
 ) {
+    let mut input_mode = ctx.input_mode;
+    let mut input_buffer = ctx.input_buffer;
+    let issues_state = ctx.issues_state;
+    let filter_idx = ctx.filter_idx;
+    let cursor = ctx.cursor;
+    let engine = ctx.engine;
+    let event_tx = ctx.event_tx;
     match code {
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
             let text = input_buffer.read().clone();
@@ -2066,21 +2076,22 @@ fn handle_text_input(
     }
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+#[allow(clippy::too_many_lines)]
 fn handle_label_input(
     code: KeyCode,
     modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
+    ctx: &InputContext<'_>,
     label_candidates: State<Vec<String>>,
     mut label_selection: State<usize>,
     mut label_selected: State<Vec<String>>,
-    issues_state: &State<IssuesState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
 ) {
+    let mut input_mode = ctx.input_mode;
+    let mut input_buffer = ctx.input_buffer;
+    let issues_state = ctx.issues_state;
+    let filter_idx = ctx.filter_idx;
+    let cursor = ctx.cursor;
+    let engine = ctx.engine;
+    let event_tx = ctx.event_tx;
     match code {
         KeyCode::Tab | KeyCode::Down => {
             let buf = input_buffer.read().clone();

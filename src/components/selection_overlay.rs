@@ -131,7 +131,7 @@ pub fn SelectionOverlay(props: &mut SelectionOverlayProps) -> impl Into<AnyEleme
                         weight: Weight::Bold,
                         wrap: TextWrap::NoWrap,
                     )
-                    View(flex_grow: 1.0)
+                    View(flex_grow: 1.0_f32)
                     Text(
                         content: "j/k Enter Esc",
                         color: overlay.hint_fg,
@@ -141,7 +141,7 @@ pub fn SelectionOverlay(props: &mut SelectionOverlayProps) -> impl Into<AnyEleme
 
                 // Items
                 View(
-                    flex_grow: 1.0,
+                    flex_grow: 1.0_f32,
                     flex_direction: FlexDirection::Column,
                     padding_left: 1,
                     padding_right: 1,

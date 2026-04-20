@@ -985,7 +985,7 @@ pub fn NotificationsView<'a>(
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
 
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Column, overflow: Overflow::Hidden) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column, overflow: Overflow::Hidden) {
                 ScrollableTable(table: rendered_table)
             }
 

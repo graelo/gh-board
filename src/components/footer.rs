@@ -213,7 +213,7 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
             // Pipe separator
             Text(content: " \u{2502} ", color: f.separator_fg, wrap: TextWrap::NoWrap)
             // Middle: context + updated (flex_grow to fill space)
-            View(flex_grow: 1.0) {
+            View(flex_grow: 1.0_f32) {
                 MixedText(contents: context_contents, wrap: TextWrap::NoWrap)
             }
             // Status slot (only when present)

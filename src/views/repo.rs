@@ -740,7 +740,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut tick = hooks.use_state(|| 0u64);
     hooks.use_future(async move {
         loop {
-            smol::Timer::after(std::time::Duration::from_secs(60)).await;
+            smol::Timer::after(std::time::Duration::from_mins(1)).await;
             tick.set(tick.get() + 1);
         }
     });
@@ -1572,8 +1572,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     element! {
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
                 Sidebar(sidebar: rendered_sidebar)

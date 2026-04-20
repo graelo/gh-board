@@ -2088,7 +2088,7 @@ pub fn ActionsView<'a>(
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
 
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
                 // Left workflow navigator (optional)
                 #(nav_is_open.then(|| {
                     let names = workflow_names.clone();
@@ -2158,7 +2158,7 @@ pub fn ActionsView<'a>(
                 }))
 
                 // Main table
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
 

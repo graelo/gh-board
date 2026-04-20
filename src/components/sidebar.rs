@@ -411,7 +411,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
         ) {
             // Title bar
             View(margin_bottom: 1) {
-                View(flex_grow: 1.0) {
+                View(flex_grow: 1.0_f32) {
                     Text(
                         content: sb.title,
                         color: sb.title_fg,
@@ -677,8 +677,8 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
             }))
 
             // Content area with scrollbar
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row) {
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column,
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column,
                      margin_right: u32::from(has_scrollbar)) {
                     MarkdownView(markdown: sb.markdown)
                 }

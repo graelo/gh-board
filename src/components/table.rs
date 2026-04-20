@@ -408,7 +408,7 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
             // Body area: rows + scrollbar side by side
             View(flex_direction: FlexDirection::Row) {
                 // Body rows column
-                View(flex_direction: FlexDirection::Column, flex_grow: 1.0) {
+                View(flex_direction: FlexDirection::Column, flex_grow: 1.0_f32) {
                     // Empty-state message or body rows
                     #(table.empty_message.into_iter().map(|msg| {
                         element! {

@@ -121,7 +121,7 @@ mod tests {
 
     #[test]
     fn add_deduplicates_by_run_id() {
-        let (mut sched, tx) = make_scheduler(Duration::from_secs(60));
+        let (mut sched, tx) = make_scheduler(Duration::from_mins(1));
         sched.add("owner1".into(), "repo1".into(), 42, None, tx.clone());
         sched.add("owner2".into(), "repo2".into(), 42, None, tx);
         assert!(sched.is_watched(42));
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn remove_selectively() {
-        let (mut sched, tx) = make_scheduler(Duration::from_secs(60));
+        let (mut sched, tx) = make_scheduler(Duration::from_mins(1));
         sched.add("o".into(), "r".into(), 1, None, tx.clone());
         sched.add("o".into(), "r".into(), 2, None, tx);
         sched.remove(1);
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn due_entries_never_polled() {
-        let (mut sched, tx) = make_scheduler(Duration::from_secs(60));
+        let (mut sched, tx) = make_scheduler(Duration::from_mins(1));
         sched.add(
             "acme".into(),
             "widget".into(),
@@ -158,7 +158,7 @@ mod tests {
 
     #[test]
     fn due_entries_excludes_recently_polled() {
-        let (mut sched, tx) = make_scheduler(Duration::from_secs(60));
+        let (mut sched, tx) = make_scheduler(Duration::from_mins(1));
         sched.add("o".into(), "r".into(), 1, None, tx);
         sched.mark_polled(1);
         assert!(sched.due_entries().is_empty());

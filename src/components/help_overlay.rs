@@ -240,7 +240,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                         weight: Weight::Bold,
                         wrap: TextWrap::NoWrap,
                     )
-                    View(flex_grow: 1.0)
+                    View(flex_grow: 1.0_f32)
                     Text(
                         content: "? / Esc to close",
                         color: overlay.desc_fg,
@@ -250,7 +250,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
 
                 // Two-column content area: each group is a column
                 View(
-                    flex_grow: 1.0,
+                    flex_grow: 1.0_f32,
                     flex_direction: FlexDirection::Row,
                     padding_left: 1,
                     padding_right: 1,
@@ -264,7 +264,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                         let key_width = group.key_col_width + 2;
 
                         element! {
-                            View(key: gi, flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                            View(key: gi, flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                                 // Group title (bold, underlined)
                                 View(margin_top: 0u32) {
                                     Text(
@@ -295,7 +295,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                                                 wrap: TextWrap::NoWrap,
                                             )
                                             // Description column
-                                            View(flex_grow: 1.0) {
+                                            View(flex_grow: 1.0_f32) {
                                                 Text(
                                                     content: row.description,
                                                     color: desc_color,

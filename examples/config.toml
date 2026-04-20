@@ -491,6 +491,9 @@ preset = "unicode"
 # role_owner = "★"
 # role_unknown = "?"
 
+# --- Repo picker ---
+# repo_anchor = "⚓"    # marks the detected local repo in the picker
+
 # ==============================================================================
 # KEYBINDINGS
 # ==============================================================================
@@ -658,6 +661,11 @@ name = "Go to Notifications"
 key = "6"
 builtin = "go_to_repo"
 name = "Go to Repo"
+
+[[keybindings.universal]]
+key = "s"
+builtin = "select_repo"
+name = "Select active repo"
 
 # ------------------------------------------------------------------------------
 # PR view keybindings

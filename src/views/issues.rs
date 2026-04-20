@@ -5,15 +5,19 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::ColorDepth;
-use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
+use crate::components::sidebar::{
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab, SidebarTabConfig,
+};
 use crate::components::sidebar_tabs;
-use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
-use crate::components::text_input::{self, RenderedTextInput, TextInput};
+use crate::components::text_input::{self, RenderedTextInput, TextInput, TextInputColors};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -305,7 +309,6 @@ pub struct IssuesViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
@@ -914,52 +917,89 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 }
 
                 let current_mode = input_mode.read().clone();
+                let input_ctx = InputContext {
+                    input_mode,
+                    input_buffer,
+                    issues_state: &issues_state,
+                    filter_idx: current_filter_idx,
+                    cursor: cursor.get(),
+                    engine: engine.as_ref(),
+                    event_tx: &event_tx_kb,
+                };
                 match current_mode {
                     InputMode::Comment => {
                         handle_text_input(
                             code,
                             modifiers,
                             &current_mode,
-                            input_mode,
-                            input_buffer,
+                            &input_ctx,
                             action_status,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx_kb,
                         );
                     }
                     InputMode::Assign => {
-                        handle_assign_input(
+                        let mut im = input_ctx.input_mode;
+                        let eng = input_ctx.engine.cloned();
+                        let tx = input_ctx.event_tx.clone();
+                        let fi = input_ctx.filter_idx;
+                        let cur = input_ctx.cursor;
+                        let is = *input_ctx.issues_state;
+                        super::common::handle_multiselect_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx_kb,
-                            assignee_candidates,
-                            assignee_selection,
-                            assignee_selected,
+                            &mut super::common::MultiSelectState {
+                                input_buffer: input_ctx.input_buffer,
+                                candidates: assignee_candidates,
+                                selection: assignee_selection,
+                                selected: assignee_selected,
+                            },
+                            |logins| {
+                                if let Some((owner, repo, number)) =
+                                    get_current_issue_info(&is, fi, cur)
+                                    && let Some(eng) = eng
+                                {
+                                    eng.send(Request::SetIssueAssignees {
+                                        owner,
+                                        repo,
+                                        number,
+                                        logins,
+                                        reply_tx: tx,
+                                    });
+                                }
+                            },
+                            move || im.set(InputMode::Normal),
                         );
                     }
                     InputMode::Label => {
-                        handle_label_input(
+                        let mut im = input_ctx.input_mode;
+                        let eng = input_ctx.engine.cloned();
+                        let tx = input_ctx.event_tx.clone();
+                        let fi = input_ctx.filter_idx;
+                        let cur = input_ctx.cursor;
+                        let is = *input_ctx.issues_state;
+                        super::common::handle_multiselect_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
-                            label_candidates,
-                            label_selection,
-                            label_selected,
-                            &issues_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx_kb,
+                            &mut super::common::MultiSelectState {
+                                input_buffer: input_ctx.input_buffer,
+                                candidates: label_candidates,
+                                selection: label_selection,
+                                selected: label_selected,
+                            },
+                            |labels| {
+                                if let Some((owner, repo, number)) =
+                                    get_current_issue_info(&is, fi, cur)
+                                    && let Some(eng) = eng
+                                {
+                                    eng.send(Request::SetIssueLabels {
+                                        owner,
+                                        repo,
+                                        number,
+                                        labels,
+                                        reply_tx: tx,
+                                    });
+                                }
+                            },
+                            move || im.set(InputMode::Normal),
                         );
                     }
                     InputMode::Confirm(ref pending) => match code {
@@ -1498,7 +1538,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
 
     let is_preview_open = preview_open.get();
     let (table_width, sidebar_width) = if is_preview_open {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let sb_w = (f64::from(props.width) * preview_pct).round() as u16;
         let tb_w = props.width.saturating_sub(sb_w);
         (tb_w, sb_w)
@@ -1610,26 +1650,31 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         };
 
         // Account for tab bar (2 extra lines) + meta in sidebar height.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
         let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
+        let sidebar_colors = SidebarColors {
+            title: Some(theme.text_primary),
+            border: Some(theme.border_faint),
+            indicator: Some(theme.text_faint),
+            thumb: Some(theme.border_primary),
+            depth,
+        };
         let sidebar = RenderedSidebar::build_tabbed(
             title,
             &md_lines,
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_width,
-            depth,
-            Some(theme.text_primary),
-            Some(theme.border_faint),
-            Some(theme.text_faint),
-            Some(theme.border_primary),
-            Some(current_tab),
-            Some(&theme.icons),
-            sidebar_meta,
-            Some(ISSUE_TABS),
-            None,
+            &sidebar_colors,
+            Some(SidebarTabConfig {
+                active_tab: Some(current_tab),
+                icons: Some(&theme.icons),
+                meta: sidebar_meta,
+                visible_tabs: Some(ISSUE_TABS),
+                tab_label_overrides: None,
+            }),
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);
@@ -1639,14 +1684,17 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         None
     };
 
+    let tab_colors = TabBarColors {
+        active: Some(theme.footer_issues),
+        inactive: Some(theme.footer_issues),
+        border: Some(theme.border_faint),
+    };
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
         current_filter_idx,
         props.show_filter_count,
         depth,
-        Some(theme.footer_issues),
-        Some(theme.footer_issues),
-        Some(theme.border_faint),
+        &tab_colors,
         &theme.icons.tab_filter,
         &theme.icons.tab_ephemeral,
     );
@@ -1658,9 +1706,12 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             "Comment:",
             &input_buffer.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Assign => {
             let buf = input_buffer.read().clone();
@@ -1682,14 +1733,16 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 &prompt,
                 &buf,
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_secondary),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_secondary),
+                    border: Some(theme.border_faint),
+                    highlight: Some(theme.text_primary),
+                    highlight_bg: Some(theme.bg_selected),
+                    suggestion: Some(theme.text_faint),
+                },
                 &filtered,
                 selected_idx,
-                Some(theme.text_primary),
-                Some(theme.bg_selected),
-                Some(theme.text_faint),
                 &selected,
             ))
         }
@@ -1713,14 +1766,16 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 &prompt,
                 &buf,
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_secondary),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_secondary),
+                    border: Some(theme.border_faint),
+                    highlight: Some(theme.text_primary),
+                    highlight_bg: Some(theme.bg_selected),
+                    suggestion: Some(theme.text_faint),
+                },
                 &filtered,
                 selected_idx,
-                Some(theme.text_primary),
-                Some(theme.bg_selected),
-                Some(theme.text_faint),
                 &selected,
             ))
         }
@@ -1734,18 +1789,24 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                 prompt,
                 "",
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_warning),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_warning),
+                    border: Some(theme.border_faint),
+                    ..Default::default()
+                },
             ))
         }
         InputMode::Search => Some(RenderedTextInput::build(
             "/",
             &search_query.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Normal => None,
     };
@@ -1776,17 +1837,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         Some(repo) => repo.clone(),
         None => "all repos".to_owned(),
     };
-    let rendered_footer = RenderedFooter::build(
-        ViewKind::Issues,
-        &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
-        action_status.read().as_ref(),
-        &theme,
-        depth,
-        [
+    let footer_colors = FooterColors {
+        view_colors: [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
             Some(theme.footer_actions),
@@ -1794,9 +1846,23 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],
-        Some(theme.text_faint),
-        Some(theme.text_faint),
-        Some(theme.border_faint),
+        inactive: Some(theme.text_faint),
+        text: Some(theme.text_faint),
+        border: Some(theme.border_faint),
+    };
+    let rendered_footer = RenderedFooter::build(
+        ViewKind::Issues,
+        &theme.icons,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
+        action_status.read().as_ref(),
+        &theme,
+        depth,
+        &footer_colors,
     );
 
     let rendered_help = if help_visible.get() {
@@ -1822,8 +1888,8 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
 
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
                 Sidebar(sidebar: rendered_sidebar)
@@ -1860,144 +1926,32 @@ fn build_issue_assignee_candidates(issue: &Issue) -> Vec<String> {
     pool
 }
 
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn handle_assign_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    issues_state: &State<IssuesState>,
+/// Groups the common parameters shared by multiselect input handling
+/// and `handle_text_input` in the Issues view.
+struct InputContext<'a> {
+    input_mode: State<InputMode>,
+    input_buffer: State<String>,
+    issues_state: &'a State<IssuesState>,
     filter_idx: usize,
     cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
-    assignee_candidates: State<Vec<String>>,
-    mut assignee_selection: State<usize>,
-    mut assignee_selected: State<Vec<String>>,
-) {
-    match code {
-        KeyCode::Tab | KeyCode::Down => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
-            }
-        }
-        KeyCode::Up | KeyCode::BackTab => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = assignee_selection.get();
-                assignee_selection.set(if sel == 0 {
-                    filtered.len() - 1
-                } else {
-                    sel - 1
-                });
-            }
-        }
-        KeyCode::Char(' ') => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = assignee_selection
-                    .get()
-                    .min(filtered.len().saturating_sub(1));
-                let item = filtered[sel].clone();
-                let mut selected = assignee_selected.read().clone();
-                if let Some(pos) = selected.iter().position(|s| s == &item) {
-                    selected.remove(pos);
-                } else {
-                    selected.push(item);
-                }
-                assignee_selected.set(selected);
-            }
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-        }
-        KeyCode::Enter => {
-            let buf = input_buffer.read().clone();
-            let checked = assignee_selected.read().clone();
-            let logins: Vec<String> = if buf.is_empty() {
-                // No text typed → submit multiselect state as-is (may be empty = unassign all)
-                checked
-            } else {
-                // Text typed → resolve suggestion, merge into checked set
-                let candidates = assignee_candidates.read();
-                let filtered = text_input::filter_suggestions(&candidates, &buf);
-                let login = if filtered.is_empty() {
-                    buf
-                } else {
-                    let sel = assignee_selection
-                        .get()
-                        .min(filtered.len().saturating_sub(1));
-                    filtered[sel].clone()
-                };
-                if login.is_empty() {
-                    checked
-                } else {
-                    let mut all = checked;
-                    if !all.contains(&login) {
-                        all.push(login);
-                    }
-                    all
-                }
-            };
-            let info = get_current_issue_info(issues_state, filter_idx, cursor);
-            if let Some((owner, repo, number)) = info
-                && let Some(eng) = engine
-            {
-                eng.send(Request::SetIssueAssignees {
-                    owner,
-                    repo,
-                    number,
-                    logins,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-            assignee_selected.set(Vec::new());
-        }
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-            assignee_selected.set(Vec::new());
-        }
-        KeyCode::Backspace => {
-            let mut buf = input_buffer.read().clone();
-            buf.pop();
-            input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut buf = input_buffer.read().clone();
-            buf.push(ch);
-            input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        _ => {}
-    }
+    engine: Option<&'a EngineHandle>,
+    event_tx: &'a std::sync::mpsc::Sender<Event>,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn handle_text_input(
     code: KeyCode,
     modifiers: KeyModifiers,
     current_mode: &InputMode,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
+    ctx: &InputContext<'_>,
     _action_status: State<Option<ActionFeedback>>,
-    issues_state: &State<IssuesState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
 ) {
+    let mut input_mode = ctx.input_mode;
+    let mut input_buffer = ctx.input_buffer;
+    let issues_state = ctx.issues_state;
+    let filter_idx = ctx.filter_idx;
+    let cursor = ctx.cursor;
+    let engine = ctx.engine;
+    let event_tx = ctx.event_tx;
     match code {
         KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
             let text = input_buffer.read().clone();
@@ -2037,126 +1991,6 @@ fn handle_text_input(
             let mut buf = input_buffer.read().clone();
             buf.push('\n');
             input_buffer.set(buf);
-        }
-        _ => {}
-    }
-}
-
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn handle_label_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    label_candidates: State<Vec<String>>,
-    mut label_selection: State<usize>,
-    mut label_selected: State<Vec<String>>,
-    issues_state: &State<IssuesState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
-) {
-    match code {
-        KeyCode::Tab | KeyCode::Down => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                label_selection.set((label_selection.get() + 1) % filtered.len());
-            }
-        }
-        KeyCode::Up | KeyCode::BackTab => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = label_selection.get();
-                label_selection.set(if sel == 0 {
-                    filtered.len() - 1
-                } else {
-                    sel - 1
-                });
-            }
-        }
-        KeyCode::Char(' ') => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                let item = filtered[sel].clone();
-                let mut selected = label_selected.read().clone();
-                if let Some(pos) = selected.iter().position(|s| s == &item) {
-                    selected.remove(pos);
-                } else {
-                    selected.push(item);
-                }
-                label_selected.set(selected);
-            }
-            input_buffer.set(String::new());
-            label_selection.set(0);
-        }
-        KeyCode::Enter => {
-            let buf = input_buffer.read().clone();
-            let checked = label_selected.read().clone();
-            let labels: Vec<String> = if buf.is_empty() {
-                // No text typed → submit multiselect state as-is (may be empty = clear all)
-                checked
-            } else {
-                // Text typed → resolve suggestion, merge into checked set
-                let candidates = label_candidates.read();
-                let filtered = text_input::filter_suggestions(&candidates, &buf);
-                let label = if filtered.is_empty() {
-                    buf
-                } else {
-                    let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                    filtered[sel].clone()
-                };
-                if label.is_empty() {
-                    checked
-                } else {
-                    let mut all = checked;
-                    if !all.contains(&label) {
-                        all.push(label);
-                    }
-                    all
-                }
-            };
-            let info = get_current_issue_info(issues_state, filter_idx, cursor);
-            if let Some((owner, repo, number)) = info
-                && let Some(engine) = engine
-            {
-                engine.send(Request::SetIssueLabels {
-                    owner,
-                    repo,
-                    number,
-                    labels,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            label_selected.set(Vec::new());
-        }
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            label_selected.set(Vec::new());
-        }
-        KeyCode::Backspace => {
-            let mut buf = input_buffer.read().clone();
-            buf.pop();
-            input_buffer.set(buf);
-            label_selection.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut buf = input_buffer.read().clone();
-            buf.push(ch);
-            input_buffer.set(buf);
-            label_selection.set(0);
         }
         _ => {}
     }
@@ -2208,7 +2042,6 @@ fn get_current_issue_assignees(
     issue.assignees.iter().map(|a| a.login.clone()).collect()
 }
 
-#[allow(clippy::too_many_lines)]
 fn build_issue_sidebar_meta(
     issue: &Issue,
     theme: &ResolvedTheme,
@@ -2284,38 +2117,7 @@ fn build_issue_sidebar_meta(
         .to_string();
     let updated_age = crate::util::format_date(&issue.updated_at, "relative");
 
-    // Reactions
-    let r = &issue.reactions;
-    let reactions_text = if r.total() > 0 {
-        let mut parts = Vec::new();
-        if r.thumbs_up > 0 {
-            parts.push(format!("\u{1f44d} {}", r.thumbs_up));
-        }
-        if r.thumbs_down > 0 {
-            parts.push(format!("\u{1f44e} {}", r.thumbs_down));
-        }
-        if r.laugh > 0 {
-            parts.push(format!("\u{1f604} {}", r.laugh));
-        }
-        if r.hooray > 0 {
-            parts.push(format!("\u{1f389} {}", r.hooray));
-        }
-        if r.confused > 0 {
-            parts.push(format!("\u{1f615} {}", r.confused));
-        }
-        if r.heart > 0 {
-            parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
-        }
-        if r.rocket > 0 {
-            parts.push(format!("\u{1f680} {}", r.rocket));
-        }
-        if r.eyes > 0 {
-            parts.push(format!("\u{1f440} {}", r.eyes));
-        }
-        Some(parts.join("  "))
-    } else {
-        None
-    };
+    let reactions_text = format_reactions_text(&issue.reactions);
 
     SidebarMeta {
         pill_icon,
@@ -2353,6 +2155,41 @@ fn build_issue_sidebar_meta(
         actor_fg: theme.text_actor.to_crossterm_color(depth),
         reactions_fg: theme.text_primary.to_crossterm_color(depth),
     }
+}
+
+/// Format reaction counts into an emoji string (e.g. "👍 3  🎉 1").
+///
+/// Returns `None` when no reactions are present.
+fn format_reactions_text(r: &crate::types::ReactionGroups) -> Option<String> {
+    if r.total() == 0 {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if r.thumbs_up > 0 {
+        parts.push(format!("\u{1f44d} {}", r.thumbs_up));
+    }
+    if r.thumbs_down > 0 {
+        parts.push(format!("\u{1f44e} {}", r.thumbs_down));
+    }
+    if r.laugh > 0 {
+        parts.push(format!("\u{1f604} {}", r.laugh));
+    }
+    if r.hooray > 0 {
+        parts.push(format!("\u{1f389} {}", r.hooray));
+    }
+    if r.confused > 0 {
+        parts.push(format!("\u{1f615} {}", r.confused));
+    }
+    if r.heart > 0 {
+        parts.push(format!("\u{2764}\u{fe0f} {}", r.heart));
+    }
+    if r.rocket > 0 {
+        parts.push(format!("\u{1f680} {}", r.rocket));
+    }
+    if r.eyes > 0 {
+        parts.push(format!("\u{1f440} {}", r.eyes));
+    }
+    Some(parts.join("  "))
 }
 
 fn default_theme() -> ResolvedTheme {

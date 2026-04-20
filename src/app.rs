@@ -286,7 +286,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         View(width: u32::from(width), height: u32::from(height), flex_direction: FlexDirection::Column) {
             View(
                 display: if active == ViewKind::Prs { Display::Flex } else { Display::None },
-                flex_grow: 1.0,
+                flex_grow: 1.0_f32,
             ) {
                 PrsView(
                     filters: filters_pr,
@@ -319,7 +319,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             }
             View(
                 display: if active == ViewKind::Issues { Display::Flex } else { Display::None },
-                flex_grow: 1.0,
+                flex_grow: 1.0_f32,
             ) {
                 IssuesView(
                     filters: filters_issue,
@@ -349,7 +349,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             }
             View(
                 display: if active == ViewKind::Actions { Display::Flex } else { Display::None },
-                flex_grow: 1.0,
+                flex_grow: 1.0_f32,
             ) {
                 ActionsView(
                     filters: filters_actions,
@@ -379,7 +379,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             }
             View(
                 display: if active == ViewKind::Alerts { Display::Flex } else { Display::None },
-                flex_grow: 1.0,
+                flex_grow: 1.0_f32,
             ) {
                 AlertsView(
                     filters: filters_alerts,
@@ -408,7 +408,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             }
             View(
                 display: if active == ViewKind::Notifications { Display::Flex } else { Display::None },
-                flex_grow: 1.0,
+                flex_grow: 1.0_f32,
             ) {
                 NotificationsView(
                     filters: filters_notif,
@@ -434,7 +434,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
             }
             View(
                 display: if active == ViewKind::Repo { Display::Flex } else { Display::None },
-                flex_grow: 1.0,
+                flex_grow: 1.0_f32,
             ) {
                 RepoView(
                     theme,

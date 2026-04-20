@@ -1,7 +1,6 @@
 // Pedantic: suppress noise for internal crate code.
-#![allow(clippy::missing_errors_doc)]
-#![allow(clippy::must_use_candidate)]
-#![allow(clippy::return_self_not_must_use)]
+#![expect(clippy::missing_errors_doc)]
+#![expect(clippy::must_use_candidate)]
 
 pub mod actions;
 pub mod app;

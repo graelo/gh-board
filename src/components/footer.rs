@@ -8,6 +8,15 @@ use crate::icons::ResolvedIcons;
 use crate::theme::ResolvedTheme;
 use crate::types::RateLimitInfo;
 
+/// Groups color parameters for `RenderedFooter::build`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FooterColors {
+    pub view_colors: [Option<AppColor>; 6],
+    pub inactive: Option<AppColor>,
+    pub text: Option<AppColor>,
+    pub border: Option<AppColor>,
+}
+
 // ---------------------------------------------------------------------------
 // ActionFeedback — typed status messages with icon + color
 // ---------------------------------------------------------------------------
@@ -50,6 +59,15 @@ pub struct FooterView {
     pub color: Color,
 }
 
+/// Groups the four text content parameters of `RenderedFooter::build`,
+/// reducing its argument count.
+pub struct FooterContent {
+    pub scope_label: String,
+    pub context_text: String,
+    pub updated_text: String,
+    pub rate_limit_text: String,
+}
+
 pub struct RenderedFooter {
     pub views: Vec<FooterView>,
     pub inactive_fg: Color,
@@ -66,25 +84,24 @@ pub struct RenderedFooter {
 }
 
 impl RenderedFooter {
-    #[allow(clippy::too_many_arguments)]
     pub fn build(
         active_view: ViewKind,
         icons: &ResolvedIcons,
-        scope_label: String,
-        context_text: String,
-        updated_text: String,
-        rate_limit_text: String,
+        content: FooterContent,
         status: Option<&ActionFeedback>,
         theme: &ResolvedTheme,
         depth: ColorDepth,
-        view_colors: [Option<AppColor>; 6],
-        inactive_color: Option<AppColor>,
-        text_color: Option<AppColor>,
-        border_color: Option<AppColor>,
+        colors: &FooterColors,
     ) -> Self {
-        let inactive_fg = inactive_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let text_fg = text_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let inactive_fg = colors
+            .inactive
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let text_fg = colors
+            .text
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let border_fg = colors
+            .border
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
         let separator_fg = text_fg;
 
         let (status_text, status_fg) = match status {
@@ -94,7 +111,7 @@ impl RenderedFooter {
 
         let views = ViewKind::ALL
             .iter()
-            .zip(view_colors.iter())
+            .zip(colors.view_colors.iter())
             .map(|(v, color)| FooterView {
                 label: v.icon_label(icons),
                 is_active: *v == active_view,
@@ -105,10 +122,10 @@ impl RenderedFooter {
         Self {
             views,
             inactive_fg,
-            scope_label,
-            context_text,
-            updated_text,
-            rate_limit_text,
+            scope_label: content.scope_label,
+            context_text: content.context_text,
+            updated_text: content.updated_text,
+            rate_limit_text: content.rate_limit_text,
             status_text,
             status_fg,
             help_hint: "? help".to_owned(),
@@ -213,7 +230,7 @@ pub fn Footer(props: &mut FooterProps) -> impl Into<AnyElement<'static>> {
             // Pipe separator
             Text(content: " \u{2502} ", color: f.separator_fg, wrap: TextWrap::NoWrap)
             // Middle: context + updated (flex_grow to fill space)
-            View(flex_grow: 1.0) {
+            View(flex_grow: 1.0_f32) {
                 MixedText(contents: context_contents, wrap: TextWrap::NoWrap)
             }
             // Status slot (only when present)

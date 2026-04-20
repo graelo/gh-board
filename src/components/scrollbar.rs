@@ -28,20 +28,20 @@ impl ScrollInfo {
             return (0, track_height);
         }
 
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss)]
         let ratio = self.visible_count as f64 / self.total_count as f64;
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let thumb_size = (ratio * f64::from(track_height)).round().max(1.0) as u32;
         let thumb_size = thumb_size.min(track_height);
 
         let max_scroll = self.total_count.saturating_sub(self.visible_count);
         let available = track_height.saturating_sub(thumb_size);
 
-        #[allow(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss)]
         let thumb_start = if max_scroll == 0 {
             0
         } else {
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let start = (self.scroll_offset as f64 / max_scroll as f64 * f64::from(available))
                 .round() as u32;
             start.min(available)
@@ -202,5 +202,45 @@ mod tests {
         let (start, size) = info.thumb_geometry(0);
         assert_eq!(start, 0);
         assert_eq!(size, 0);
+    }
+
+    #[test]
+    fn no_scrollbar_returns_full_track() {
+        // visible >= total → thumb spans the entire track.
+        let info = ScrollInfo {
+            scroll_offset: 0,
+            visible_count: 50,
+            total_count: 30,
+        };
+        let (start, size) = info.thumb_geometry(15);
+        assert_eq!(start, 0);
+        assert_eq!(size, 15);
+    }
+
+    #[test]
+    fn thumb_never_exceeds_track() {
+        let info = ScrollInfo {
+            scroll_offset: 5,
+            visible_count: 10,
+            total_count: 20,
+        };
+        let (start, size) = info.thumb_geometry(10);
+        assert!(
+            start + size <= 10,
+            "thumb should not exceed track: start={start}, size={size}"
+        );
+    }
+
+    #[test]
+    fn mid_scroll_position() {
+        // Scroll at 50% of max → thumb should be roughly in the middle.
+        let info = ScrollInfo {
+            scroll_offset: 45,
+            visible_count: 10,
+            total_count: 100,
+        };
+        let (start, size) = info.thumb_geometry(20);
+        assert!(start > 0, "thumb should not be at the very top");
+        assert!(start + size < 20, "thumb should not be at the very bottom");
     }
 }

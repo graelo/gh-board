@@ -45,7 +45,6 @@ pub struct NotificationQueryParams {
 ///
 /// Example: `"repo:owner/name reason:mention is:unread"`
 pub fn parse_filters(filter_str: &str, limit: u32) -> NotificationQueryParams {
-    #[allow(clippy::cast_possible_truncation)]
     let per_page = limit.min(100) as u8;
     let mut filter = NotificationQueryParams {
         per_page,

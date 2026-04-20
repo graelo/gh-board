@@ -58,7 +58,7 @@ fn highlight_color(index: usize, theme: &ResolvedTheme) -> AppColor {
 // ---------------------------------------------------------------------------
 
 /// Get a `HighlightConfiguration` for a language tag, or `None` if unsupported.
-#[allow(clippy::too_many_lines)]
+#[expect(clippy::too_many_lines)]
 fn config_for_language(lang: &str) -> Option<HighlightConfiguration> {
     let (language, highlights_query, injections_query, locals_query) = match lang {
         "rust" | "rs" => (

@@ -5,13 +5,15 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::ViewKind;
 use crate::color::ColorDepth;
-use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
-use crate::components::text_input::{RenderedTextInput, TextInput};
+use crate::components::text_input::{RenderedTextInput, TextInput, TextInputColors};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -224,7 +226,6 @@ pub struct NotificationsViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn NotificationsView<'a>(
     props: &NotificationsViewProps<'a>,
     mut hooks: Hooks,
@@ -871,14 +872,17 @@ pub fn NotificationsView<'a>(
         scrollbar_thumb_color: Some(theme.border_primary),
     });
 
+    let tab_colors = TabBarColors {
+        active: Some(theme.footer_notifications),
+        inactive: Some(theme.footer_notifications),
+        border: Some(theme.border_faint),
+    };
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
         current_filter_idx,
         props.show_filter_count,
         depth,
-        Some(theme.footer_notifications),
-        Some(theme.footer_notifications),
-        Some(theme.border_faint),
+        &tab_colors,
         &theme.icons.tab_filter,
         &theme.icons.tab_ephemeral,
     );
@@ -898,18 +902,24 @@ pub fn NotificationsView<'a>(
                 prompt,
                 "",
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_warning),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_warning),
+                    border: Some(theme.border_faint),
+                    ..Default::default()
+                },
             ))
         }
         InputMode::Search => Some(RenderedTextInput::build(
             "/",
             &search_query.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Normal => None,
     };
@@ -939,17 +949,8 @@ pub fn NotificationsView<'a>(
         None => "all repos".to_owned(),
     };
     let rate_limit_text = footer::format_rate_limit(rate_limit_state.read().as_ref());
-    let rendered_footer = RenderedFooter::build(
-        ViewKind::Notifications,
-        &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
-        action_status.read().as_ref(),
-        &theme,
-        depth,
-        [
+    let footer_colors = FooterColors {
+        view_colors: [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
             Some(theme.footer_actions),
@@ -957,9 +958,23 @@ pub fn NotificationsView<'a>(
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],
-        Some(theme.text_faint),
-        Some(theme.text_faint),
-        Some(theme.border_faint),
+        inactive: Some(theme.text_faint),
+        text: Some(theme.text_faint),
+        border: Some(theme.border_faint),
+    };
+    let rendered_footer = RenderedFooter::build(
+        ViewKind::Notifications,
+        &theme.icons,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
+        action_status.read().as_ref(),
+        &theme,
+        depth,
+        &footer_colors,
     );
 
     let rendered_help = if help_visible.get() {
@@ -985,7 +1000,7 @@ pub fn NotificationsView<'a>(
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
 
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Column, overflow: Overflow::Hidden) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column, overflow: Overflow::Hidden) {
                 ScrollableTable(table: rendered_table)
             }
 

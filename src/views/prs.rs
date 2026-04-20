@@ -5,18 +5,22 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
 use crate::components::selection_overlay::{
     RenderedSelectionOverlay, SelectionOverlay, SelectionOverlayBuildConfig, SelectionOverlayItem,
 };
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
+use crate::components::sidebar::{
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab, SidebarTabConfig,
+};
 use crate::components::sidebar_tabs;
-use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, Span, TableBuildConfig,
 };
-use crate::components::text_input::{self, RenderedTextInput, TextInput};
+use crate::components::text_input::{RenderedTextInput, TextInput, TextInputColors};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -105,20 +109,8 @@ fn pr_columns(icons: &ResolvedIcons) -> Vec<Column> {
     ]
 }
 
-/// Convert a `PullRequest` into a table `Row`.
-///
-/// When `detail` is provided the "update" cell is derived from the refined detail
-/// data; otherwise the coarse `merge_state_status` from the PR itself is used.
-#[allow(clippy::too_many_lines)]
-fn pr_to_row(
-    pr: &PullRequest,
-    theme: &ResolvedTheme,
-    date_format: &str,
-    detail: Option<&PrDetail>,
-) -> Row {
-    let mut row = HashMap::new();
-
-    // State indicator
+/// Build the state indicator cell for a PR row.
+fn build_state_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
     let icons = &theme.icons;
     let (state_icon, state_color) = if pr.is_draft {
         (&icons.pr_draft, theme.text_faint)
@@ -129,61 +121,43 @@ fn pr_to_row(
             crate::github::types::PrState::Merged => (&icons.pr_merged, theme.text_actor),
         }
     };
-    row.insert(
-        "state".to_owned(),
-        Cell::colored(state_icon.clone(), state_color),
-    );
+    Cell::colored(state_icon.clone(), state_color)
+}
 
-    // Info line: repo/name #N by @author
+/// Build the info cell: `repo/name #N by @author`.
+fn build_info_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
     let repo_name = pr
         .repo
         .as_ref()
         .map_or_else(String::new, crate::github::types::RepoRef::full_name);
     let author = pr.author.as_ref().map_or("unknown", |a| a.login.as_str());
-    row.insert(
-        "info".to_owned(),
-        Cell::from_spans(vec![
-            Span {
-                text: repo_name,
-                color: Some(theme.text_secondary),
-                bold: false,
-            },
-            Span {
-                text: format!(" #{}", pr.number),
-                color: Some(theme.text_primary),
-                bold: false,
-            },
-            Span {
-                text: " by ".to_owned(),
-                color: Some(theme.text_faint),
-                bold: false,
-            },
-            Span {
-                text: format!("@{author}"),
-                color: Some(theme.text_actor),
-                bold: false,
-            },
-        ]),
-    );
+    Cell::from_spans(vec![
+        Span {
+            text: repo_name,
+            color: Some(theme.text_secondary),
+            bold: false,
+        },
+        Span {
+            text: format!(" #{}", pr.number),
+            color: Some(theme.text_primary),
+            bold: false,
+        },
+        Span {
+            text: " by ".to_owned(),
+            color: Some(theme.text_faint),
+            bold: false,
+        },
+        Span {
+            text: format!("@{author}"),
+            color: Some(theme.text_actor),
+            bold: false,
+        },
+    ])
+}
 
-    // Subtitle: PR title (extracted by subtitle_column)
-    row.insert(
-        "subtitle".to_owned(),
-        Cell::colored(crate::util::expand_emoji(&pr.title), theme.text_primary),
-    );
-
-    // Comments
-    let comments = if pr.comment_count > 0 {
-        pr.comment_count.to_string()
-    } else {
-        String::new()
-    };
-    row.insert(
-        "comments".to_owned(),
-        Cell::colored(comments, theme.text_secondary),
-    );
-
-    // Review status: prefer reviewDecision, fall back to latestReviews.
+/// Build the review status cell: prefer `reviewDecision`, fall back to `latestReviews`.
+fn build_review_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
+    let icons = &theme.icons;
     let (review_text, review_color) = match pr.review_decision {
         Some(crate::github::types::ReviewDecision::Approved) => {
             (&icons.review_approved, theme.text_success)
@@ -195,8 +169,6 @@ fn pr_to_row(
             (&icons.review_required, theme.text_faint)
         }
         None => {
-            // Infer from latestReviews when reviewDecision is null
-            // (repos without required review branch protection).
             use crate::types::ReviewState;
             if pr
                 .reviews
@@ -213,45 +185,71 @@ fn pr_to_row(
             }
         }
     };
+    Cell::colored(review_text.clone(), review_color)
+}
+
+/// Build the lines-changed cell: `+N -N` in green/red.
+fn build_lines_cell(pr: &PullRequest, theme: &ResolvedTheme) -> Cell {
+    Cell::from_spans(vec![
+        Span {
+            text: format!("+{}", pr.additions),
+            color: Some(theme.text_success),
+            bold: false,
+        },
+        Span {
+            text: " ".to_owned(),
+            color: None,
+            bold: false,
+        },
+        Span {
+            text: format!("-{}", pr.deletions),
+            color: Some(theme.text_error),
+            bold: false,
+        },
+    ])
+}
+
+/// Convert a `PullRequest` into a table `Row`.
+///
+/// When `detail` is provided the "update" cell is derived from the refined detail
+/// data; otherwise the coarse `merge_state_status` from the PR itself is used.
+fn pr_to_row(
+    pr: &PullRequest,
+    theme: &ResolvedTheme,
+    date_format: &str,
+    detail: Option<&PrDetail>,
+) -> Row {
+    let mut row = HashMap::new();
+
+    row.insert("state".to_owned(), build_state_cell(pr, theme));
+    row.insert("info".to_owned(), build_info_cell(pr, theme));
     row.insert(
-        "review".to_owned(),
-        Cell::colored(review_text.clone(), review_color),
+        "subtitle".to_owned(),
+        Cell::colored(crate::util::expand_emoji(&pr.title), theme.text_primary),
     );
 
-    // CI status (aggregate from check runs)
+    let comments = if pr.comment_count > 0 {
+        pr.comment_count.to_string()
+    } else {
+        String::new()
+    };
+    row.insert(
+        "comments".to_owned(),
+        Cell::colored(comments, theme.text_secondary),
+    );
+
+    row.insert("review".to_owned(), build_review_cell(pr, theme));
+
     let (ci_text, ci_color) = aggregate_ci_status(&pr.check_runs, theme);
     row.insert("ci".to_owned(), Cell::colored(ci_text, ci_color));
 
-    // Lines changed: green/red like gh-dash
-    row.insert(
-        "lines".to_owned(),
-        Cell::from_spans(vec![
-            Span {
-                text: format!("+{}", pr.additions),
-                color: Some(theme.text_success),
-                bold: false,
-            },
-            Span {
-                text: " ".to_owned(),
-                color: None,
-                bold: false,
-            },
-            Span {
-                text: format!("-{}", pr.deletions),
-                color: Some(theme.text_error),
-                bold: false,
-            },
-        ]),
-    );
+    row.insert("lines".to_owned(), build_lines_cell(pr, theme));
 
-    // Updated
     let updated = crate::util::format_date(&pr.updated_at, date_format);
     row.insert(
         "updated".to_owned(),
         Cell::colored(updated, theme.text_faint),
     );
-
-    // Created
     let created = crate::util::format_date(&pr.created_at, date_format);
     row.insert(
         "created".to_owned(),
@@ -484,7 +482,7 @@ fn merged_pr_filters<'a>(
 // ---------------------------------------------------------------------------
 
 #[derive(Default, Props)]
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct PrsViewProps<'a> {
     /// PR filter configs.
     pub filters: Option<&'a [PrFilter]>,
@@ -541,7 +539,6 @@ pub struct PrsViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
@@ -1358,37 +1355,80 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
 
                 // Read input mode into a local to avoid borrow conflict.
                 let current_mode = input_mode.read().clone();
+                let input_ctx = InputContext {
+                    input_mode,
+                    input_buffer,
+                    prs_state: &prs_state,
+                    filter_idx: current_filter_idx,
+                    cursor: cursor.get(),
+                    engine: engine.as_ref(),
+                    event_tx: &event_tx,
+                };
                 match current_mode {
                     InputMode::Assign => {
-                        handle_assign_input(
+                        let mut im = input_ctx.input_mode;
+                        let eng = input_ctx.engine.cloned();
+                        let tx = input_ctx.event_tx.clone();
+                        let fi = input_ctx.filter_idx;
+                        let cur = input_ctx.cursor;
+                        let ps = *input_ctx.prs_state;
+                        super::common::handle_multiselect_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
-                            &prs_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx,
-                            assignee_candidates,
-                            assignee_selection,
-                            assignee_selected,
+                            &mut super::common::MultiSelectState {
+                                input_buffer: input_ctx.input_buffer,
+                                candidates: assignee_candidates,
+                                selection: assignee_selection,
+                                selected: assignee_selected,
+                            },
+                            |logins| {
+                                if let Some((owner, repo, number)) =
+                                    get_current_pr_info(&ps, fi, cur)
+                                    && let Some(eng) = eng
+                                {
+                                    eng.send(Request::SetPrAssignees {
+                                        owner,
+                                        repo,
+                                        number,
+                                        logins,
+                                        reply_tx: tx,
+                                    });
+                                }
+                            },
+                            move || im.set(InputMode::Normal),
                         );
                     }
                     InputMode::Label => {
-                        handle_label_input(
+                        let mut im = input_ctx.input_mode;
+                        let eng = input_ctx.engine.cloned();
+                        let tx = input_ctx.event_tx.clone();
+                        let fi = input_ctx.filter_idx;
+                        let cur = input_ctx.cursor;
+                        let ps = *input_ctx.prs_state;
+                        super::common::handle_multiselect_input(
                             code,
                             modifiers,
-                            input_mode,
-                            input_buffer,
-                            label_candidates,
-                            label_selection,
-                            label_selected,
-                            &prs_state,
-                            current_filter_idx,
-                            cursor.get(),
-                            engine.as_ref(),
-                            &event_tx,
+                            &mut super::common::MultiSelectState {
+                                input_buffer: input_ctx.input_buffer,
+                                candidates: label_candidates,
+                                selection: label_selection,
+                                selected: label_selected,
+                            },
+                            |labels| {
+                                if let Some((owner, repo, number)) =
+                                    get_current_pr_info(&ps, fi, cur)
+                                    && let Some(eng) = eng
+                                {
+                                    eng.send(Request::SetPrLabels {
+                                        owner,
+                                        repo,
+                                        number,
+                                        labels,
+                                        reply_tx: tx,
+                                    });
+                                }
+                            },
+                            move || im.set(InputMode::Normal),
                         );
                     }
                     InputMode::Comment => match code {
@@ -2337,7 +2377,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
     // Compute widths for table vs sidebar.
     let is_preview_open = preview_open.get();
     let (table_width, sidebar_width) = if is_preview_open {
-        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let sb_w = (f64::from(props.width) * preview_pct).round() as u16;
         let tb_w = props.width.saturating_sub(sb_w);
         (tb_w, sb_w)
@@ -2482,26 +2522,31 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         };
 
         // Account for tab bar (2 extra lines) + meta in sidebar height.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count) as u16;
         let sidebar_visible_lines = props.height.saturating_sub(8 + meta_lines) as usize;
 
+        let sidebar_colors = SidebarColors {
+            title: Some(theme.text_primary),
+            border: Some(theme.border_faint),
+            indicator: Some(theme.text_faint),
+            thumb: Some(theme.border_primary),
+            depth,
+        };
         let sidebar = RenderedSidebar::build_tabbed(
             title,
             &md_lines,
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_width,
-            depth,
-            Some(theme.text_primary),
-            Some(theme.border_faint),
-            Some(theme.text_faint),
-            Some(theme.border_primary),
-            Some(current_tab),
-            Some(&theme.icons),
-            sidebar_meta,
-            None, // Show all tabs for PRs
-            None, // No tab label overrides
+            &sidebar_colors,
+            Some(SidebarTabConfig {
+                active_tab: Some(current_tab),
+                icons: Some(&theme.icons),
+                meta: sidebar_meta,
+                visible_tabs: None,
+                tab_label_overrides: None,
+            }),
         );
         // Store the clamped offset so ctrl+u works immediately.
         if preview_scroll.get() != sidebar.clamped_scroll {
@@ -2512,14 +2557,17 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         None
     };
 
+    let tab_colors = TabBarColors {
+        active: Some(theme.footer_prs),
+        inactive: Some(theme.footer_prs),
+        border: Some(theme.border_faint),
+    };
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
         current_filter_idx,
         props.show_filter_count,
         depth,
-        Some(theme.footer_prs),
-        Some(theme.footer_prs),
-        Some(theme.border_faint),
+        &tab_colors,
         &theme.icons.tab_filter,
         &theme.icons.tab_ephemeral,
     );
@@ -2548,14 +2596,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 &prompt,
                 &buf,
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_secondary),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_secondary),
+                    border: Some(theme.border_faint),
+                    highlight: Some(theme.text_primary),
+                    highlight_bg: Some(theme.bg_selected),
+                    suggestion: Some(theme.text_faint),
+                },
                 &filtered,
                 selected_idx,
-                Some(theme.text_primary),
-                Some(theme.bg_selected),
-                Some(theme.text_faint),
                 &selected,
             ))
         }
@@ -2579,14 +2629,16 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 &prompt,
                 &buf,
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_secondary),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_secondary),
+                    border: Some(theme.border_faint),
+                    highlight: Some(theme.text_primary),
+                    highlight_bg: Some(theme.bg_selected),
+                    suggestion: Some(theme.text_faint),
+                },
                 &filtered,
                 selected_idx,
-                Some(theme.text_primary),
-                Some(theme.bg_selected),
-                Some(theme.text_faint),
                 &selected,
             ))
         }
@@ -2594,9 +2646,12 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             "Comment (Ctrl+D to submit, Esc to cancel):",
             &input_buffer.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Confirm(action) => {
             let prompt = match action {
@@ -2614,27 +2669,36 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 prompt,
                 "",
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_warning),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_warning),
+                    border: Some(theme.border_faint),
+                    ..Default::default()
+                },
             ))
         }
         InputMode::Search => Some(RenderedTextInput::build(
             "/",
             &search_query.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Normal => None,
         InputMode::UpdateBranchMethod => Some(RenderedTextInput::build(
             "[m]erge  Esc cancel",
             "",
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_warning),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_warning),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
     };
 
@@ -2664,17 +2728,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         Some(repo) => repo.clone(),
         None => "all repos".to_owned(),
     };
-    let rendered_footer = RenderedFooter::build(
-        ViewKind::Prs,
-        &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
-        action_status.read().as_ref(),
-        &theme,
-        depth,
-        [
+    let footer_colors = FooterColors {
+        view_colors: [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
             Some(theme.footer_actions),
@@ -2682,9 +2737,23 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],
-        Some(theme.text_faint),
-        Some(theme.text_faint),
-        Some(theme.border_faint),
+        inactive: Some(theme.text_faint),
+        text: Some(theme.text_faint),
+        border: Some(theme.border_faint),
+    };
+    let rendered_footer = RenderedFooter::build(
+        ViewKind::Prs,
+        &theme.icons,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
+        action_status.read().as_ref(),
+        &theme,
+        depth,
+        &footer_colors,
     );
 
     let rendered_help = if help_visible.get() {
@@ -2735,8 +2804,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
 
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
                 Sidebar(sidebar: rendered_sidebar)
@@ -2777,250 +2846,16 @@ fn build_pr_assignee_candidates(pr: &PullRequest) -> Vec<String> {
     pool
 }
 
-/// Handle text input for assigning PRs to users.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn handle_assign_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    prs_state: &State<PrsState>,
+/// Groups the common parameters shared by multiselect input handling
+/// in the PRs view.
+struct InputContext<'a> {
+    input_mode: State<InputMode>,
+    input_buffer: State<String>,
+    prs_state: &'a State<PrsState>,
     filter_idx: usize,
     cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
-    assignee_candidates: State<Vec<String>>,
-    mut assignee_selection: State<usize>,
-    mut assignee_selected: State<Vec<String>>,
-) {
-    match code {
-        KeyCode::Tab | KeyCode::Down => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                assignee_selection.set((assignee_selection.get() + 1) % filtered.len());
-            }
-        }
-        KeyCode::Up | KeyCode::BackTab => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = assignee_selection.get();
-                assignee_selection.set(if sel == 0 {
-                    filtered.len() - 1
-                } else {
-                    sel - 1
-                });
-            }
-        }
-        KeyCode::Char(' ') => {
-            let buf = input_buffer.read().clone();
-            let candidates = assignee_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = assignee_selection
-                    .get()
-                    .min(filtered.len().saturating_sub(1));
-                let item = filtered[sel].clone();
-                let mut selected = assignee_selected.read().clone();
-                if let Some(pos) = selected.iter().position(|s| s == &item) {
-                    selected.remove(pos);
-                } else {
-                    selected.push(item);
-                }
-                assignee_selected.set(selected);
-            }
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-        }
-        KeyCode::Enter => {
-            let buf = input_buffer.read().clone();
-            let checked = assignee_selected.read().clone();
-            let logins: Vec<String> = if buf.is_empty() {
-                // No text typed → submit multiselect state as-is (may be empty = unassign all)
-                checked
-            } else {
-                // Text typed → resolve suggestion, merge into checked set
-                let candidates = assignee_candidates.read();
-                let filtered = text_input::filter_suggestions(&candidates, &buf);
-                let login = if filtered.is_empty() {
-                    buf
-                } else {
-                    let sel = assignee_selection
-                        .get()
-                        .min(filtered.len().saturating_sub(1));
-                    filtered[sel].clone()
-                };
-                if login.is_empty() {
-                    checked
-                } else {
-                    let mut all = checked;
-                    if !all.contains(&login) {
-                        all.push(login);
-                    }
-                    all
-                }
-            };
-            let info = get_current_pr_info(prs_state, filter_idx, cursor);
-            if let Some((owner, repo, number)) = info
-                && let Some(eng) = engine
-            {
-                eng.send(Request::SetPrAssignees {
-                    owner,
-                    repo,
-                    number,
-                    logins,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-            assignee_selected.set(Vec::new());
-        }
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            assignee_selection.set(0);
-            assignee_selected.set(Vec::new());
-        }
-        KeyCode::Backspace => {
-            let mut buf = input_buffer.read().clone();
-            buf.pop();
-            input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut buf = input_buffer.read().clone();
-            buf.push(ch);
-            input_buffer.set(buf);
-            assignee_selection.set(0);
-        }
-        _ => {}
-    }
-}
-
-/// Handle text input for adding a label to a PR.
-#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn handle_label_input(
-    code: KeyCode,
-    modifiers: KeyModifiers,
-    mut input_mode: State<InputMode>,
-    mut input_buffer: State<String>,
-    label_candidates: State<Vec<String>>,
-    mut label_selection: State<usize>,
-    mut label_selected: State<Vec<String>>,
-    prs_state: &State<PrsState>,
-    filter_idx: usize,
-    cursor: usize,
-    engine: Option<&EngineHandle>,
-    event_tx: &std::sync::mpsc::Sender<Event>,
-) {
-    match code {
-        KeyCode::Tab | KeyCode::Down => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                label_selection.set((label_selection.get() + 1) % filtered.len());
-            }
-        }
-        KeyCode::Up | KeyCode::BackTab => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = label_selection.get();
-                label_selection.set(if sel == 0 {
-                    filtered.len() - 1
-                } else {
-                    sel - 1
-                });
-            }
-        }
-        KeyCode::Char(' ') => {
-            let buf = input_buffer.read().clone();
-            let candidates = label_candidates.read();
-            let filtered = text_input::filter_suggestions(&candidates, &buf);
-            if !filtered.is_empty() {
-                let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                let item = filtered[sel].clone();
-                let mut selected = label_selected.read().clone();
-                if let Some(pos) = selected.iter().position(|s| s == &item) {
-                    selected.remove(pos);
-                } else {
-                    selected.push(item);
-                }
-                label_selected.set(selected);
-            }
-            input_buffer.set(String::new());
-            label_selection.set(0);
-        }
-        KeyCode::Enter => {
-            let buf = input_buffer.read().clone();
-            let checked = label_selected.read().clone();
-            let labels: Vec<String> = if buf.is_empty() {
-                // No text typed → submit multiselect state as-is (may be empty = clear all)
-                checked
-            } else {
-                // Text typed → resolve suggestion, merge into checked set
-                let candidates = label_candidates.read();
-                let filtered = text_input::filter_suggestions(&candidates, &buf);
-                let label = if filtered.is_empty() {
-                    buf
-                } else {
-                    let sel = label_selection.get().min(filtered.len().saturating_sub(1));
-                    filtered[sel].clone()
-                };
-                if label.is_empty() {
-                    checked
-                } else {
-                    let mut all = checked;
-                    if !all.contains(&label) {
-                        all.push(label);
-                    }
-                    all
-                }
-            };
-            let info = get_current_pr_info(prs_state, filter_idx, cursor);
-            if let Some((owner, repo, number)) = info
-                && let Some(eng) = engine
-            {
-                eng.send(Request::SetPrLabels {
-                    owner,
-                    repo,
-                    number,
-                    labels,
-                    reply_tx: event_tx.clone(),
-                });
-            }
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            label_selected.set(Vec::new());
-        }
-        KeyCode::Esc => {
-            input_mode.set(InputMode::Normal);
-            input_buffer.set(String::new());
-            label_selection.set(0);
-            label_selected.set(Vec::new());
-        }
-        KeyCode::Backspace => {
-            let mut buf = input_buffer.read().clone();
-            buf.pop();
-            input_buffer.set(buf);
-            label_selection.set(0);
-        }
-        KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-            let mut buf = input_buffer.read().clone();
-            buf.push(ch);
-            input_buffer.set(buf);
-            label_selection.set(0);
-        }
-        _ => {}
-    }
+    engine: Option<&'a EngineHandle>,
+    event_tx: &'a std::sync::mpsc::Sender<Event>,
 }
 
 /// Extract (owner, repo, number) from the current PR at cursor position.
@@ -3118,7 +2953,7 @@ fn sidebar_update_status(
 }
 
 /// Build the `SidebarMeta` header from a pull request.
-#[allow(clippy::too_many_lines, clippy::similar_names)]
+#[expect(clippy::too_many_lines, clippy::similar_names)]
 fn build_sidebar_meta(
     pr: &PullRequest,
     detail: Option<&PrDetail>,
@@ -3389,5 +3224,251 @@ mod tests {
     fn effective_status_conflicting_takes_priority_over_behind() {
         let d = detail_with(Some(MergeableState::Conflicting), Some(5));
         assert_eq!(effective_update_status(&d), Some(MergeStateStatus::Dirty));
+    }
+
+    // --- test helpers ---
+
+    fn test_theme() -> ResolvedTheme {
+        use crate::config::types::Theme;
+        use crate::theme::Background;
+        ResolvedTheme::resolve(&Theme::default(), Background::Dark)
+    }
+
+    fn test_pr() -> PullRequest {
+        pr_with_status(None)
+    }
+
+    // --- build_state_cell ---
+
+    #[test]
+    fn build_state_cell_open_pr() {
+        let theme = test_theme();
+        let pr = test_pr();
+        let cell = build_state_cell(&pr, &theme);
+        let text = cell.text();
+        assert_eq!(text, theme.icons.pr_open);
+    }
+
+    #[test]
+    fn build_state_cell_merged_pr() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.state = crate::github::types::PrState::Merged;
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_merged);
+    }
+
+    #[test]
+    fn build_state_cell_closed_pr() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.state = crate::github::types::PrState::Closed;
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_closed);
+    }
+
+    #[test]
+    fn build_state_cell_draft_pr() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.is_draft = true;
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_draft);
+    }
+
+    #[test]
+    fn build_state_cell_draft_overrides_state() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.is_draft = true;
+        pr.state = crate::github::types::PrState::Merged;
+        // Draft takes priority
+        let cell = build_state_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.pr_draft);
+    }
+
+    // --- build_review_cell ---
+
+    #[test]
+    fn build_review_cell_approved() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = Some(crate::github::types::ReviewDecision::Approved);
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_approved);
+    }
+
+    #[test]
+    fn build_review_cell_changes_requested() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = Some(crate::github::types::ReviewDecision::ChangesRequested);
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_changes);
+    }
+
+    #[test]
+    fn build_review_cell_review_required() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = Some(crate::github::types::ReviewDecision::ReviewRequired);
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_required);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_with_approved_review() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![crate::types::Review {
+            author: None,
+            state: crate::types::ReviewState::Approved,
+            body: String::new(),
+            submitted_at: None,
+        }];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_approved);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_with_changes_requested() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![crate::types::Review {
+            author: None,
+            state: crate::types::ReviewState::ChangesRequested,
+            body: String::new(),
+            submitted_at: None,
+        }];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_changes);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_no_reviews() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_none);
+    }
+
+    #[test]
+    fn build_review_cell_no_decision_with_commented_review() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.review_decision = None;
+        pr.reviews = vec![crate::types::Review {
+            author: None,
+            state: crate::types::ReviewState::Commented,
+            body: String::new(),
+            submitted_at: None,
+        }];
+        let cell = build_review_cell(&pr, &theme);
+        assert_eq!(cell.text(), theme.icons.review_commented);
+    }
+
+    // --- build_lines_cell ---
+
+    #[test]
+    fn build_lines_cell_with_additions_deletions() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.additions = 42;
+        pr.deletions = 7;
+        let cell = build_lines_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("+42"), "expected +42 in '{text}'");
+        assert!(text.contains("-7"), "expected -7 in '{text}'");
+    }
+
+    #[test]
+    fn build_lines_cell_zero_changes() {
+        let theme = test_theme();
+        let pr = test_pr();
+        let cell = build_lines_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("+0"), "expected +0 in '{text}'");
+        assert!(text.contains("-0"), "expected -0 in '{text}'");
+    }
+
+    #[test]
+    fn build_lines_cell_has_three_spans() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.additions = 10;
+        pr.deletions = 5;
+        let cell = build_lines_cell(&pr, &theme);
+        // Should have 3 spans: additions, space, deletions
+        assert_eq!(cell.spans.len(), 3);
+        assert_eq!(cell.spans[0].text, "+10");
+        assert_eq!(cell.spans[1].text, " ");
+        assert_eq!(cell.spans[2].text, "-5");
+    }
+
+    // --- build_info_cell ---
+
+    #[test]
+    fn build_info_cell_contains_number() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.number = 123;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("#123"), "expected #123 in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_contains_author() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.author = Some(crate::types::Actor {
+            login: "octocat".to_owned(),
+            avatar_url: String::new(),
+        });
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("@octocat"), "expected @octocat in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_no_author_shows_unknown() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.author = None;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("@unknown"), "expected @unknown in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_contains_repo_name() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.repo = Some(crate::types::RepoRef {
+            owner: "org".to_owned(),
+            name: "repo".to_owned(),
+        });
+        pr.number = 42;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        assert!(text.contains("org/repo"), "expected org/repo in '{text}'");
+        assert!(text.contains("#42"), "expected #42 in '{text}'");
+    }
+
+    #[test]
+    fn build_info_cell_no_repo() {
+        let theme = test_theme();
+        let mut pr = test_pr();
+        pr.repo = None;
+        pr.number = 1;
+        let cell = build_info_cell(&pr, &theme);
+        let text = cell.text();
+        // Should still have the number
+        assert!(text.contains("#1"), "expected #1 in '{text}'");
+        assert!(text.contains("by"), "expected 'by' in '{text}'");
     }
 }

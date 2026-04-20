@@ -610,125 +610,251 @@ struct RawReactionGroup {
 }
 
 // ---------------------------------------------------------------------------
+// Conversion helpers: Raw → Domain
+// ---------------------------------------------------------------------------
+
+fn extract_labels(labels: Option<Connection<RawLabel>>) -> Vec<Label> {
+    labels
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|l| Label {
+                    name: l.name,
+                    color: l.color,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_assignees(assignees: Option<Connection<RawAssignee>>) -> Vec<Actor> {
+    assignees
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|a| Actor {
+                    login: a.login,
+                    avatar_url: String::new(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_review_requests(requests: Option<Connection<RawReviewRequest>>) -> Vec<Actor> {
+    requests
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .filter_map(|rr| {
+                    rr.requested_reviewer.and_then(|r| {
+                        r.login.map(|login| Actor {
+                            login,
+                            avatar_url: String::new(),
+                        })
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_latest_reviews(reviews: Option<Connection<RawLatestReview>>) -> Vec<Review> {
+    reviews
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|r| Review {
+                    author: r.author.map(|a| Actor {
+                        login: a.login,
+                        avatar_url: a.avatar_url,
+                    }),
+                    state: r.state.unwrap_or(ReviewState::Unknown),
+                    body: String::new(),
+                    submitted_at: None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Convert a single `RawCheckContext` into a domain `CheckRun`.
+fn convert_check_context(ctx: RawCheckContext) -> CheckRun {
+    let name = ctx
+        .name
+        .or(ctx.context)
+        .unwrap_or_else(|| "<unknown>".to_owned());
+    let url = ctx.details_url.or(ctx.target_url);
+
+    // StatusContext uses "state" (string) instead of typed status/conclusion.
+    let (status, conclusion) = if ctx.status.is_some() {
+        (ctx.status, ctx.conclusion)
+    } else if let Some(ref state) = ctx.state {
+        match state.as_str() {
+            "success" => (Some(CheckStatus::Completed), Some(CheckConclusion::Success)),
+            "failure" | "error" => (Some(CheckStatus::Completed), Some(CheckConclusion::Failure)),
+            "pending" => (Some(CheckStatus::InProgress), None),
+            _ => (None, None),
+        }
+    } else {
+        (None, None)
+    };
+
+    let (workflow_run_id, workflow_name) = ctx
+        .check_suite
+        .and_then(|cs| cs.workflow_run)
+        .map_or((None, None), |wr| {
+            (wr.database_id, wr.workflow.and_then(|w| w.name))
+        });
+
+    CheckRun {
+        name,
+        status,
+        conclusion,
+        url,
+        workflow_run_id,
+        workflow_name,
+        started_at: ctx.started_at,
+        completed_at: ctx.completed_at,
+    }
+}
+
+/// Extract check runs from the commits connection (last-commit rollup).
+fn extract_check_runs(commits: Option<Connection<RawCommitNode>>) -> Vec<CheckRun> {
+    commits
+        .and_then(|c| c.nodes.into_iter().flatten().next())
+        .and_then(|cn| cn.commit)
+        .and_then(|c| c.status_check_rollup)
+        .and_then(|sr| sr.contexts)
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(convert_check_context)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_participants(participants: Option<Connection<RawAssignee>>) -> Vec<String> {
+    participants
+        .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
+        .unwrap_or_default()
+}
+
+fn extract_timeline_events(
+    timeline_items: Option<Connection<RawTimelineItem>>,
+) -> Vec<TimelineEvent> {
+    timeline_items
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .filter_map(convert_timeline_item)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_detail_commits(all_commits: Option<Connection<RawDetailCommitNode>>) -> Vec<Commit> {
+    all_commits
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .filter_map(|cn| {
+                    let c = cn.commit?;
+                    Some(Commit {
+                        sha: c.oid,
+                        message: c.message_headline,
+                        author: c.author.and_then(|a| a.name),
+                        committed_date: c.committed_date,
+                        check_state: c.status_check_rollup.and_then(|r| r.state),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_files(files: Option<Connection<RawFile>>) -> Vec<File> {
+    files
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|f| File {
+                    path: f.path,
+                    additions: f.additions,
+                    deletions: f.deletions,
+                    status: f.change_type,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_review_threads(
+    review_threads: Option<Connection<RawReviewThread>>,
+) -> Vec<ReviewThread> {
+    review_threads
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|rt| ReviewThread {
+                    is_resolved: rt.is_resolved,
+                    comments: rt
+                        .comments
+                        .map(|cc| {
+                            cc.nodes
+                                .into_iter()
+                                .flatten()
+                                .map(|rc| crate::github::types::Comment {
+                                    author: rc.author.map(raw_actor_to_actor),
+                                    body: rc.body,
+                                    created_at: rc.created_at,
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn extract_detail_reviews(reviews: Option<Connection<RawReview>>) -> Vec<Review> {
+    reviews
+        .map(|c| {
+            c.nodes
+                .into_iter()
+                .flatten()
+                .map(|r| Review {
+                    author: r.author.map(raw_actor_to_actor),
+                    state: r.state,
+                    body: r.body,
+                    submitted_at: r.submitted_at,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------
 // Conversion: Raw → Domain
 // ---------------------------------------------------------------------------
 
 impl RawPullRequest {
-    #[allow(clippy::too_many_lines)]
     fn into_domain(self) -> PullRequest {
         let author = self.author.map(|a| Actor {
             login: a.login,
             avatar_url: a.avatar_url,
         });
-
-        let labels = self
-            .labels
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|l| Label {
-                        name: l.name,
-                        color: l.color,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let assignees = self
-            .assignees
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|a| Actor {
-                        login: a.login,
-                        avatar_url: String::new(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let comment_count = self.comments.map_or(0, |c| c.total_count);
-
-        let review_requests = self
-            .review_requests
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|rr| {
-                        rr.requested_reviewer.and_then(|r| {
-                            r.login.map(|login| Actor {
-                                login,
-                                avatar_url: String::new(),
-                            })
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let check_runs = self
-            .commits
-            .and_then(|c| c.nodes.into_iter().flatten().next())
-            .and_then(|cn| cn.commit)
-            .and_then(|c| c.status_check_rollup)
-            .and_then(|sr| sr.contexts)
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|ctx| {
-                        // Unify CheckRun and StatusContext into our CheckRun type.
-                        let name = ctx
-                            .name
-                            .or(ctx.context)
-                            .unwrap_or_else(|| "<unknown>".to_owned());
-                        let url = ctx.details_url.or(ctx.target_url);
-
-                        // StatusContext uses "state" (string) instead of typed
-                        // status/conclusion. Map common values.
-                        let (status, conclusion) = if ctx.status.is_some() {
-                            (ctx.status, ctx.conclusion)
-                        } else if let Some(ref state) = ctx.state {
-                            match state.as_str() {
-                                "success" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Success))
-                                }
-                                "failure" | "error" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Failure))
-                                }
-                                "pending" => (Some(CheckStatus::InProgress), None),
-                                _ => (None, None),
-                            }
-                        } else {
-                            (None, None)
-                        };
-
-                        // Extract workflow_run_id and workflow_name from
-                        // checkSuite.workflowRun nesting (null for non-Actions checks).
-                        let (workflow_run_id, workflow_name) = ctx
-                            .check_suite
-                            .and_then(|cs| cs.workflow_run)
-                            .map_or((None, None), |wr| {
-                                (wr.database_id, wr.workflow.and_then(|w| w.name))
-                            });
-
-                        CheckRun {
-                            name,
-                            status,
-                            conclusion,
-                            url,
-                            workflow_run_id,
-                            workflow_name,
-                            started_at: ctx.started_at,
-                            completed_at: ctx.completed_at,
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
 
         let repo = self
             .repository
@@ -747,43 +873,23 @@ impl RawPullRequest {
             deletions: self.deletions,
             head_ref: self.head_ref_name,
             base_ref: self.base_ref_name,
-            labels,
-            assignees,
+            labels: extract_labels(self.labels),
+            assignees: extract_assignees(self.assignees),
             commits: Vec::new(),
             comments: Vec::new(),
             review_threads: Vec::new(),
-            review_requests,
-            reviews: self
-                .latest_reviews
-                .map(|c| {
-                    c.nodes
-                        .into_iter()
-                        .flatten()
-                        .map(|r| Review {
-                            author: r.author.map(|a| Actor {
-                                login: a.login,
-                                avatar_url: a.avatar_url,
-                            }),
-                            state: r.state.unwrap_or(ReviewState::Unknown),
-                            body: String::new(),
-                            submitted_at: None,
-                        })
-                        .collect()
-                })
-                .unwrap_or_default(),
+            review_requests: extract_review_requests(self.review_requests),
+            reviews: extract_latest_reviews(self.latest_reviews),
             timeline_events: Vec::new(),
             files: Vec::new(),
-            check_runs,
+            check_runs: extract_check_runs(self.commits),
             updated_at: self.updated_at,
             created_at: self.created_at,
             url: self.url,
             repo,
-            comment_count,
+            comment_count: self.comments.map_or(0, |c| c.total_count),
             author_association: self.author_association,
-            participants: self
-                .participants
-                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
-                .unwrap_or_default(),
+            participants: extract_participants(self.participants),
             merge_state_status: self.merge_state_status,
             head_repo_owner: self.head_repository.as_ref().map(|r| r.owner.login.clone()),
             head_repo_name: self.head_repository.map(|r| r.name),
@@ -1186,103 +1292,13 @@ fn convert_timeline_item(item: RawTimelineItem) -> Option<TimelineEvent> {
 
 impl RawPrDetail {
     fn into_domain(self) -> PrDetail {
-        let reviews = self
-            .reviews
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|r| Review {
-                        author: r.author.map(raw_actor_to_actor),
-                        state: r.state,
-                        body: r.body,
-                        submitted_at: r.submitted_at,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let review_threads = self
-            .review_threads
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|rt| ReviewThread {
-                        is_resolved: rt.is_resolved,
-                        comments: rt
-                            .comments
-                            .map(|cc| {
-                                cc.nodes
-                                    .into_iter()
-                                    .flatten()
-                                    .map(|rc| crate::github::types::Comment {
-                                        author: rc.author.map(raw_actor_to_actor),
-                                        body: rc.body,
-                                        created_at: rc.created_at,
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let timeline_events = self
-            .timeline_items
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(convert_timeline_item)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let commits = self
-            .commits
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|cn| {
-                        let c = cn.commit?;
-                        Some(Commit {
-                            sha: c.oid,
-                            message: c.message_headline,
-                            author: c.author.and_then(|a| a.name),
-                            committed_date: c.committed_date,
-                            check_state: c.status_check_rollup.and_then(|r| r.state),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let files = self
-            .files
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|f| File {
-                        path: f.path,
-                        additions: f.additions,
-                        deletions: f.deletions,
-                        status: f.change_type,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         PrDetail {
             body: self.body,
-            reviews,
-            review_threads,
-            timeline_events,
-            commits,
-            files,
+            reviews: extract_detail_reviews(self.reviews),
+            review_threads: extract_review_threads(self.review_threads),
+            timeline_events: extract_timeline_events(self.timeline_items),
+            commits: extract_detail_commits(self.commits),
+            files: extract_files(self.files),
             mergeable: self.mergeable,
             behind_by: None, // Populated by fetch_compare after the GraphQL call.
         }
@@ -1891,137 +1907,15 @@ struct RawFullPullRequest {
 
 impl RawFullPullRequest {
     /// Split the combined response into a search-row `PullRequest` and a `PrDetail`.
-    #[allow(clippy::too_many_lines)]
     fn into_domain(self) -> (PullRequest, PrDetail) {
-        // --- Build PullRequest (search-row) ---
         let author = self.author.map(|a| Actor {
             login: a.login,
             avatar_url: a.avatar_url,
         });
 
-        let labels: Vec<Label> = self
-            .labels
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|l| Label {
-                        name: l.name,
-                        color: l.color,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let assignees: Vec<Actor> = self
-            .assignees
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|a| Actor {
-                        login: a.login,
-                        avatar_url: String::new(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let comment_count = self.comments.map_or(0, |c| c.total_count);
-
-        let review_requests: Vec<Actor> = self
-            .review_requests
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|rr| {
-                        rr.requested_reviewer.and_then(|r| {
-                            r.login.map(|login| Actor {
-                                login,
-                                avatar_url: String::new(),
-                            })
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let check_runs = self
-            .last_commit
-            .and_then(|c| c.nodes.into_iter().flatten().next())
-            .and_then(|cn| cn.commit)
-            .and_then(|c| c.status_check_rollup)
-            .and_then(|sr| sr.contexts)
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|ctx| {
-                        let name = ctx
-                            .name
-                            .or(ctx.context)
-                            .unwrap_or_else(|| "<unknown>".to_owned());
-                        let url = ctx.details_url.or(ctx.target_url);
-                        let (status, conclusion) = if ctx.status.is_some() {
-                            (ctx.status, ctx.conclusion)
-                        } else if let Some(ref state) = ctx.state {
-                            match state.as_str() {
-                                "success" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Success))
-                                }
-                                "failure" | "error" => {
-                                    (Some(CheckStatus::Completed), Some(CheckConclusion::Failure))
-                                }
-                                "pending" => (Some(CheckStatus::InProgress), None),
-                                _ => (None, None),
-                            }
-                        } else {
-                            (None, None)
-                        };
-                        let (workflow_run_id, workflow_name) = ctx
-                            .check_suite
-                            .and_then(|cs| cs.workflow_run)
-                            .map_or((None, None), |wr| {
-                                (wr.database_id, wr.workflow.and_then(|w| w.name))
-                            });
-                        CheckRun {
-                            name,
-                            status,
-                            conclusion,
-                            url,
-                            workflow_run_id,
-                            workflow_name,
-                            started_at: ctx.started_at,
-                            completed_at: ctx.completed_at,
-                        }
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         let repo = self
             .repository
             .and_then(|r| RepoRef::from_full_name(&r.name_with_owner));
-
-        let latest_reviews_for_row: Vec<Review> = self
-            .latest_reviews
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|r| Review {
-                        author: r.author.map(|a| Actor {
-                            login: a.login,
-                            avatar_url: a.avatar_url,
-                        }),
-                        state: r.state.unwrap_or(ReviewState::Unknown),
-                        body: String::new(),
-                        submitted_at: None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
 
         let pr = PullRequest {
             number: self.number,
@@ -2036,129 +1930,35 @@ impl RawFullPullRequest {
             deletions: self.deletions,
             head_ref: self.head_ref_name,
             base_ref: self.base_ref_name,
-            labels,
-            assignees,
+            labels: extract_labels(self.labels),
+            assignees: extract_assignees(self.assignees),
             commits: Vec::new(),
             comments: Vec::new(),
             review_threads: Vec::new(),
-            review_requests,
-            reviews: latest_reviews_for_row,
+            review_requests: extract_review_requests(self.review_requests),
+            reviews: extract_latest_reviews(self.latest_reviews),
             timeline_events: Vec::new(),
             files: Vec::new(),
-            check_runs,
+            check_runs: extract_check_runs(self.last_commit),
             updated_at: self.updated_at,
             created_at: self.created_at,
             url: self.url,
             repo,
-            comment_count,
+            comment_count: self.comments.map_or(0, |c| c.total_count),
             author_association: self.author_association,
-            participants: self
-                .participants
-                .map(|c| c.nodes.into_iter().flatten().map(|a| a.login).collect())
-                .unwrap_or_default(),
+            participants: extract_participants(self.participants),
             merge_state_status: self.merge_state_status,
             head_repo_owner: self.head_repository.as_ref().map(|r| r.owner.login.clone()),
             head_repo_name: self.head_repository.map(|r| r.name),
         };
 
-        // --- Build PrDetail ---
-        let detail_reviews = self
-            .reviews
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|r| Review {
-                        author: r.author.map(raw_actor_to_actor),
-                        state: r.state,
-                        body: r.body,
-                        submitted_at: r.submitted_at,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let detail_review_threads = self
-            .review_threads
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|rt| ReviewThread {
-                        is_resolved: rt.is_resolved,
-                        comments: rt
-                            .comments
-                            .map(|cc| {
-                                cc.nodes
-                                    .into_iter()
-                                    .flatten()
-                                    .map(|rc| crate::github::types::Comment {
-                                        author: rc.author.map(raw_actor_to_actor),
-                                        body: rc.body,
-                                        created_at: rc.created_at,
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let timeline_events = self
-            .timeline_items
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(convert_timeline_item)
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let commits = self
-            .all_commits
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|cn| {
-                        let c = cn.commit?;
-                        Some(Commit {
-                            sha: c.oid,
-                            message: c.message_headline,
-                            author: c.author.and_then(|a| a.name),
-                            committed_date: c.committed_date,
-                            check_state: c.status_check_rollup.and_then(|r| r.state),
-                        })
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let files = self
-            .files
-            .map(|c| {
-                c.nodes
-                    .into_iter()
-                    .flatten()
-                    .map(|f| File {
-                        path: f.path,
-                        additions: f.additions,
-                        deletions: f.deletions,
-                        status: f.change_type,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         let detail = PrDetail {
             body: self.body,
-            reviews: detail_reviews,
-            review_threads: detail_review_threads,
-            timeline_events,
-            commits,
-            files,
+            reviews: extract_detail_reviews(self.reviews),
+            review_threads: extract_review_threads(self.review_threads),
+            timeline_events: extract_timeline_events(self.timeline_items),
+            commits: extract_detail_commits(self.all_commits),
+            files: extract_files(self.files),
             mergeable: self.mergeable,
             behind_by: None,
         };
@@ -2413,4 +2213,357 @@ pub async fn fetch_single_issue(
     }
 
     Ok((issue, detail, rate_limit))
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- extract_labels ---
+
+    #[test]
+    fn extract_labels_none_returns_empty() {
+        let result = extract_labels(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_labels_some_with_labels() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawLabel {
+                    name: "bug".to_owned(),
+                    color: "d73a4a".to_owned(),
+                }),
+                None, // null nodes are filtered out
+                Some(RawLabel {
+                    name: "enhancement".to_owned(),
+                    color: "a2eeef".to_owned(),
+                }),
+            ],
+        };
+        let result = extract_labels(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "bug");
+        assert_eq!(result[0].color, "d73a4a");
+        assert_eq!(result[1].name, "enhancement");
+        assert_eq!(result[1].color, "a2eeef");
+    }
+
+    // --- extract_assignees ---
+
+    #[test]
+    fn extract_assignees_none_returns_empty() {
+        let result = extract_assignees(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_assignees_some_with_actors() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawAssignee {
+                    login: "alice".to_owned(),
+                }),
+                None,
+                Some(RawAssignee {
+                    login: "bob".to_owned(),
+                }),
+            ],
+        };
+        let result = extract_assignees(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].login, "alice");
+        assert!(
+            result[0].avatar_url.is_empty(),
+            "avatar_url should be empty for assignees"
+        );
+        assert_eq!(result[1].login, "bob");
+    }
+
+    // --- extract_check_runs ---
+
+    #[test]
+    fn extract_check_runs_none_returns_empty() {
+        let result = extract_check_runs(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_check_runs_empty_commits_returns_empty() {
+        let conn = Connection { nodes: vec![] };
+        let result = extract_check_runs(Some(conn));
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_check_runs_with_check_run_contexts() {
+        let ctx_success = RawCheckContext {
+            name: Some("CI".to_owned()),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Success),
+            details_url: Some("https://example.com/ci".to_owned()),
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let ctx_failure = RawCheckContext {
+            name: Some("Lint".to_owned()),
+            status: Some(CheckStatus::Completed),
+            conclusion: Some(CheckConclusion::Failure),
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let rollup = RawStatusCheckRollup {
+            contexts: Some(Connection {
+                nodes: vec![Some(ctx_success), Some(ctx_failure)],
+            }),
+        };
+        let commit = RawCommit {
+            status_check_rollup: Some(rollup),
+        };
+        let commit_node = RawCommitNode {
+            commit: Some(commit),
+        };
+        let conn = Connection {
+            nodes: vec![Some(commit_node)],
+        };
+        let result = extract_check_runs(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].name, "CI");
+        assert_eq!(result[0].status, Some(CheckStatus::Completed));
+        assert_eq!(result[0].conclusion, Some(CheckConclusion::Success));
+        assert_eq!(result[0].url.as_deref(), Some("https://example.com/ci"));
+        assert_eq!(result[1].name, "Lint");
+        assert_eq!(result[1].conclusion, Some(CheckConclusion::Failure));
+    }
+
+    // --- convert_check_context ---
+
+    #[test]
+    fn convert_check_context_check_run() {
+        let ctx = RawCheckContext {
+            name: Some("build".to_owned()),
+            status: Some(CheckStatus::InProgress),
+            conclusion: None,
+            details_url: Some("https://ci.example.com".to_owned()),
+            started_at: None,
+            completed_at: None,
+            check_suite: Some(RawCheckSuite {
+                workflow_run: Some(RawCheckSuiteWorkflowRun {
+                    database_id: Some(42),
+                    workflow: Some(RawCheckSuiteWorkflow {
+                        name: Some("CI".to_owned()),
+                    }),
+                }),
+            }),
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "build");
+        assert_eq!(cr.status, Some(CheckStatus::InProgress));
+        assert!(cr.conclusion.is_none());
+        assert_eq!(cr.url.as_deref(), Some("https://ci.example.com"));
+        assert_eq!(cr.workflow_run_id, Some(42));
+        assert_eq!(cr.workflow_name.as_deref(), Some("CI"));
+    }
+
+    #[test]
+    fn convert_check_context_status_context_success() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: Some("ci/circleci".to_owned()),
+            state: Some("success".to_owned()),
+            target_url: Some("https://circleci.com/build/123".to_owned()),
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "ci/circleci");
+        assert_eq!(cr.status, Some(CheckStatus::Completed));
+        assert_eq!(cr.conclusion, Some(CheckConclusion::Success));
+        assert_eq!(cr.url.as_deref(), Some("https://circleci.com/build/123"));
+    }
+
+    #[test]
+    fn convert_check_context_status_context_failure() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: Some("deploy".to_owned()),
+            state: Some("failure".to_owned()),
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "deploy");
+        assert_eq!(cr.status, Some(CheckStatus::Completed));
+        assert_eq!(cr.conclusion, Some(CheckConclusion::Failure));
+    }
+
+    #[test]
+    fn convert_check_context_status_context_pending() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: Some("pending-job".to_owned()),
+            state: Some("pending".to_owned()),
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "pending-job");
+        assert_eq!(cr.status, Some(CheckStatus::InProgress));
+        assert!(cr.conclusion.is_none());
+    }
+
+    #[test]
+    fn convert_check_context_no_name_or_context_uses_unknown() {
+        let ctx = RawCheckContext {
+            name: None,
+            status: None,
+            conclusion: None,
+            details_url: None,
+            started_at: None,
+            completed_at: None,
+            check_suite: None,
+            context: None,
+            state: None,
+            target_url: None,
+        };
+        let cr = convert_check_context(ctx);
+        assert_eq!(cr.name, "<unknown>");
+    }
+
+    // --- extract_review_requests ---
+
+    #[test]
+    fn extract_review_requests_none_returns_empty() {
+        let result = extract_review_requests(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_review_requests_with_requests() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawReviewRequest {
+                    requested_reviewer: Some(RawReviewer {
+                        login: Some("reviewer1".to_owned()),
+                    }),
+                }),
+                // Reviewer without login (e.g. team) is filtered out
+                Some(RawReviewRequest {
+                    requested_reviewer: Some(RawReviewer { login: None }),
+                }),
+                None,
+                Some(RawReviewRequest {
+                    requested_reviewer: Some(RawReviewer {
+                        login: Some("reviewer2".to_owned()),
+                    }),
+                }),
+            ],
+        };
+        let result = extract_review_requests(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].login, "reviewer1");
+        assert_eq!(result[1].login, "reviewer2");
+    }
+
+    #[test]
+    fn extract_review_requests_no_reviewer_field() {
+        let conn = Connection {
+            nodes: vec![Some(RawReviewRequest {
+                requested_reviewer: None,
+            })],
+        };
+        let result = extract_review_requests(Some(conn));
+        assert!(result.is_empty());
+    }
+
+    // --- extract_latest_reviews ---
+
+    #[test]
+    fn extract_latest_reviews_none_returns_empty() {
+        let result = extract_latest_reviews(None);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn extract_latest_reviews_with_reviews() {
+        let conn = Connection {
+            nodes: vec![
+                Some(RawLatestReview {
+                    state: Some(ReviewState::Approved),
+                    author: Some(RawActor {
+                        login: "alice".to_owned(),
+                        avatar_url: "https://avatar.example.com/alice".to_owned(),
+                    }),
+                }),
+                Some(RawLatestReview {
+                    state: None,
+                    author: None,
+                }),
+            ],
+        };
+        let result = extract_latest_reviews(Some(conn));
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].state, ReviewState::Approved);
+        assert_eq!(result[0].author.as_ref().unwrap().login, "alice");
+        assert_eq!(
+            result[0].author.as_ref().unwrap().avatar_url,
+            "https://avatar.example.com/alice"
+        );
+        // None state defaults to Unknown
+        assert_eq!(result[1].state, ReviewState::Unknown);
+        assert!(result[1].author.is_none());
+    }
+
+    // --- ensure_type_qualifier ---
+
+    #[test]
+    fn ensure_type_qualifier_adds_missing_pr() {
+        let q = ensure_type_qualifier("repo:foo/bar", "pr");
+        assert!(q.starts_with("is:pr "));
+        assert!(q.contains("repo:foo/bar"));
+    }
+
+    #[test]
+    fn ensure_type_qualifier_does_not_duplicate() {
+        let q = ensure_type_qualifier("is:pr repo:foo/bar", "pr");
+        assert_eq!(q, "is:pr repo:foo/bar");
+    }
+
+    #[test]
+    fn ensure_type_qualifier_case_insensitive() {
+        let q = ensure_type_qualifier("Is:Pr repo:foo/bar", "pr");
+        // Should not add another is:pr
+        assert!(!q.starts_with("is:pr is:"));
+    }
 }

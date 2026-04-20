@@ -7,7 +7,7 @@ discuss the approach.
 
 ### Prerequisites
 
-- Rust toolchain (MSRV 1.88.0)
+- Rust toolchain (MSRV 1.95.0)
 - [cargo-nextest](https://nexte.st/) for running tests
 - The [GitHub CLI](https://cli.github.com/) (`gh`) authenticated, or a
   `GITHUB_TOKEN` / `GH_TOKEN` environment variable

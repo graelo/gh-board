@@ -13,14 +13,18 @@ use iocraft::prelude::*;
 use crate::actions::clipboard;
 use crate::app::ViewKind;
 use crate::color::{Color as AppColor, ColorDepth};
-use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarMeta, SidebarTab};
-use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::sidebar::{
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTab, SidebarTabConfig,
+};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
-use crate::components::text_input::{RenderedTextInput, TextInput};
+use crate::components::text_input::{RenderedTextInput, TextInput, TextInputColors};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -30,8 +34,8 @@ use crate::engine::{EngineHandle, Event, FilterConfig, Request};
 use crate::markdown::renderer::{StyledLine, StyledSpan};
 use crate::theme::ResolvedTheme;
 use crate::types::{
-    AlertCategory, AlertDetail, AlertSeverity, AlertState, RateLimitInfo, SecretLocation,
-    SecurityAlert,
+    AlertCategory, AlertDetail, AlertSeverity, AlertState, CodeScanningInstance, RateLimitInfo,
+    SecretLocation, SecurityAlert,
 };
 
 // ---------------------------------------------------------------------------
@@ -396,14 +400,157 @@ fn build_overview_lines(
     crate::markdown::renderer::render_markdown(&alert.summary, theme, depth)
 }
 
-#[allow(clippy::too_many_lines)]
+fn build_dependabot_lines(
+    ecosystem: &str,
+    ghsa_id: &str,
+    cve_id: Option<&String>,
+    vulnerable_version_range: Option<&String>,
+    patched_version: Option<&String>,
+    theme: &ResolvedTheme,
+) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Ecosystem: ", theme.text_faint),
+        StyledSpan::text(ecosystem.to_owned(), theme.text_primary),
+    ]));
+    if !ghsa_id.is_empty() {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("GHSA ID: ", theme.text_faint),
+            StyledSpan::text(ghsa_id.to_owned(), theme.text_primary),
+        ]));
+    }
+    if let Some(cve) = cve_id {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("CVE ID: ", theme.text_faint),
+            StyledSpan::text(cve.clone(), theme.text_primary),
+        ]));
+    }
+    if let Some(range) = vulnerable_version_range {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Vulnerable range: ", theme.text_faint),
+            StyledSpan::text(range.clone(), theme.text_error),
+        ]));
+    }
+    if let Some(patched) = patched_version {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Patched version: ", theme.text_faint),
+            StyledSpan::text(patched.clone(), theme.text_success),
+        ]));
+    }
+    lines
+}
+
+fn build_code_scanning_lines(
+    tool_name: &str,
+    tool_version: Option<&String>,
+    rule_id: &str,
+    rule_description: &str,
+    instances: &[CodeScanningInstance],
+    theme: &ResolvedTheme,
+) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Tool: ", theme.text_faint),
+        StyledSpan::text(tool_name.to_owned(), theme.text_primary),
+    ]));
+    if let Some(ver) = tool_version {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Version: ", theme.text_faint),
+            StyledSpan::text(ver.clone(), theme.text_faint),
+        ]));
+    }
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Rule: ", theme.text_faint),
+        StyledSpan::text(rule_id.to_owned(), theme.text_primary),
+    ]));
+    if !rule_description.is_empty() {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            rule_description.to_owned(),
+            theme.text_secondary,
+        )));
+    }
+    if !instances.is_empty() {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            format!("Instances ({}):", instances.len()),
+            theme.text_faint,
+        )));
+        for inst in instances {
+            let path = inst.path.as_deref().unwrap_or("<unknown>");
+            let start = inst.start_line.unwrap_or(0);
+            let end = inst.end_line.unwrap_or(start);
+            lines.push(StyledLine::from_spans(vec![
+                StyledSpan::text("  ", theme.text_faint),
+                StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
+            ]));
+        }
+    }
+    lines
+}
+
+fn build_secret_scanning_lines(
+    secret_type: &str,
+    secret_type_display_name: &str,
+    validity: Option<&String>,
+    resolution: Option<&String>,
+    alert_number: u64,
+    locations_cache: &HashMap<u64, Vec<SecretLocation>>,
+    theme: &ResolvedTheme,
+) -> Vec<StyledLine> {
+    let mut lines = Vec::new();
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text("Secret type: ", theme.text_faint),
+        StyledSpan::text(secret_type.to_owned(), theme.text_primary),
+    ]));
+    if !secret_type_display_name.is_empty() {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Display name: ", theme.text_faint),
+            StyledSpan::text(secret_type_display_name.to_owned(), theme.text_primary),
+        ]));
+    }
+    if let Some(val) = validity {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Validity: ", theme.text_faint),
+            StyledSpan::text(val.clone(), theme.text_warning),
+        ]));
+    }
+    if let Some(res) = resolution {
+        lines.push(StyledLine::from_spans(vec![
+            StyledSpan::text("Resolution: ", theme.text_faint),
+            StyledSpan::text(res.clone(), theme.text_secondary),
+        ]));
+    }
+    if let Some(locs) = locations_cache.get(&alert_number) {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            format!("Locations ({}):", locs.len()),
+            theme.text_faint,
+        )));
+        for loc in locs {
+            let path = loc.path.as_deref().unwrap_or("<unknown>");
+            let start = loc.start_line.unwrap_or(0);
+            let end = loc.end_line.unwrap_or(start);
+            lines.push(StyledLine::from_spans(vec![
+                StyledSpan::text("  ", theme.text_faint),
+                StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
+            ]));
+        }
+    } else {
+        lines.push(StyledLine::from_spans(vec![]));
+        lines.push(StyledLine::from_span(StyledSpan::text(
+            "No locations loaded yet",
+            theme.text_faint,
+        )));
+    }
+    lines
+}
+
 fn build_detail_lines(
     alert: &SecurityAlert,
     locations_cache: &HashMap<u64, Vec<SecretLocation>>,
     theme: &ResolvedTheme,
 ) -> Vec<StyledLine> {
-    let mut lines = Vec::new();
-
     match &alert.detail {
         AlertDetail::Dependabot {
             ecosystem,
@@ -411,137 +558,43 @@ fn build_detail_lines(
             cve_id,
             vulnerable_version_range,
             patched_version,
-        } => {
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Ecosystem: ", theme.text_faint),
-                StyledSpan::text(ecosystem.clone(), theme.text_primary),
-            ]));
-            if !ghsa_id.is_empty() {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("GHSA ID: ", theme.text_faint),
-                    StyledSpan::text(ghsa_id.clone(), theme.text_primary),
-                ]));
-            }
-            if let Some(cve) = cve_id {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("CVE ID: ", theme.text_faint),
-                    StyledSpan::text(cve.clone(), theme.text_primary),
-                ]));
-            }
-            if let Some(range) = vulnerable_version_range {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Vulnerable range: ", theme.text_faint),
-                    StyledSpan::text(range.clone(), theme.text_error),
-                ]));
-            }
-            if let Some(patched) = patched_version {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Patched version: ", theme.text_faint),
-                    StyledSpan::text(patched.clone(), theme.text_success),
-                ]));
-            }
-        }
+        } => build_dependabot_lines(
+            ecosystem,
+            ghsa_id,
+            cve_id.as_ref(),
+            vulnerable_version_range.as_ref(),
+            patched_version.as_ref(),
+            theme,
+        ),
         AlertDetail::CodeScanning {
             tool_name,
             tool_version,
             rule_id,
             rule_description,
             instances,
-        } => {
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Tool: ", theme.text_faint),
-                StyledSpan::text(tool_name.clone(), theme.text_primary),
-            ]));
-            if let Some(ver) = tool_version {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Version: ", theme.text_faint),
-                    StyledSpan::text(ver.clone(), theme.text_faint),
-                ]));
-            }
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Rule: ", theme.text_faint),
-                StyledSpan::text(rule_id.clone(), theme.text_primary),
-            ]));
-            if !rule_description.is_empty() {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    rule_description.clone(),
-                    theme.text_secondary,
-                )));
-            }
-            if !instances.is_empty() {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    format!("Instances ({}):", instances.len()),
-                    theme.text_faint,
-                )));
-                for inst in instances {
-                    let path = inst.path.as_deref().unwrap_or("<unknown>");
-                    let start = inst.start_line.unwrap_or(0);
-                    let end = inst.end_line.unwrap_or(start);
-                    lines.push(StyledLine::from_spans(vec![
-                        StyledSpan::text("  ", theme.text_faint),
-                        StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
-                    ]));
-                }
-            }
-        }
+        } => build_code_scanning_lines(
+            tool_name,
+            tool_version.as_ref(),
+            rule_id,
+            rule_description,
+            instances,
+            theme,
+        ),
         AlertDetail::SecretScanning {
             secret_type,
             secret_type_display_name,
             validity,
             resolution,
-        } => {
-            lines.push(StyledLine::from_spans(vec![
-                StyledSpan::text("Secret type: ", theme.text_faint),
-                StyledSpan::text(secret_type.clone(), theme.text_primary),
-            ]));
-            if !secret_type_display_name.is_empty() {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Display name: ", theme.text_faint),
-                    StyledSpan::text(secret_type_display_name.clone(), theme.text_primary),
-                ]));
-            }
-            if let Some(val) = validity {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Validity: ", theme.text_faint),
-                    StyledSpan::text(val.clone(), theme.text_warning),
-                ]));
-            }
-            if let Some(res) = resolution {
-                lines.push(StyledLine::from_spans(vec![
-                    StyledSpan::text("Resolution: ", theme.text_faint),
-                    StyledSpan::text(res.clone(), theme.text_secondary),
-                ]));
-            }
-
-            // Show cached locations if available.
-            if let Some(locs) = locations_cache.get(&alert.number) {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    format!("Locations ({}):", locs.len()),
-                    theme.text_faint,
-                )));
-                for loc in locs {
-                    let path = loc.path.as_deref().unwrap_or("<unknown>");
-                    let start = loc.start_line.unwrap_or(0);
-                    let end = loc.end_line.unwrap_or(start);
-                    lines.push(StyledLine::from_spans(vec![
-                        StyledSpan::text("  ", theme.text_faint),
-                        StyledSpan::text(format!("{path}:{start}-{end}"), theme.text_secondary),
-                    ]));
-                }
-            } else {
-                lines.push(StyledLine::from_spans(vec![]));
-                lines.push(StyledLine::from_span(StyledSpan::text(
-                    "No locations loaded yet",
-                    theme.text_faint,
-                )));
-            }
-        }
+        } => build_secret_scanning_lines(
+            secret_type,
+            secret_type_display_name,
+            validity.as_ref(),
+            resolution.as_ref(),
+            alert.number,
+            locations_cache,
+            theme,
+        ),
     }
-
-    lines
 }
 
 // ---------------------------------------------------------------------------
@@ -594,7 +647,6 @@ pub struct AlertsViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let filters_cfg = props.filters.unwrap_or(&[]);
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
@@ -1285,7 +1337,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
     // -----------------------------------------------------------------------
 
     let nav_w: u16 = if nav_open.get() { NAV_W } else { 0 };
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let (table_w, sidebar_w) = if preview_open.get() {
         let sb = (f64::from(props.width) * preview_pct).round() as u16;
         let tb = props.width.saturating_sub(nav_w).saturating_sub(sb);
@@ -1333,14 +1385,17 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
         scrollbar_thumb_color: Some(theme.border_primary),
     });
 
+    let tab_colors = TabBarColors {
+        active: Some(theme.footer_alerts),
+        inactive: Some(theme.footer_alerts),
+        border: Some(theme.border_faint),
+    };
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
         current_filter_idx,
         props.show_filter_count,
         depth,
-        Some(theme.footer_alerts),
-        Some(theme.footer_alerts),
-        Some(theme.border_faint),
+        &tab_colors,
         &theme.icons.tab_filter,
         "", // no ephemeral icon for alerts
     );
@@ -1351,9 +1406,12 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
             "/",
             &search_query.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::Normal => None,
     };
@@ -1387,17 +1445,8 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
         None => "all repos".to_owned(),
     };
 
-    let rendered_footer = RenderedFooter::build(
-        ViewKind::Alerts,
-        &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        rate_limit_text,
-        action_status.read().as_ref(),
-        &theme,
-        depth,
-        [
+    let footer_colors = FooterColors {
+        view_colors: [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
             Some(theme.footer_actions),
@@ -1405,9 +1454,23 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],
-        Some(theme.text_faint),
-        Some(theme.text_faint),
-        Some(theme.border_faint),
+        inactive: Some(theme.text_faint),
+        text: Some(theme.text_faint),
+        border: Some(theme.border_faint),
+    };
+    let rendered_footer = RenderedFooter::build(
+        ViewKind::Alerts,
+        &theme.icons,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text,
+        },
+        action_status.read().as_ref(),
+        &theme,
+        depth,
+        &footer_colors,
     );
 
     let rendered_help = if help_visible.get() {
@@ -1484,22 +1547,27 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
         // Subtract: border(2) + title(1) + tab_bar(1) + separator(1) + meta + margin
         let sidebar_visible_lines = (props.height as usize).saturating_sub(5 + meta_lines);
 
+        let sidebar_colors = SidebarColors {
+            title: Some(theme.text_primary),
+            border: Some(theme.border_faint),
+            indicator: Some(theme.text_faint),
+            thumb: Some(theme.border_primary),
+            depth,
+        };
         let sidebar = RenderedSidebar::build_tabbed(
             &sidebar_title,
             &sidebar_lines,
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_w,
-            depth,
-            Some(theme.text_primary),
-            Some(theme.border_faint),
-            Some(theme.text_faint),
-            Some(theme.border_primary),
-            Some(sidebar_tab.get().to_sidebar_tab()),
-            Some(&theme.icons),
-            sidebar_meta,
-            Some(ALERTS_SIDEBAR_TABS),
-            Some(&tab_overrides),
+            &sidebar_colors,
+            Some(SidebarTabConfig {
+                active_tab: Some(sidebar_tab.get().to_sidebar_tab()),
+                icons: Some(&theme.icons),
+                meta: sidebar_meta,
+                visible_tabs: Some(ALERTS_SIDEBAR_TABS),
+                tab_label_overrides: Some(&tab_overrides),
+            }),
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);
@@ -1524,7 +1592,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
 
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
                 // Left navigator (optional)
                 #(nav_is_open.then(|| {
                     let items = nav_items.clone();
@@ -1585,7 +1653,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                 }))
 
                 // Main table
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
 
@@ -1620,4 +1688,333 @@ fn get_alert_at_cursor(
 
 fn default_theme() -> ResolvedTheme {
     super::default_theme()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_theme() -> ResolvedTheme {
+        use crate::config::types::Theme;
+        use crate::theme::Background;
+        ResolvedTheme::resolve(&Theme::default(), Background::Dark)
+    }
+
+    /// Helper to extract all text from styled lines.
+    fn lines_text(lines: &[StyledLine]) -> String {
+        lines
+            .iter()
+            .map(|l| {
+                l.spans
+                    .iter()
+                    .map(|s| s.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    // --- build_dependabot_lines ---
+
+    #[test]
+    fn dependabot_lines_contains_ecosystem() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("npm", "GHSA-1234-5678", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Ecosystem: "), "should have Ecosystem label");
+        assert!(text.contains("npm"), "should contain ecosystem name");
+    }
+
+    #[test]
+    fn dependabot_lines_contains_ghsa_id() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("pip", "GHSA-abcd-efgh", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("GHSA ID: "), "should have GHSA ID label");
+        assert!(text.contains("GHSA-abcd-efgh"), "should contain GHSA ID");
+    }
+
+    #[test]
+    fn dependabot_lines_empty_ghsa_id_omitted() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("npm", "", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(
+            !text.contains("GHSA ID: "),
+            "empty GHSA ID should be omitted"
+        );
+    }
+
+    #[test]
+    fn dependabot_lines_with_all_fields() {
+        let theme = test_theme();
+        let cve = "CVE-2024-1234".to_owned();
+        let range = ">= 1.0, < 1.5".to_owned();
+        let patched = "1.5.0".to_owned();
+        let lines = build_dependabot_lines(
+            "cargo",
+            "GHSA-xxxx-yyyy",
+            Some(&cve),
+            Some(&range),
+            Some(&patched),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("CVE ID: "), "should have CVE ID label");
+        assert!(text.contains("CVE-2024-1234"), "should contain CVE ID");
+        assert!(
+            text.contains("Vulnerable range: "),
+            "should have vulnerable range"
+        );
+        assert!(
+            text.contains(">= 1.0, < 1.5"),
+            "should contain version range"
+        );
+        assert!(
+            text.contains("Patched version: "),
+            "should have patched version"
+        );
+        assert!(text.contains("1.5.0"), "should contain patched version");
+    }
+
+    #[test]
+    fn dependabot_lines_without_optional_fields() {
+        let theme = test_theme();
+        let lines = build_dependabot_lines("pip", "GHSA-1111-2222", None, None, None, &theme);
+        let text = lines_text(&lines);
+        assert!(!text.contains("CVE ID:"), "no CVE when None");
+        assert!(!text.contains("Vulnerable range:"), "no range when None");
+        assert!(!text.contains("Patched version:"), "no patched when None");
+    }
+
+    // --- build_code_scanning_lines ---
+
+    #[test]
+    fn code_scanning_lines_contains_tool_name() {
+        let theme = test_theme();
+        let lines = build_code_scanning_lines("CodeQL", None, "js/xss", "", &[], &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Tool: "), "should have Tool label");
+        assert!(text.contains("CodeQL"), "should contain tool name");
+    }
+
+    #[test]
+    fn code_scanning_lines_contains_rule() {
+        let theme = test_theme();
+        let lines = build_code_scanning_lines(
+            "CodeQL",
+            None,
+            "js/sql-injection",
+            "SQL injection",
+            &[],
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("Rule: "), "should have Rule label");
+        assert!(text.contains("js/sql-injection"), "should contain rule ID");
+        assert!(
+            text.contains("SQL injection"),
+            "should contain rule description"
+        );
+    }
+
+    #[test]
+    fn code_scanning_lines_with_version() {
+        let theme = test_theme();
+        let ver = "2.15.0".to_owned();
+        let lines = build_code_scanning_lines("CodeQL", Some(&ver), "rule-1", "", &[], &theme);
+        let text = lines_text(&lines);
+        assert!(text.contains("Version: "), "should have Version label");
+        assert!(text.contains("2.15.0"), "should contain version");
+    }
+
+    #[test]
+    fn code_scanning_lines_with_instances() {
+        let theme = test_theme();
+        let instances = vec![
+            CodeScanningInstance {
+                ref_name: None,
+                path: Some("src/main.rs".to_owned()),
+                start_line: Some(10),
+                end_line: Some(15),
+                state: AlertState::Open,
+            },
+            CodeScanningInstance {
+                ref_name: None,
+                path: Some("src/lib.rs".to_owned()),
+                start_line: Some(42),
+                end_line: Some(42),
+                state: AlertState::Open,
+            },
+        ];
+        let lines = build_code_scanning_lines("Semgrep", None, "rule-1", "", &instances, &theme);
+        let text = lines_text(&lines);
+        assert!(
+            text.contains("Instances (2):"),
+            "should show instance count"
+        );
+        assert!(
+            text.contains("src/main.rs:10-15"),
+            "should contain first instance path"
+        );
+        assert!(
+            text.contains("src/lib.rs:42-42"),
+            "should contain second instance path"
+        );
+    }
+
+    #[test]
+    fn code_scanning_lines_empty_instances() {
+        let theme = test_theme();
+        let lines = build_code_scanning_lines("CodeQL", None, "rule", "", &[], &theme);
+        let text = lines_text(&lines);
+        assert!(
+            !text.contains("Instances"),
+            "no Instances section when empty"
+        );
+    }
+
+    // --- build_secret_scanning_lines ---
+
+    #[test]
+    fn secret_scanning_lines_contains_secret_type() {
+        let theme = test_theme();
+        let lines = build_secret_scanning_lines(
+            "github_token",
+            "GitHub Token",
+            None,
+            None,
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(
+            text.contains("Secret type: "),
+            "should have Secret type label"
+        );
+        assert!(text.contains("github_token"), "should contain secret type");
+    }
+
+    #[test]
+    fn secret_scanning_lines_contains_display_name() {
+        let theme = test_theme();
+        let lines = build_secret_scanning_lines(
+            "aws_access_key",
+            "AWS Access Key",
+            None,
+            None,
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(
+            text.contains("Display name: "),
+            "should have Display name label"
+        );
+        assert!(
+            text.contains("AWS Access Key"),
+            "should contain display name"
+        );
+    }
+
+    #[test]
+    fn secret_scanning_lines_with_validity() {
+        let theme = test_theme();
+        let validity = "active".to_owned();
+        let lines = build_secret_scanning_lines(
+            "token",
+            "Token",
+            Some(&validity),
+            None,
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(text.contains("Validity: "), "should have Validity label");
+        assert!(text.contains("active"), "should contain validity");
+    }
+
+    #[test]
+    fn secret_scanning_lines_with_resolution() {
+        let theme = test_theme();
+        let resolution = "revoked".to_owned();
+        let lines = build_secret_scanning_lines(
+            "token",
+            "Token",
+            None,
+            Some(&resolution),
+            1,
+            &HashMap::new(),
+            &theme,
+        );
+        let text = lines_text(&lines);
+        assert!(
+            text.contains("Resolution: "),
+            "should have Resolution label"
+        );
+        assert!(text.contains("revoked"), "should contain resolution");
+    }
+
+    #[test]
+    fn secret_scanning_lines_with_locations() {
+        let theme = test_theme();
+        let mut cache = HashMap::new();
+        cache.insert(
+            42,
+            vec![
+                SecretLocation {
+                    location_type: "commit".to_owned(),
+                    path: Some("config.yml".to_owned()),
+                    start_line: Some(5),
+                    end_line: Some(5),
+                },
+                SecretLocation {
+                    location_type: "commit".to_owned(),
+                    path: Some(".env".to_owned()),
+                    start_line: Some(1),
+                    end_line: Some(3),
+                },
+            ],
+        );
+        let lines =
+            build_secret_scanning_lines("generic_secret", "", None, None, 42, &cache, &theme);
+        let text = lines_text(&lines);
+        assert!(
+            text.contains("Locations (2):"),
+            "should show location count"
+        );
+        assert!(
+            text.contains("config.yml:5-5"),
+            "should contain first location"
+        );
+        assert!(text.contains(".env:1-3"), "should contain second location");
+    }
+
+    #[test]
+    fn secret_scanning_lines_no_locations_yet() {
+        let theme = test_theme();
+        let lines =
+            build_secret_scanning_lines("token", "", None, None, 999, &HashMap::new(), &theme);
+        let text = lines_text(&lines);
+        assert!(
+            text.contains("No locations loaded yet"),
+            "should show 'no locations' message"
+        );
+    }
+
+    #[test]
+    fn secret_scanning_lines_empty_display_name_omitted() {
+        let theme = test_theme();
+        let lines =
+            build_secret_scanning_lines("token", "", None, None, 1, &HashMap::new(), &theme);
+        let text = lines_text(&lines);
+        assert!(
+            !text.contains("Display name:"),
+            "empty display name should be omitted"
+        );
+    }
 }

@@ -40,7 +40,7 @@ impl Engine for StubEngine {
 }
 
 impl StubEngine {
-    #[allow(clippy::match_same_arms, clippy::too_many_lines)]
+    #[expect(clippy::match_same_arms, clippy::too_many_lines)]
     async fn run_loop(self, mut rx: UnboundedReceiver<Request>) {
         while let Some(req) = rx.recv().await {
             match req {

@@ -73,7 +73,7 @@ impl RenderedHelpOverlay {
             .into_iter()
             .map(|g| {
                 // Compute max key width per group for independent column alignment.
-                #[allow(clippy::cast_possible_truncation)]
+                #[expect(clippy::cast_possible_truncation)]
                 let key_col_width = g
                     .rows
                     .iter()
@@ -171,11 +171,11 @@ fn format_key_display(key: &str) -> String {
 }
 
 fn description_for_keybinding(kb: &Keybinding) -> String {
-    if let Some(ref builtin) = kb.builtin {
-        use crate::config::keybindings::BuiltinAction;
-        if let Some(action) = BuiltinAction::from_name(builtin) {
-            return action.description().to_owned();
-        }
+    use crate::config::keybindings::BuiltinAction;
+    if let Some(ref builtin) = kb.builtin
+        && let Some(action) = BuiltinAction::from_name(builtin)
+    {
+        return action.description().to_owned();
     }
     if let Some(ref cmd) = kb.command {
         return format!("Run: {cmd}");
@@ -240,7 +240,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                         weight: Weight::Bold,
                         wrap: TextWrap::NoWrap,
                     )
-                    View(flex_grow: 1.0)
+                    View(flex_grow: 1.0_f32)
                     Text(
                         content: "? / Esc to close",
                         color: overlay.desc_fg,
@@ -250,7 +250,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
 
                 // Two-column content area: each group is a column
                 View(
-                    flex_grow: 1.0,
+                    flex_grow: 1.0_f32,
                     flex_direction: FlexDirection::Row,
                     padding_left: 1,
                     padding_right: 1,
@@ -264,7 +264,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                         let key_width = group.key_col_width + 2;
 
                         element! {
-                            View(key: gi, flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+                            View(key: gi, flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                                 // Group title (bold, underlined)
                                 View(margin_top: 0u32) {
                                     Text(
@@ -295,7 +295,7 @@ pub fn HelpOverlay(props: &mut HelpOverlayProps) -> impl Into<AnyElement<'static
                                                 wrap: TextWrap::NoWrap,
                                             )
                                             // Description column
-                                            View(flex_grow: 1.0) {
+                                            View(flex_grow: 1.0_f32) {
                                                 Text(
                                                     content: row.description,
                                                     color: desc_color,

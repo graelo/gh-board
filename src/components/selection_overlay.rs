@@ -91,7 +91,7 @@ pub fn SelectionOverlay(props: &mut SelectionOverlayProps) -> impl Into<AnyEleme
     let height = u32::from(props.height);
 
     // Overlay dimensions: centered, ~40% width, height fits items.
-    #[allow(clippy::cast_possible_truncation)]
+    #[expect(clippy::cast_possible_truncation)]
     let content_height = (overlay.items.len() as u32) + 4; // border + title + hint + items
     let overlay_width = (width * 2 / 5).max(30).min(width.saturating_sub(4));
     let overlay_height = content_height.min(height.saturating_sub(2));
@@ -131,7 +131,7 @@ pub fn SelectionOverlay(props: &mut SelectionOverlayProps) -> impl Into<AnyEleme
                         weight: Weight::Bold,
                         wrap: TextWrap::NoWrap,
                     )
-                    View(flex_grow: 1.0)
+                    View(flex_grow: 1.0_f32)
                     Text(
                         content: "j/k Enter Esc",
                         color: overlay.hint_fg,
@@ -141,7 +141,7 @@ pub fn SelectionOverlay(props: &mut SelectionOverlayProps) -> impl Into<AnyEleme
 
                 // Items
                 View(
-                    flex_grow: 1.0,
+                    flex_grow: 1.0_f32,
                     flex_direction: FlexDirection::Column,
                     padding_left: 1,
                     padding_right: 1,

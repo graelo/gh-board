@@ -9,13 +9,18 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::{NavigationTarget, ViewKind};
 use crate::color::ColorDepth;
-use crate::components::footer::{self, ActionFeedback, Footer, RenderedFooter};
+use crate::components::footer::{
+    self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
+};
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarTab};
-use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar};
+use crate::components::sidebar::{
+    RenderedSidebar, Sidebar, SidebarColors, SidebarTab, SidebarTabConfig,
+};
+use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
 };
+use crate::components::text_input::{RenderedTextInput, TextInput, TextInputColors};
 use crate::config::keybindings::{
     BuiltinAction, MergedBindings, ResolvedBinding, TemplateVars, ViewContext,
     execute_shell_command, expand_template, key_event_to_string,
@@ -643,7 +648,6 @@ pub struct RepoViewProps<'a> {
 }
 
 #[component]
-#[allow(clippy::too_many_lines)]
 pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'a>> {
     let theme = props.theme.cloned().unwrap_or_else(default_theme);
     let depth = props.color_depth;
@@ -740,7 +744,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let mut tick = hooks.use_state(|| 0u64);
     hooks.use_future(async move {
         loop {
-            smol::Timer::after(std::time::Duration::from_secs(60)).await;
+            smol::Timer::after(std::time::Duration::from_mins(1)).await;
             tick.set(tick.get() + 1);
         }
     });
@@ -1315,7 +1319,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
 
     // Compute widths for table vs sidebar.
     let is_preview_open = preview_open.get();
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let (table_width, sidebar_width) = if is_preview_open {
         let sb_w = (f64::from(props.width) * preview_pct).round() as u16;
         (props.width.saturating_sub(sb_w), sb_w)
@@ -1357,14 +1361,17 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         count: Some(total_rows),
         is_ephemeral: false,
     }];
+    let tab_colors = TabBarColors {
+        active: Some(theme.footer_repo),
+        inactive: Some(theme.footer_repo),
+        border: Some(theme.border_faint),
+    };
     let rendered_tab_bar = RenderedTabBar::build(
         &tabs,
         0,
         true,
         depth,
-        Some(theme.footer_repo),
-        Some(theme.footer_repo),
-        Some(theme.border_faint),
+        &tab_colors,
         &theme.icons.tab_filter,
         &theme.icons.tab_ephemeral,
     );
@@ -1372,36 +1379,45 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let current_mode = input_mode.read().clone();
 
     let rendered_text_input = match &current_mode {
-        InputMode::CreateBranch => Some(crate::components::text_input::RenderedTextInput::build(
+        InputMode::CreateBranch => Some(RenderedTextInput::build(
             "New branch name:",
             &input_buffer.read(),
             depth,
-            Some(theme.text_primary),
-            Some(theme.text_secondary),
-            Some(theme.border_faint),
+            &TextInputColors {
+                text: Some(theme.text_primary),
+                prompt: Some(theme.text_secondary),
+                border: Some(theme.border_faint),
+                ..Default::default()
+            },
         )),
         InputMode::ConfirmDelete => {
             let branch_name = branches.get(cursor.get()).map_or("?", |b| b.name.as_str());
             let prompt = format!("Delete branch '{branch_name}'? (y/n)");
-            Some(crate::components::text_input::RenderedTextInput::build(
+            Some(RenderedTextInput::build(
                 &prompt,
                 "",
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_warning),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_warning),
+                    border: Some(theme.border_faint),
+                    ..Default::default()
+                },
             ))
         }
         InputMode::ConfirmWorktree => {
             let branch_name = branches.get(cursor.get()).map_or("?", |b| b.name.as_str());
             let prompt = format!("Create worktree for '{branch_name}'? (y/n)");
-            Some(crate::components::text_input::RenderedTextInput::build(
+            Some(RenderedTextInput::build(
                 &prompt,
                 "",
                 depth,
-                Some(theme.text_primary),
-                Some(theme.text_secondary),
-                Some(theme.border_faint),
+                &TextInputColors {
+                    text: Some(theme.text_primary),
+                    prompt: Some(theme.text_secondary),
+                    border: Some(theme.border_faint),
+                    ..Default::default()
+                },
             ))
         }
         InputMode::Normal => None,
@@ -1417,17 +1433,8 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
         Some(repo) => repo.clone(),
         None => "all repos".to_owned(),
     };
-    let rendered_footer = RenderedFooter::build(
-        ViewKind::Repo,
-        &theme.icons,
-        scope_label,
-        context_text,
-        updated_text,
-        footer::format_rate_limit(rate_limit_state.read().as_ref()),
-        action_status.read().as_ref(),
-        &theme,
-        depth,
-        [
+    let footer_colors = FooterColors {
+        view_colors: [
             Some(theme.footer_prs),
             Some(theme.footer_issues),
             Some(theme.footer_actions),
@@ -1435,9 +1442,23 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             Some(theme.footer_notifications),
             Some(theme.footer_repo),
         ],
-        Some(theme.text_faint),
-        Some(theme.text_faint),
-        Some(theme.border_faint),
+        inactive: Some(theme.text_faint),
+        text: Some(theme.text_faint),
+        border: Some(theme.border_faint),
+    };
+    let rendered_footer = RenderedFooter::build(
+        ViewKind::Repo,
+        &theme.icons,
+        FooterContent {
+            scope_label,
+            context_text,
+            updated_text,
+            rate_limit_text: footer::format_rate_limit(rate_limit_state.read().as_ref()),
+        },
+        action_status.read().as_ref(),
+        &theme,
+        depth,
+        &footer_colors,
     );
 
     // Pre-render sidebar.
@@ -1516,7 +1537,6 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             }
         }
 
-        #[allow(clippy::cast_possible_truncation)]
         let sidebar_visible_lines = props.height.saturating_sub(8) as usize;
 
         let tab_overrides_ref = if tab_overrides.is_empty() {
@@ -1525,22 +1545,27 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
             Some(&tab_overrides)
         };
 
+        let sidebar_colors = SidebarColors {
+            title: Some(theme.text_primary),
+            border: Some(theme.border_faint),
+            indicator: Some(theme.text_faint),
+            thumb: Some(theme.border_primary),
+            depth,
+        };
         let sidebar = RenderedSidebar::build_tabbed(
             title,
             &md_lines,
             preview_scroll.get(),
             sidebar_visible_lines,
             sidebar_width,
-            depth,
-            Some(theme.text_primary),
-            Some(theme.border_faint),
-            Some(theme.text_faint),
-            Some(theme.border_primary),
-            Some(current_tab),
-            Some(&theme.icons),
-            None,
-            Some(BRANCH_TABS),
-            tab_overrides_ref,
+            &sidebar_colors,
+            Some(SidebarTabConfig {
+                active_tab: Some(current_tab),
+                icons: Some(&theme.icons),
+                meta: None,
+                visible_tabs: Some(BRANCH_TABS),
+                tab_label_overrides: tab_overrides_ref,
+            }),
         );
         if preview_scroll.get() != sidebar.clamped_scroll {
             preview_scroll.set(sidebar.clamped_scroll);
@@ -1572,13 +1597,13 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     element! {
         View(flex_direction: FlexDirection::Column, width, height) {
             TabBar(tab_bar: rendered_tab_bar)
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column) {
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row, overflow: Overflow::Hidden) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column) {
                     ScrollableTable(table: rendered_table)
                 }
                 Sidebar(sidebar: rendered_sidebar)
             }
-            crate::components::text_input::TextInput(input: rendered_text_input)
+            TextInput(input: rendered_text_input)
             Footer(footer: rendered_footer)
             HelpOverlay(overlay: rendered_help, width: props.width, height: props.height)
         }

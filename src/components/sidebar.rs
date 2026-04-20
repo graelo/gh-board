@@ -9,6 +9,35 @@ use crate::icons::ResolvedIcons;
 use crate::markdown::renderer::StyledLine;
 
 // ---------------------------------------------------------------------------
+// Sidebar color config
+// ---------------------------------------------------------------------------
+
+/// Groups the color + depth parameters shared by `RenderedSidebar::build` and
+/// `build_tabbed`, reducing argument count.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SidebarColors {
+    pub title: Option<AppColor>,
+    pub border: Option<AppColor>,
+    pub indicator: Option<AppColor>,
+    pub thumb: Option<AppColor>,
+    pub depth: ColorDepth,
+}
+
+// ---------------------------------------------------------------------------
+// Sidebar tab config (groups tab-related params for `build_tabbed`)
+// ---------------------------------------------------------------------------
+
+/// Groups the five tab-related parameters of `build_tabbed` into a single
+/// struct, reducing the overall argument count.
+pub struct SidebarTabConfig<'a> {
+    pub active_tab: Option<SidebarTab>,
+    pub icons: Option<&'a ResolvedIcons>,
+    pub meta: Option<SidebarMeta>,
+    pub visible_tabs: Option<&'a [SidebarTab]>,
+    pub tab_label_overrides: Option<&'a HashMap<SidebarTab, String>>,
+}
+
+// ---------------------------------------------------------------------------
 // Sidebar tab enum (T072 — FR-014)
 // ---------------------------------------------------------------------------
 
@@ -188,18 +217,13 @@ pub struct RenderedSidebar {
 
 impl RenderedSidebar {
     /// Build a pre-rendered sidebar from markdown lines and display parameters.
-    #[allow(clippy::too_many_arguments)]
     pub fn build(
         title: &str,
         lines: &[StyledLine],
         scroll_offset: usize,
         visible_lines: usize,
         width: u16,
-        depth: ColorDepth,
-        title_color: Option<AppColor>,
-        border_color: Option<AppColor>,
-        indicator_color: Option<AppColor>,
-        thumb_color: Option<AppColor>,
+        colors: &SidebarColors,
     ) -> Self {
         Self::build_tabbed(
             title,
@@ -207,90 +231,52 @@ impl RenderedSidebar {
             scroll_offset,
             visible_lines,
             width,
-            depth,
-            title_color,
-            border_color,
-            indicator_color,
-            thumb_color,
-            None,
-            None,
-            None,
-            None,
+            colors,
             None,
         )
     }
 
     /// Build a pre-rendered sidebar with optional tab bar.
-    #[allow(clippy::too_many_arguments)]
     pub fn build_tabbed(
         title: &str,
         lines: &[StyledLine],
         scroll_offset: usize,
         visible_lines: usize,
         width: u16,
-        depth: ColorDepth,
-        title_color: Option<AppColor>,
-        border_color: Option<AppColor>,
-        indicator_color: Option<AppColor>,
-        thumb_color: Option<AppColor>,
-        active_tab: Option<SidebarTab>,
-        icons: Option<&ResolvedIcons>,
-        meta: Option<SidebarMeta>,
-        visible_tabs: Option<&[SidebarTab]>,
-        tab_label_overrides: Option<&HashMap<SidebarTab, String>>,
+        colors: &SidebarColors,
+        tab_config: Option<SidebarTabConfig<'_>>,
     ) -> Self {
-        let title_fg = title_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
-        let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let indicator_fg = indicator_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let thumb_fg = thumb_color.map_or(border_fg, |c| c.to_crossterm_color(depth));
+        let depth = colors.depth;
+        let (active_tab, icons, meta, visible_tabs, tab_label_overrides) =
+            tab_config.map_or((None, None, None, None, None), |tc| {
+                (
+                    tc.active_tab,
+                    tc.icons,
+                    tc.meta,
+                    tc.visible_tabs,
+                    tc.tab_label_overrides,
+                )
+            });
+        let title_fg = colors
+            .title
+            .map_or(Color::White, |c| c.to_crossterm_color(depth));
+        let border_fg = colors
+            .border
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let indicator_fg = colors
+            .indicator
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let thumb_fg = colors
+            .thumb
+            .map_or(border_fg, |c| c.to_crossterm_color(depth));
 
-        // Visual row estimation: each logical line may wrap to multiple
-        // terminal rows.  Content width = sidebar width minus left border (1)
-        // + padding_left (1) + padding_right (1) + scrollbar (1) +
-        // scrollbar margin (1).
-        let content_width = usize::from(width).saturating_sub(5).max(1);
-        let visual_row_count = |line: &StyledLine| -> usize {
-            let w = line.display_width();
-            if w == 0 { 1 } else { w.div_ceil(content_width) }
-        };
+        let layout = compute_visual_layout(lines, scroll_offset, visible_lines, width);
 
-        // Single forward pass: accumulate per-line visual rows to compute
-        // visual_total, clamp the scroll offset, and record visual_offset
-        // (for the scrollbar) — all in one iteration.
-        //
-        // Clamping margin: our char-level div_ceil may underestimate iocraft's
-        // word-level TextWrap::Wrap, so we treat the viewport as slightly
-        // shorter (by clamp_margin rows) when computing max_offset.  This
-        // absorbs the estimation error without inflating per-line row counts.
-        let clamp_margin: usize = 2;
-        let effective_visible = visible_lines.saturating_sub(clamp_margin);
-
-        let mut visual_total: usize = 0;
-        let mut prefix_visual = Vec::with_capacity(lines.len() + 1);
-        prefix_visual.push(0usize);
-        for line in lines {
-            visual_total += visual_row_count(line);
-            prefix_visual.push(visual_total);
-        }
-
-        // max_offset: walk backward from the end — find the first offset
-        // where remaining visual rows fit the effective viewport.
-        let mut max_offset = 0;
-        for i in (0..lines.len()).rev() {
-            let remaining_visual = visual_total - prefix_visual[i];
-            if remaining_visual > effective_visible {
-                max_offset = i + 1;
-                break;
-            }
-        }
-        let clamped_scroll = scroll_offset.min(max_offset);
-        let visual_offset = prefix_visual[clamped_scroll];
-
-        let scroll_indicator = if visual_total > visible_lines {
-            let pos = if visual_total == 0 {
+        let scroll_indicator = if layout.visual_total > visible_lines {
+            let pos = if layout.visual_total == 0 {
                 0
             } else {
-                (visual_offset * 100) / visual_total.max(1)
+                (layout.visual_offset * 100) / layout.visual_total.max(1)
             };
             format!("{pos}%")
         } else {
@@ -299,35 +285,16 @@ impl RenderedSidebar {
 
         // Pass all remaining lines to the MarkdownView; the parent
         // View(overflow: Hidden) clips anything beyond the viewport.
-        let remaining = lines.len().saturating_sub(clamped_scroll);
-        let markdown = RenderedMarkdown::build(lines, clamped_scroll, remaining, depth);
+        let remaining = lines.len().saturating_sub(layout.clamped_scroll);
+        let markdown = RenderedMarkdown::build(lines, layout.clamped_scroll, remaining, depth);
 
-        let tabs_to_show = visible_tabs.unwrap_or(SidebarTab::ALL);
-        let tab_labels = if let Some(current) = active_tab {
-            tabs_to_show
-                .iter()
-                .map(|&t| {
-                    let label = tab_label_overrides
-                        .and_then(|m| m.get(&t).cloned())
-                        .unwrap_or_else(|| {
-                            if let Some(ic) = icons {
-                                t.icon_label(ic)
-                            } else {
-                                t.label().to_owned()
-                            }
-                        });
-                    (label, t == current)
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+        let tab_labels = build_tab_labels(active_tab, visible_tabs, tab_label_overrides, icons);
 
         // Scroll metadata for the scrollbar.
         let scroll_info = ScrollInfo {
-            scroll_offset: visual_offset,
+            scroll_offset: layout.visual_offset,
             visible_count: visible_lines,
-            total_count: visual_total,
+            total_count: layout.visual_total,
         };
         let scroll_info = if scroll_info.needs_scrollbar() {
             Some(scroll_info)
@@ -335,7 +302,7 @@ impl RenderedSidebar {
             None
         };
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         let track_height = visible_lines as u32;
 
         Self {
@@ -354,8 +321,105 @@ impl RenderedSidebar {
             track_height,
             scrollbar_track_fg: border_fg,
             scrollbar_thumb_fg: thumb_fg,
-            clamped_scroll,
+            clamped_scroll: layout.clamped_scroll,
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Visual layout computation
+// ---------------------------------------------------------------------------
+
+/// Result of visual layout computation for the sidebar content area.
+struct VisualLayout {
+    visual_total: usize,
+    visual_offset: usize,
+    clamped_scroll: usize,
+}
+
+/// Compute visual row counts, clamp scroll offset, and determine visual offset
+/// for the sidebar's scrollable markdown content.
+fn compute_visual_layout(
+    lines: &[StyledLine],
+    scroll_offset: usize,
+    visible_lines: usize,
+    width: u16,
+) -> VisualLayout {
+    // Visual row estimation: each logical line may wrap to multiple
+    // terminal rows.  Content width = sidebar width minus left border (1)
+    // + padding_left (1) + padding_right (1) + scrollbar (1) +
+    // scrollbar margin (1).
+    let content_width = usize::from(width).saturating_sub(5).max(1);
+    let visual_row_count = |line: &StyledLine| -> usize {
+        let w = line.display_width();
+        if w == 0 { 1 } else { w.div_ceil(content_width) }
+    };
+
+    // Single forward pass: accumulate per-line visual rows to compute
+    // visual_total, clamp the scroll offset, and record visual_offset
+    // (for the scrollbar) — all in one iteration.
+    //
+    // Clamping margin: our char-level div_ceil may underestimate iocraft's
+    // word-level TextWrap::Wrap, so we treat the viewport as slightly
+    // shorter (by clamp_margin rows) when computing max_offset.  This
+    // absorbs the estimation error without inflating per-line row counts.
+    let clamp_margin: usize = 2;
+    let effective_visible = visible_lines.saturating_sub(clamp_margin);
+
+    let mut visual_total: usize = 0;
+    let mut prefix_visual = Vec::with_capacity(lines.len() + 1);
+    prefix_visual.push(0usize);
+    for line in lines {
+        visual_total += visual_row_count(line);
+        prefix_visual.push(visual_total);
+    }
+
+    // max_offset: walk backward from the end — find the first offset
+    // where remaining visual rows fit the effective viewport.
+    let mut max_offset = 0;
+    for i in (0..lines.len()).rev() {
+        let remaining_visual = visual_total - prefix_visual[i];
+        if remaining_visual > effective_visible {
+            max_offset = i + 1;
+            break;
+        }
+    }
+    let clamped_scroll = scroll_offset.min(max_offset);
+    let visual_offset = prefix_visual[clamped_scroll];
+
+    VisualLayout {
+        visual_total,
+        visual_offset,
+        clamped_scroll,
+    }
+}
+
+/// Build tab label pairs `(label_text, is_active)` from the tab configuration.
+fn build_tab_labels(
+    active_tab: Option<SidebarTab>,
+    visible_tabs: Option<&[SidebarTab]>,
+    tab_label_overrides: Option<&HashMap<SidebarTab, String>>,
+    icons: Option<&ResolvedIcons>,
+) -> Vec<(String, bool)> {
+    let tabs_to_show = visible_tabs.unwrap_or(SidebarTab::ALL);
+    if let Some(current) = active_tab {
+        tabs_to_show
+            .iter()
+            .map(|&t| {
+                let label = tab_label_overrides
+                    .and_then(|m| m.get(&t).cloned())
+                    .unwrap_or_else(|| {
+                        if let Some(ic) = icons {
+                            t.icon_label(ic)
+                        } else {
+                            t.label().to_owned()
+                        }
+                    });
+                (label, t == current)
+            })
+            .collect()
+    } else {
+        Vec::new()
     }
 }
 
@@ -411,7 +475,7 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
         ) {
             // Title bar
             View(margin_bottom: 1) {
-                View(flex_grow: 1.0) {
+                View(flex_grow: 1.0_f32) {
                     Text(
                         content: sb.title,
                         color: sb.title_fg,
@@ -677,8 +741,8 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
             }))
 
             // Content area with scrollbar
-            View(flex_grow: 1.0, flex_direction: FlexDirection::Row) {
-                View(flex_grow: 1.0, flex_direction: FlexDirection::Column,
+            View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Row) {
+                View(flex_grow: 1.0_f32, flex_direction: FlexDirection::Column,
                      margin_right: u32::from(has_scrollbar)) {
                     MarkdownView(markdown: sb.markdown)
                 }
@@ -692,4 +756,111 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
         }
     }
     .into_any()
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::color::Color as AppColor;
+    use crate::markdown::renderer::{StyledLine, StyledSpan};
+
+    fn line_of_width(width: usize) -> StyledLine {
+        let text = "x".repeat(width);
+        StyledLine::from_span(StyledSpan::text(text, AppColor::Ansi256(7)))
+    }
+
+    // -------------------------------------------------------------------
+    // compute_visual_layout
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn visual_layout_empty_lines() {
+        let layout = compute_visual_layout(&[], 0, 20, 40);
+        assert_eq!(layout.visual_total, 0);
+        assert_eq!(layout.visual_offset, 0);
+        assert_eq!(layout.clamped_scroll, 0);
+    }
+
+    #[test]
+    fn visual_layout_single_short_line() {
+        let lines = vec![line_of_width(5)];
+        let layout = compute_visual_layout(&lines, 0, 20, 40);
+        assert_eq!(layout.visual_total, 1);
+    }
+
+    #[test]
+    fn visual_layout_long_line_wraps() {
+        // Content width = width - 5 (border + padding + scrollbar).
+        // With width=20, content_width=15.  A 45-char line wraps to 3 visual rows.
+        let lines = vec![line_of_width(45)];
+        let layout = compute_visual_layout(&lines, 0, 20, 20);
+        assert!(
+            layout.visual_total > 1,
+            "expected wrapping, got visual_total={}",
+            layout.visual_total
+        );
+    }
+
+    #[test]
+    fn visual_layout_scroll_at_zero() {
+        let lines = vec![line_of_width(5); 30];
+        let layout = compute_visual_layout(&lines, 0, 10, 40);
+        assert_eq!(layout.visual_offset, 0);
+        assert_eq!(layout.clamped_scroll, 0);
+    }
+
+    #[test]
+    fn visual_layout_scroll_offset_clamped() {
+        let lines = vec![line_of_width(5); 5];
+        // visible_lines = 20 → everything fits, max_offset = 0.
+        let layout = compute_visual_layout(&lines, 100, 20, 40);
+        assert_eq!(
+            layout.clamped_scroll, 0,
+            "scroll should be clamped to 0 when all content fits"
+        );
+    }
+
+    // -------------------------------------------------------------------
+    // build_tab_labels
+    // -------------------------------------------------------------------
+
+    #[test]
+    fn tab_labels_no_active_tab() {
+        let labels = build_tab_labels(None, None, None, None);
+        assert!(labels.is_empty());
+    }
+
+    #[test]
+    fn tab_labels_with_active_tab() {
+        let tabs = &[SidebarTab::Overview, SidebarTab::Activity];
+        let labels = build_tab_labels(Some(SidebarTab::Activity), Some(tabs), None, None);
+        assert_eq!(labels.len(), 2);
+        // First tab (Overview) is not active.
+        assert!(!labels[0].1, "Overview should not be active");
+        assert_eq!(labels[0].0, "Overview");
+        // Second tab (Activity) is active.
+        assert!(labels[1].1, "Activity should be active");
+        assert_eq!(labels[1].0, "Activity");
+    }
+
+    #[test]
+    fn tab_labels_with_overrides() {
+        let tabs = &[SidebarTab::Overview, SidebarTab::Activity];
+        let overrides: HashMap<SidebarTab, String> = [(SidebarTab::Activity, "Custom".to_owned())]
+            .into_iter()
+            .collect();
+        let labels = build_tab_labels(
+            Some(SidebarTab::Overview),
+            Some(tabs),
+            Some(&overrides),
+            None,
+        );
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0].0, "Overview");
+        assert_eq!(labels[1].0, "Custom");
+    }
 }

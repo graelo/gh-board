@@ -183,43 +183,31 @@ pub struct TableBuildConfig<'a> {
 
 impl RenderedTable {
     /// Build a `RenderedTable` from a configuration.
-    #[allow(clippy::too_many_lines)]
     pub fn build(cfg: &TableBuildConfig<'_>) -> Self {
-        let columns = cfg.columns;
-        let rows = cfg.rows;
-        let cursor = cfg.cursor;
-        let scroll_offset = cfg.scroll_offset;
-        let visible_rows = cfg.visible_rows;
-        let hidden_columns = cfg.hidden_columns;
-        let width_overrides = cfg.width_overrides;
-        let total_width = cfg.total_width;
-        let depth = cfg.depth;
-        let selected_bg = cfg.selected_bg;
-        let header_color = cfg.header_color;
-        let border_color = cfg.border_color;
-        let show_separator = cfg.show_separator;
+        let (columns, rows, depth) = (cfg.columns, cfg.rows, cfg.depth);
 
         // Account for padding_left(1) on the outer container, plus 1 char for
         // the scrollbar gutter when content overflows.
-        let needs_scrollbar = rows.len() > visible_rows;
-        let col_total_width = if needs_scrollbar {
-            total_width.saturating_sub(2)
-        } else {
-            total_width.saturating_sub(1)
-        };
+        let gutter = if rows.len() > cfg.visible_rows { 2 } else { 1 };
+        let col_total_width = cfg.total_width.saturating_sub(gutter);
 
         // Filter out hidden columns.
         let visible_columns: Vec<&Column> = columns
             .iter()
-            .filter(|c| hidden_columns.is_none_or(|h| !h.contains(&c.id)))
+            .filter(|c| cfg.hidden_columns.is_none_or(|h| !h.contains(&c.id)))
             .collect();
 
         // Compute column widths (narrower when scrollbar is present).
-        let col_widths = compute_column_widths(&visible_columns, width_overrides, col_total_width);
+        let col_widths =
+            compute_column_widths(&visible_columns, cfg.width_overrides, col_total_width);
 
-        let header_fg = header_color.map_or(Color::White, |c| c.to_crossterm_color(depth));
-        let border_fg = border_color.map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let selected_bg_color = selected_bg.map(|c| c.to_crossterm_color(depth));
+        let header_fg = cfg
+            .header_color
+            .map_or(Color::White, |c| c.to_crossterm_color(depth));
+        let border_fg = cfg
+            .border_color
+            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+        let selected_bg_color = cfg.selected_bg.map(|c| c.to_crossterm_color(depth));
 
         // Build header cells.
         let header_cells: Vec<HeaderCell> = visible_columns
@@ -233,13 +221,6 @@ impl RenderedTable {
             .collect();
 
         // Build body rows.
-        let end = (scroll_offset + visible_rows).min(rows.len());
-        let visible_slice = if scroll_offset < rows.len() {
-            &rows[scroll_offset..end]
-        } else {
-            &[]
-        };
-
         let subtitle_column = cfg.subtitle_column;
 
         // Compute subtitle left-padding (width of first column) before the loop
@@ -250,60 +231,21 @@ impl RenderedTable {
             0
         };
 
-        let body_rows: Vec<RenderedRow> = visible_slice
-            .iter()
-            .enumerate()
-            .map(|(i, row)| {
-                let absolute_idx = scroll_offset + i;
-                let is_selected = absolute_idx == cursor;
-                let bg = if is_selected { selected_bg_color } else { None };
-
-                let cells: Vec<RenderedCell> = visible_columns
-                    .iter()
-                    .zip(col_widths.iter())
-                    .map(|(col, &w)| {
-                        let cell = row.get(&col.id);
-                        let spans = cell.map_or_else(
-                            || {
-                                vec![RenderedSpan {
-                                    text: String::new(),
-                                    fg: Color::Reset,
-                                    weight: Weight::Normal,
-                                }]
-                            },
-                            |c| render_spans(&c.spans, depth),
-                        );
-                        RenderedCell {
-                            spans: truncate_spans(spans, usize::from(w)),
-                            width: u32::from(w),
-                            align: col.align,
-                        }
-                    })
-                    .collect();
-
-                // Extract subtitle cell if configured.
-                let subtitle_available =
-                    usize::from(col_total_width).saturating_sub(subtitle_padding as usize);
-                let subtitle = subtitle_column.and_then(|col_id| {
-                    row.get(col_id).map(|cell| {
-                        let spans =
-                            truncate_spans(render_spans(&cell.spans, depth), subtitle_available);
-                        RenderedCell {
-                            spans,
-                            width: u32::from(col_total_width),
-                            align: TextAlign::Left,
-                        }
-                    })
-                });
-
-                RenderedRow {
-                    key: absolute_idx,
-                    bg,
-                    cells,
-                    subtitle,
-                }
-            })
-            .collect();
+        let body_rows = build_body_rows(
+            rows,
+            cfg.scroll_offset,
+            cfg.visible_rows,
+            cfg.cursor,
+            selected_bg_color,
+            &BodyRowLayout {
+                visible_columns: &visible_columns,
+                col_widths: &col_widths,
+                col_total_width,
+                subtitle_padding,
+                subtitle_column,
+                depth,
+            },
+        );
 
         let empty_message = if rows.is_empty() {
             cfg.empty_message.map(String::from)
@@ -313,8 +255,8 @@ impl RenderedTable {
 
         // Scroll metadata for the scrollbar.
         let scroll_info = ScrollInfo {
-            scroll_offset,
-            visible_count: visible_rows,
+            scroll_offset: cfg.scroll_offset,
+            visible_count: cfg.visible_rows,
             total_count: rows.len(),
         };
         let scroll_info = if scroll_info.needs_scrollbar() {
@@ -325,7 +267,7 @@ impl RenderedTable {
 
         // Track height = number of rendered lines in the body area.
         // Each row is 1 line for cells + 1 optional subtitle + 1 optional separator.
-        #[allow(clippy::cast_possible_truncation)]
+
         let track_height: u32 = body_rows
             .iter()
             .enumerate()
@@ -345,8 +287,8 @@ impl RenderedTable {
         Self {
             header_cells,
             body_rows,
-            total_width: u32::from(total_width),
-            show_separator,
+            total_width: u32::from(cfg.total_width),
+            show_separator: cfg.show_separator,
             row_separator: cfg.row_separator,
             header_fg,
             border_fg,
@@ -408,7 +350,7 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
             // Body area: rows + scrollbar side by side
             View(flex_direction: FlexDirection::Row) {
                 // Body rows column
-                View(flex_direction: FlexDirection::Column, flex_grow: 1.0) {
+                View(flex_direction: FlexDirection::Column, flex_grow: 1.0_f32) {
                     // Empty-state message or body rows
                     #(table.empty_message.into_iter().map(|msg| {
                         element! {
@@ -491,6 +433,94 @@ pub fn ScrollableTable(props: &mut ScrollableTableProps) -> impl Into<AnyElement
         }
     }
     .into_any()
+}
+
+// ---------------------------------------------------------------------------
+// Body row rendering
+// ---------------------------------------------------------------------------
+
+/// Column layout parameters for body row rendering.
+struct BodyRowLayout<'a> {
+    visible_columns: &'a [&'a Column],
+    col_widths: &'a [u16],
+    col_total_width: u16,
+    subtitle_padding: u32,
+    subtitle_column: Option<&'a str>,
+    depth: ColorDepth,
+}
+
+/// Build the visible body rows from the full row slice, applying scroll offset,
+/// cursor highlighting, and optional subtitle extraction.
+fn build_body_rows(
+    rows: &[Row],
+    scroll_offset: usize,
+    visible_rows: usize,
+    cursor: usize,
+    selected_bg_color: Option<Color>,
+    layout: &BodyRowLayout<'_>,
+) -> Vec<RenderedRow> {
+    let end = (scroll_offset + visible_rows).min(rows.len());
+    let visible_slice = if scroll_offset < rows.len() {
+        &rows[scroll_offset..end]
+    } else {
+        &[]
+    };
+
+    visible_slice
+        .iter()
+        .enumerate()
+        .map(|(i, row)| {
+            let absolute_idx = scroll_offset + i;
+            let is_selected = absolute_idx == cursor;
+            let bg = if is_selected { selected_bg_color } else { None };
+
+            let cells: Vec<RenderedCell> = layout
+                .visible_columns
+                .iter()
+                .zip(layout.col_widths.iter())
+                .map(|(col, &w)| {
+                    let cell = row.get(&col.id);
+                    let spans = cell.map_or_else(
+                        || {
+                            vec![RenderedSpan {
+                                text: String::new(),
+                                fg: Color::Reset,
+                                weight: Weight::Normal,
+                            }]
+                        },
+                        |c| render_spans(&c.spans, layout.depth),
+                    );
+                    RenderedCell {
+                        spans: truncate_spans(spans, usize::from(w)),
+                        width: u32::from(w),
+                        align: col.align,
+                    }
+                })
+                .collect();
+
+            // Extract subtitle cell if configured.
+            let subtitle_available = usize::from(layout.col_total_width)
+                .saturating_sub(layout.subtitle_padding as usize);
+            let subtitle = layout.subtitle_column.and_then(|col_id| {
+                row.get(col_id).map(|cell| {
+                    let spans =
+                        truncate_spans(render_spans(&cell.spans, layout.depth), subtitle_available);
+                    RenderedCell {
+                        spans,
+                        width: u32::from(layout.col_total_width),
+                        align: TextAlign::Left,
+                    }
+                })
+            });
+
+            RenderedRow {
+                key: absolute_idx,
+                bg,
+                cells,
+                subtitle,
+            }
+        })
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -584,12 +614,12 @@ fn compute_column_widths(
             let ratio = if unfixed_pct_sum > 0.0 {
                 col.default_width_pct / unfixed_pct_sum
             } else {
-                #[allow(clippy::cast_precision_loss)]
+                #[expect(clippy::cast_precision_loss)]
                 {
                     1.0 / columns.len() as f32
                 }
             };
-            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let w = (f32::from(remaining) * ratio).round() as u16;
             widths[i] = Some(w);
         }
@@ -690,5 +720,157 @@ mod tests {
 
         assert_eq!(visible.len(), 3);
         assert!(visible.iter().all(|c| c.id != "author"));
+    }
+
+    // -------------------------------------------------------------------
+    // build_body_rows tests
+    // -------------------------------------------------------------------
+
+    fn make_row(pairs: &[(&str, &str)]) -> Row {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), Cell::plain(*v)))
+            .collect()
+    }
+
+    #[test]
+    fn build_body_rows_empty() {
+        let cols = make_columns();
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 100);
+        let rows: Vec<Row> = vec![];
+        let layout = BodyRowLayout {
+            visible_columns: &col_refs,
+            col_widths: &widths,
+            col_total_width: 100,
+            subtitle_padding: 0,
+            subtitle_column: None,
+            depth: ColorDepth::default(),
+        };
+        let result = build_body_rows(&rows, 0, 10, 0, None, &layout);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn build_body_rows_single_row_cells() {
+        let cols = make_columns();
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 100);
+        let rows = vec![make_row(&[
+            ("state", "open"),
+            ("title", "Fix bug"),
+            ("author", "alice"),
+            ("updated", "2d"),
+        ])];
+        let layout = BodyRowLayout {
+            visible_columns: &col_refs,
+            col_widths: &widths,
+            col_total_width: 100,
+            subtitle_padding: 0,
+            subtitle_column: None,
+            depth: ColorDepth::default(),
+        };
+        let result = build_body_rows(&rows, 0, 10, 0, None, &layout);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].key, 0);
+        // Should have 4 cells matching the 4 visible columns.
+        assert_eq!(result[0].cells.len(), 4);
+        // First cell is "state" column → text should contain "open".
+        let state_text: String = result[0].cells[0]
+            .spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect();
+        assert!(
+            state_text.contains("open"),
+            "expected 'open' in state cell, got '{state_text}'"
+        );
+    }
+
+    #[test]
+    fn build_body_rows_cursor_highlight() {
+        let cols = make_columns();
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 100);
+        let rows = vec![
+            make_row(&[("state", "open"), ("title", "First")]),
+            make_row(&[("state", "closed"), ("title", "Second")]),
+            make_row(&[("state", "open"), ("title", "Third")]),
+        ];
+        let selected_bg = Some(Color::Rgb {
+            r: 50,
+            g: 50,
+            b: 50,
+        });
+        // Cursor at row index 1.
+        let layout = BodyRowLayout {
+            visible_columns: &col_refs,
+            col_widths: &widths,
+            col_total_width: 100,
+            subtitle_padding: 0,
+            subtitle_column: None,
+            depth: ColorDepth::default(),
+        };
+        let result = build_body_rows(&rows, 0, 10, 1, selected_bg, &layout);
+        assert_eq!(result.len(), 3);
+        // Row 0: not selected → bg = None.
+        assert!(result[0].bg.is_none());
+        // Row 1: selected → bg = Some(...).
+        assert!(result[1].bg.is_some());
+        // Row 2: not selected → bg = None.
+        assert!(result[2].bg.is_none());
+    }
+
+    #[test]
+    fn build_body_rows_subtitle_extraction() {
+        let cols = [
+            Column {
+                id: "number".to_owned(),
+                header: "#".to_owned(),
+                default_width_pct: 0.1,
+                align: TextAlign::Left,
+                fixed_width: Some(6),
+            },
+            Column {
+                id: "title".to_owned(),
+                header: "Title".to_owned(),
+                default_width_pct: 0.9,
+                align: TextAlign::Left,
+                fixed_width: None,
+            },
+        ];
+        let col_refs: Vec<&Column> = cols.iter().collect();
+        let widths = compute_column_widths(&col_refs, None, 80);
+        let mut row: Row = make_row(&[("number", "42"), ("title", "Main title")]);
+        row.insert("subtitle".to_owned(), Cell::plain("Sub info"));
+
+        let rows = vec![row];
+        let subtitle_padding = u32::from(*widths.first().unwrap());
+        let layout = BodyRowLayout {
+            visible_columns: &col_refs,
+            col_widths: &widths,
+            col_total_width: 80,
+            subtitle_padding,
+            subtitle_column: Some("subtitle"),
+            depth: ColorDepth::default(),
+        };
+        let result = build_body_rows(&rows, 0, 10, 0, None, &layout);
+        assert_eq!(result.len(), 1);
+        assert!(
+            result[0].subtitle.is_some(),
+            "subtitle should be extracted when subtitle_column is set"
+        );
+        let sub_text: String = result[0]
+            .subtitle
+            .as_ref()
+            .unwrap()
+            .spans
+            .iter()
+            .map(|s| s.text.as_str())
+            .collect();
+        assert!(
+            sub_text.contains("Sub info"),
+            "subtitle text should contain 'Sub info', got '{sub_text}'"
+        );
     }
 }

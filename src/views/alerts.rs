@@ -639,6 +639,7 @@ pub struct AlertsViewProps<'a> {
     /// Signal to jump directly to a specific view.
     pub goto_view: Option<State<Option<ViewKind>>>,
     pub scope_toggle: Option<State<bool>>,
+    pub repo_picker: Option<State<bool>>,
     pub is_active: bool,
     pub refetch_interval_minutes: u32,
     pub date_format: Option<&'a str>,
@@ -663,6 +664,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
     let scope_repo = props.scope_repo.clone();
     let detected_repo = props.detected_repo.clone();
     let scope_toggle = props.scope_toggle;
+    let repo_picker = props.repo_picker;
 
     // -----------------------------------------------------------------------
     // State hooks
@@ -1057,6 +1059,11 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                                     BuiltinAction::ToggleScope => {
                                         if let Some(mut st) = scope_toggle {
                                             st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SelectRepo => {
+                                        if let Some(mut rp) = repo_picker {
+                                            rp.set(true);
                                         }
                                     }
                                     BuiltinAction::ToggleHelp => {

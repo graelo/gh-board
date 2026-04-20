@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Sender;
 
@@ -69,10 +69,7 @@ fn ensure_fork_remote(repo_path: &Path, host: &str, fork: &ForkSource) -> Result
 }
 
 /// Check whether a repo needs to be cloned (path is configured but doesn't exist yet).
-pub fn repo_needs_clone<S: std::hash::BuildHasher>(
-    repo_full_name: &str,
-    repo_paths: &HashMap<String, PathBuf, S>,
-) -> bool {
+pub fn repo_needs_clone(repo_full_name: &str, repo_paths: &IndexMap<String, PathBuf>) -> bool {
     repo_paths.get(repo_full_name).is_some_and(|p| !p.exists())
 }
 
@@ -104,10 +101,10 @@ fn ensure_repo_cloned(repo_full_name: &str, target: &Path, host: &str) -> Result
 ///
 /// Always clones the repo first if the configured path doesn't exist yet.
 /// The caller is responsible for gating on user confirmation when needed.
-pub fn checkout_branch<S: std::hash::BuildHasher>(
+pub fn checkout_branch(
     head_ref: &str,
     repo_full_name: &str,
-    repo_paths: &HashMap<String, PathBuf, S>,
+    repo_paths: &IndexMap<String, PathBuf>,
     host: &str,
     fork: Option<&ForkSource>,
 ) -> Result<String> {
@@ -264,10 +261,10 @@ pub fn create_worktree_at(
 ///
 /// Always clones the repo first if the configured path doesn't exist yet.
 /// The caller is responsible for gating on user confirmation when needed.
-pub fn create_or_open_worktree<S: std::hash::BuildHasher>(
+pub fn create_or_open_worktree(
     head_ref: &str,
     repo_full_name: &str,
-    repo_paths: &HashMap<String, PathBuf, S>,
+    repo_paths: &IndexMap<String, PathBuf>,
     host: &str,
     fork: Option<&ForkSource>,
 ) -> Result<String> {
@@ -285,10 +282,10 @@ pub fn create_or_open_worktree<S: std::hash::BuildHasher>(
 ///
 /// Returns immediately so the UI can show a progress message before the
 /// blocking clone/checkout finishes.
-pub fn spawn_checkout<S: std::hash::BuildHasher + Send + 'static>(
+pub fn spawn_checkout(
     head_ref: String,
     repo_full_name: String,
-    repo_paths: HashMap<String, PathBuf, S>,
+    repo_paths: IndexMap<String, PathBuf>,
     host: String,
     fork: Option<ForkSource>,
     reply_tx: Sender<String>,
@@ -312,10 +309,10 @@ pub fn spawn_checkout<S: std::hash::BuildHasher + Send + 'static>(
 /// result through `reply_tx`. Copies the worktree path to the clipboard on success.
 ///
 /// Returns immediately so the UI can show a progress message.
-pub fn spawn_worktree<S: std::hash::BuildHasher + Send + 'static>(
+pub fn spawn_worktree(
     head_ref: String,
     repo_full_name: String,
-    repo_paths: HashMap<String, PathBuf, S>,
+    repo_paths: IndexMap<String, PathBuf>,
     host: String,
     fork: Option<ForkSource>,
     reply_tx: Sender<String>,

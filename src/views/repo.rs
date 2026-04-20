@@ -296,7 +296,7 @@ fn list_branches(repo_path: &Path, repo_label: &str) -> Vec<Branch> {
 fn list_all_branches(
     cwd_path: Option<&Path>,
     cwd_label: &str,
-    repo_paths: Option<&HashMap<String, PathBuf>>,
+    repo_paths: Option<&indexmap::IndexMap<String, PathBuf>>,
 ) -> Vec<Branch> {
     let mut branches = Vec::new();
 
@@ -627,13 +627,15 @@ pub struct RepoViewProps<'a> {
     pub goto_view: Option<State<Option<ViewKind>>>,
     /// Signal to toggle repo scope.
     pub scope_toggle: Option<State<bool>>,
+    /// Signal to open the repo picker overlay.
+    pub repo_picker: Option<State<bool>>,
     /// Active scope repo (e.g. `"owner/repo"`), or `None` for global.
     pub scope_repo: Option<String>,
     pub repo_path: Option<&'a std::path::Path>,
     /// Detected repo (owner/name) from CWD remote.
     pub detected_repo: Option<&'a crate::types::common::RepoRef>,
     /// Configured `repo_paths` mapping `"owner/repo"` to local paths.
-    pub repo_paths: Option<&'a HashMap<String, PathBuf>>,
+    pub repo_paths: Option<&'a indexmap::IndexMap<String, PathBuf>>,
     /// Engine handle for async PR data fetching (optional).
     pub engine: Option<&'a EngineHandle>,
     /// Navigation target state for cross-view deep-linking.
@@ -656,6 +658,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
     let switch_view_back = props.switch_view_back;
     let goto_view = props.goto_view;
     let scope_toggle = props.scope_toggle;
+    let repo_picker = props.repo_picker;
     let scope_repo = &props.scope_repo;
     let detected_repo = props.detected_repo.cloned();
     let nav_target = props.nav_target;
@@ -1040,6 +1043,11 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                                     BuiltinAction::ToggleScope => {
                                         if let Some(mut st) = scope_toggle {
                                             st.set(true);
+                                        }
+                                    }
+                                    BuiltinAction::SelectRepo => {
+                                        if let Some(mut rp) = repo_picker {
+                                            rp.set(true);
                                         }
                                     }
                                     BuiltinAction::Checkout => {

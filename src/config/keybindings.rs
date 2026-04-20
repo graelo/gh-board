@@ -117,6 +117,8 @@ pub enum BuiltinAction {
     CloseTab,
     // Watch workflow run
     WatchRun,
+    // Repo picker
+    SelectRepo,
 }
 
 impl BuiltinAction {
@@ -184,6 +186,7 @@ impl BuiltinAction {
             "go_back" => Self::GoBack,
             "close_tab" => Self::CloseTab,
             "watch_run" => Self::WatchRun,
+            "select_repo" => Self::SelectRepo,
             _ => return None,
         })
     }
@@ -251,6 +254,7 @@ impl BuiltinAction {
             Self::GoBack => "Go back to previous view",
             Self::CloseTab => "Close ephemeral tab",
             Self::WatchRun => "Watch/unwatch run",
+            Self::SelectRepo => "Select active repo",
         }
     }
 }
@@ -385,6 +389,7 @@ pub fn default_universal() -> Vec<Keybinding> {
         kb("+", "sidebar_wider", "Widen sidebar"),
         kb("-", "sidebar_narrower", "Narrow sidebar"),
         kb("=", "sidebar_reset_width", "Reset sidebar width"),
+        kb("s", "select_repo", "Select active repo"),
     ]
 }
 

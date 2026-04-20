@@ -25,6 +25,8 @@
 //
 // This enables partial configs where only desired overrides need be specified.
 use std::collections::HashMap;
+
+use indexmap::IndexMap;
 use std::path::PathBuf;
 
 use serde::Deserialize;
@@ -78,7 +80,7 @@ pub struct AppConfig {
     pub theme: Theme,
     pub keybindings: KeybindingsConfig,
     #[serde(default)]
-    pub repo_paths: HashMap<String, PathBuf>,
+    pub repo_paths: IndexMap<String, PathBuf>,
     /// Path to a theme-only TOML file. Accepts:
     ///   - `"builtin:<name>"` (e.g. `"builtin:dracula"`)
     ///   - A filesystem path (e.g. `"~/.config/gh-board/themes/monokai.toml"`)
@@ -456,6 +458,7 @@ fn merge_icons(base: IconConfig, overlay: IconConfig) -> IconConfig {
         action_running: overlay.action_running.or(base.action_running),
         action_queued: overlay.action_queued.or(base.action_queued),
         action_watched: overlay.action_watched.or(base.action_watched),
+        repo_anchor: overlay.repo_anchor.or(base.repo_anchor),
     }
 }
 
@@ -788,4 +791,6 @@ pub struct IconConfig {
     pub action_running: Option<String>,
     pub action_queued: Option<String>,
     pub action_watched: Option<String>,
+    // Repo picker
+    pub repo_anchor: Option<String>,
 }

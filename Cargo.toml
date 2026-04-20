@@ -24,6 +24,7 @@ gh-emoji = "1"
 #
 # GitHub API
 http = "1"
+indexmap = { version = "2.14.0", features = ["serde"] }
 #
 # TUI framework
 iocraft = "0.8"

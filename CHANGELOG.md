@@ -7,6 +7,24 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-04-21
+
+### Added
+
+- **Repo picker** — press `s` to open a selection overlay listing all repos
+  from `[repo_paths]`. The detected local repo appears first (marked with an
+  anchor icon), followed by config entries in TOML insertion order. Selecting a
+  repo sets it as the active scope; `S` then toggles between the selected repo
+  and global as usual. Esc cancels
+- **`repo_anchor` icon** — new icon field in all three presets (unicode: ⚓,
+  nerdfont: nf-fa-anchor, ascii: @), overridable via `[theme.icons]`
+
+### Changed
+
+- **`repo_paths` uses `IndexMap`** — preserves TOML insertion order instead of
+  random `HashMap` ordering. The generic `BuildHasher` parameter on
+  `actions::local` functions is dropped as a result
+
 ## [0.11.1] - 2026-04-20
 
 ### Changed
@@ -312,7 +330,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
-[Unreleased]: https://github.com/graelo/gh-board/compare/v0.11.1...HEAD
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/graelo/gh-board/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/graelo/gh-board/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/graelo/gh-board/compare/v0.10.3...v0.11.0
 [0.10.3]: https://github.com/graelo/gh-board/compare/v0.10.2...v0.10.3

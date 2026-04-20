@@ -381,11 +381,13 @@ async fn handle_request(
                 client,
                 watch_scheduler,
                 complete_command,
-                owner,
-                repo,
-                run_id,
-                host,
-                reply_tx,
+                WatchRunParams {
+                    owner,
+                    repo,
+                    run_id,
+                    host,
+                    reply_tx,
+                },
             )
             .await;
         }
@@ -1423,46 +1425,52 @@ async fn handle_fetch_run_by_id(
     }
 }
 
-#[expect(clippy::too_many_arguments)]
-async fn handle_watch_run(
-    client: &mut GitHubClient,
-    watch_scheduler: &mut WatchScheduler,
-    complete_command: Option<&String>,
+struct WatchRunParams {
     owner: String,
     repo: String,
     run_id: u64,
     host: Option<String>,
     reply_tx: Sender<Event>,
+}
+
+async fn handle_watch_run(
+    client: &mut GitHubClient,
+    watch_scheduler: &mut WatchScheduler,
+    complete_command: Option<&String>,
+    p: WatchRunParams,
 ) {
     watch_scheduler.add(
-        owner.clone(),
-        repo.clone(),
-        run_id,
-        host.clone(),
-        reply_tx.clone(),
+        p.owner.clone(),
+        p.repo.clone(),
+        p.run_id,
+        p.host.clone(),
+        p.reply_tx.clone(),
     );
-    let api_host = host.as_deref().unwrap_or("github.com");
-    let Some(octocrab) = get_octocrab(client, api_host, &reply_tx, "WatchRun") else {
+    let api_host = p.host.as_deref().unwrap_or("github.com");
+    let Some(octocrab) = get_octocrab(client, api_host, &p.reply_tx, "WatchRun") else {
         return;
     };
-    match gh_actions::fetch_run_by_id(&octocrab, &owner, &repo, run_id).await {
+    match gh_actions::fetch_run_by_id(&octocrab, &p.owner, &p.repo, p.run_id).await {
         Ok((run, rate_limit)) => {
             let completed = run.status == RunStatus::Completed;
-            let _ = reply_tx.send(Event::WatchedRunUpdated {
-                run_id,
+            let _ = p.reply_tx.send(Event::WatchedRunUpdated {
+                run_id: p.run_id,
                 run: run.clone(),
                 completed,
                 rate_limit,
             });
             if completed {
-                fire_watch_hook(complete_command, &run, &owner, &repo, &reply_tx);
-                watch_scheduler.complete(run_id);
+                fire_watch_hook(complete_command, &run, &p.owner, &p.repo, &p.reply_tx);
+                watch_scheduler.complete(p.run_id);
             } else {
-                watch_scheduler.mark_polled(run_id);
+                watch_scheduler.mark_polled(p.run_id);
             }
         }
         Err(e) => {
-            tracing::warn!("engine: WatchRun initial fetch run_id={run_id} error: {e}");
+            tracing::warn!(
+                "engine: WatchRun initial fetch run_id={} error: {e}",
+                p.run_id
+            );
         }
     }
 }

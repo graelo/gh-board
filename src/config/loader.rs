@@ -16,17 +16,20 @@ struct ThemeFile {
 
 /// Discover and load the app config.
 ///
-/// Priority:
-/// 1. `--config` flag (explicit path)
-/// 2. `gh-board.toml` or `.gh-board.toml` in the current Git repository root
-/// 3. `$GH_BOARD_CONFIG` environment variable
-/// 4. `$XDG_CONFIG_HOME/gh-board/config.toml`
-/// 5. `~/.config/gh-board/config.toml`
+/// Priority (each layer overrides the previous):
+/// 1. Global: `$GH_BOARD_CONFIG` → `$XDG_CONFIG_HOME/gh-board/config.toml`
+///    → `~/.config/gh-board/config.toml`
+/// 2. Ancestor directories: walking up from the Git root toward `$HOME`,
+///    each `gh-board.toml` or `.gh-board.toml` found in a parent directory
+///    is merged on top of the previous layer (farthest ancestor first).
+/// 3. Project: `gh-board.toml` or `.gh-board.toml` at the Git repository root.
 ///
-/// If both a global and a repo-local config exist, they are merged recursively:
-/// local values override global for the same key; missing local keys fall
-/// through to global. Filter lists replace global only when non-empty;
-/// `repo_paths` are merged (local entries override matching global keys).
+/// `--config` flag bypasses all discovery and loads only the given file.
+///
+/// Layers are merged recursively: local values override global for the same
+/// key; missing local keys fall through. Filter lists replace the previous
+/// layer only when non-empty; `repo_paths` are merged (closer entries override
+/// matching keys from farther layers).
 pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
     // If an explicit path was given, just load that.
     if let Some(path) = explicit_path {
@@ -39,36 +42,26 @@ pub fn load_config(explicit_path: Option<&Path>) -> Result<AppConfig> {
         return Ok(config);
     }
 
-    let global_path = find_global_config();
-    let local_path = find_repo_local_config();
-
-    let mut config = match (global_path, local_path) {
-        (Some(global), Some(local)) => {
-            // Parse global first, then overlay local.
-            let global_str = std::fs::read_to_string(&global)
-                .with_context(|| format!("reading {}", global.display()))?;
-            let global_cfg: AppConfig = toml::from_str(&global_str)
-                .with_context(|| format!("parsing TOML from {}", global.display()))?;
-
-            let local_str = std::fs::read_to_string(&local)
-                .with_context(|| format!("reading {}", local.display()))?;
-            let local_cfg: AppConfig = toml::from_str(&local_str)
-                .with_context(|| format!("parsing TOML from {}", local.display()))?;
-
-            merge_configs(global_cfg, local_cfg)
-        }
-        (Some(path), None) | (None, Some(path)) => {
+    // Start from the global config (or defaults).
+    let mut config = match find_global_config() {
+        Some(path) => {
             let contents = std::fs::read_to_string(&path)
                 .with_context(|| format!("reading {}", path.display()))?;
-            let config: AppConfig = toml::from_str(&contents)
-                .with_context(|| format!("parsing TOML from {}", path.display()))?;
-            config
+            toml::from_str(&contents)
+                .with_context(|| format!("parsing TOML from {}", path.display()))?
         }
-        (None, None) => {
-            // No config found — use defaults.
-            AppConfig::default()
-        }
+        None => AppConfig::default(),
     };
+
+    // Fold ancestor and project configs on top (farthest ancestor first, project last).
+    let local_chain = find_local_config_chain();
+    for path in &local_chain {
+        let contents =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+        let layer: AppConfig = toml::from_str(&contents)
+            .with_context(|| format!("parsing TOML from {}", path.display()))?;
+        config = merge_configs(config, layer);
+    }
 
     config.repo_paths = expand_repo_paths(std::mem::take(&mut config.repo_paths));
     apply_theme_file(&mut config)?;
@@ -197,29 +190,70 @@ fn merge_defaults(global: &Defaults, local: &Defaults) -> Defaults {
     }
 }
 
-fn find_repo_local_config() -> Option<PathBuf> {
-    find_repo_local_config_from(std::env::current_dir().ok()?)
+fn find_local_config_chain() -> Vec<PathBuf> {
+    let Some(cwd) = std::env::current_dir().ok() else {
+        return Vec::new();
+    };
+    find_local_config_chain_from(cwd)
 }
 
-fn find_repo_local_config_from(mut dir: PathBuf) -> Option<PathBuf> {
-    // Walk up from `dir` looking for `gh-board.toml` (preferred) or `.gh-board.toml`
-    // at the git repository root.
-    loop {
+/// Build the ordered chain of local config files to merge.
+///
+/// Returns configs ordered farthest-ancestor-first, project-last, so they can
+/// be folded left-to-right with `merge_configs`.
+///
+/// 1. Walk up from `start` to find the Git root.
+/// 2. Check for a project-level config at the Git root.
+/// 3. Continue walking up from the Git root's parent toward `$HOME`, collecting
+///    ancestor configs.
+/// 4. Return ancestor configs (farthest first) followed by the project config.
+fn find_local_config_chain_from(start: PathBuf) -> Vec<PathBuf> {
+    let home = dirs_fallback();
+
+    // Phase 1: walk up to the Git root.
+    let mut dir = start;
+    let git_root = loop {
         if dir.join(".git").exists() {
-            let candidate = dir.join("gh-board.toml");
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-            let candidate = dir.join(".gh-board.toml");
-            if candidate.is_file() {
-                return Some(candidate);
-            }
-            return None;
+            break Some(dir.clone());
         }
         if !dir.pop() {
-            return None;
+            break None;
+        }
+    };
+
+    // Phase 2: project-level config at the Git root.
+    let project_config = git_root.as_ref().and_then(|root| find_config_in(root));
+
+    // Phase 3: ancestor configs above the Git root, stopping at $HOME (inclusive).
+    let mut ancestor_configs = Vec::new();
+    if let Some(ref root) = git_root {
+        let mut parent = root.clone();
+        while parent.pop() {
+            if let Some(cfg) = find_config_in(&parent) {
+                ancestor_configs.push(cfg);
+            }
+            // Stop once we've checked $HOME.
+            if home.as_ref().is_some_and(|h| &parent == h) {
+                break;
+            }
         }
     }
+
+    // Farthest ancestor first, project last.
+    ancestor_configs.reverse();
+    ancestor_configs.extend(project_config);
+    ancestor_configs
+}
+
+/// Look for `gh-board.toml` (preferred) or `.gh-board.toml` in `dir`.
+fn find_config_in(dir: &Path) -> Option<PathBuf> {
+    for name in &["gh-board.toml", ".gh-board.toml"] {
+        let candidate = dir.join(name);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn find_global_config() -> Option<PathBuf> {
@@ -609,52 +643,121 @@ mod tests {
     }
 
     #[test]
-    fn find_repo_local_config_prefers_gh_board_toml_over_dot() {
+    fn config_chain_prefers_gh_board_toml_over_dot() {
         let temp_dir = tempfile::tempdir().unwrap();
         let git_dir = temp_dir.path().join(".git");
         std::fs::create_dir(&git_dir).unwrap();
 
-        let gh_board_toml = temp_dir.path().join("gh-board.toml");
-        std::fs::write(&gh_board_toml, "defaults.view = \"prs\"").unwrap();
+        std::fs::write(
+            temp_dir.path().join("gh-board.toml"),
+            "defaults.view = \"prs\"",
+        )
+        .unwrap();
+        std::fs::write(
+            temp_dir.path().join(".gh-board.toml"),
+            "defaults.view = \"issues\"",
+        )
+        .unwrap();
 
-        let dot_gh_board_toml = temp_dir.path().join(".gh-board.toml");
-        std::fs::write(&dot_gh_board_toml, "defaults.view = \"issues\"").unwrap();
-
-        let found = find_repo_local_config_from(temp_dir.path().to_path_buf());
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().file_name().unwrap(), "gh-board.toml");
+        let chain = find_local_config_chain_from(temp_dir.path().to_path_buf());
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].file_name().unwrap(), "gh-board.toml");
     }
 
     #[test]
-    fn find_repo_local_config_only_at_git_root() {
+    fn config_chain_only_at_git_root_not_subdir() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let git_dir = temp_dir.path().join(".git");
-        std::fs::create_dir(&git_dir).unwrap();
+        std::fs::create_dir(temp_dir.path().join(".git")).unwrap();
+
+        let subdir = temp_dir.path().join("subdir");
+        std::fs::create_dir(&subdir).unwrap();
+        std::fs::write(subdir.join("gh-board.toml"), "defaults.view = \"prs\"").unwrap();
+
+        let chain = find_local_config_chain_from(subdir);
+        assert!(chain.is_empty());
+    }
+
+    #[test]
+    fn config_chain_finds_at_git_root_from_subdir() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(temp_dir.path().join(".git")).unwrap();
+        std::fs::write(
+            temp_dir.path().join("gh-board.toml"),
+            "defaults.view = \"prs\"",
+        )
+        .unwrap();
 
         let subdir = temp_dir.path().join("subdir");
         std::fs::create_dir(&subdir).unwrap();
 
-        let gh_board_toml = subdir.join("gh-board.toml");
-        std::fs::write(&gh_board_toml, "defaults.view = \"prs\"").unwrap();
-
-        let found = find_repo_local_config_from(subdir);
-        assert!(found.is_none());
+        let chain = find_local_config_chain_from(subdir);
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].file_name().unwrap(), "gh-board.toml");
     }
 
     #[test]
-    fn find_repo_local_config_finds_at_git_root() {
+    fn config_chain_includes_ancestor_above_git_root() {
+        // Layout: parent/.gh-board.toml + parent/repo/.git + parent/repo/gh-board.toml
         let temp_dir = tempfile::tempdir().unwrap();
-        let git_dir = temp_dir.path().join(".git");
-        std::fs::create_dir(&git_dir).unwrap();
+        let parent = temp_dir.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
 
-        let gh_board_toml = temp_dir.path().join("gh-board.toml");
-        std::fs::write(&gh_board_toml, "defaults.view = \"prs\"").unwrap();
+        std::fs::write(parent.join(".gh-board.toml"), "[github]\nscope = 1").unwrap();
+        std::fs::write(repo.join("gh-board.toml"), "[github]\nscope = 2").unwrap();
 
-        let subdir = temp_dir.path().join("subdir");
-        std::fs::create_dir(&subdir).unwrap();
+        let chain = find_local_config_chain_from(repo);
+        assert_eq!(chain.len(), 2);
+        // Farthest ancestor first
+        assert_eq!(chain[0].parent().unwrap().file_name().unwrap(), "parent");
+        // Project last
+        assert_eq!(chain[1].file_name().unwrap(), "gh-board.toml");
+    }
 
-        let found = find_repo_local_config_from(subdir);
-        assert!(found.is_some());
-        assert_eq!(found.unwrap().file_name().unwrap(), "gh-board.toml");
+    #[test]
+    fn config_chain_multiple_ancestors_ordered_farthest_first() {
+        // Layout: a/.gh-board.toml > a/b/.gh-board.toml > a/b/c/.git + gh-board.toml
+        let temp_dir = tempfile::tempdir().unwrap();
+        let a = temp_dir.path().join("a");
+        let b = a.join("b");
+        let c = b.join("c");
+        std::fs::create_dir_all(c.join(".git")).unwrap();
+
+        std::fs::write(a.join(".gh-board.toml"), "").unwrap();
+        std::fs::write(b.join(".gh-board.toml"), "").unwrap();
+        std::fs::write(c.join("gh-board.toml"), "").unwrap();
+
+        let chain = find_local_config_chain_from(c.clone());
+        assert_eq!(chain.len(), 3);
+        assert_eq!(chain[0].parent().unwrap().file_name().unwrap(), "a");
+        assert_eq!(chain[1].parent().unwrap().file_name().unwrap(), "b");
+        assert_eq!(chain[2].parent().unwrap().file_name().unwrap(), "c");
+    }
+
+    #[test]
+    fn config_chain_no_ancestor_config_returns_project_only() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let repo = temp_dir.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+        std::fs::write(repo.join("gh-board.toml"), "").unwrap();
+
+        let chain = find_local_config_chain_from(repo.clone());
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].parent().unwrap().file_name().unwrap(), "repo");
+    }
+
+    #[test]
+    fn config_chain_ancestor_only_no_project_config() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let parent = temp_dir.path().join("parent");
+        let repo = parent.join("repo");
+        std::fs::create_dir_all(repo.join(".git")).unwrap();
+
+        std::fs::write(parent.join(".gh-board.toml"), "").unwrap();
+        // No config at repo level.
+
+        let chain = find_local_config_chain_from(repo);
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].parent().unwrap().file_name().unwrap(), "parent");
     }
 }

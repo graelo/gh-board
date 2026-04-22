@@ -7,6 +7,28 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-04-22
+
+### Added
+
+- **Ancestor directory config discovery** — config loading now walks parent
+  directories above the Git root (up to `$HOME`), merging any `gh-board.toml`
+  or `.gh-board.toml` found along the way. Merge order: global < farthest
+  ancestor < nearest ancestor < project. This lets you place shared
+  `repo_paths`, filters, or theme settings in a parent directory covering
+  multiple repositories
+
+### Changed
+
+- Config loading refactored from two-source merge (global + local) to N-layer
+  fold; `find_config_in` helper deduplicates file-name preference logic
+
+### Security
+
+- Bump `rustls-webpki` 0.103.12 → 0.103.13 (RUSTSEC-2026-0104: reachable
+  panic in CRL parsing)
+- Bump `unicode-segmentation` 1.13.1 → 1.13.2 (yanked crate)
+
 ## [0.12.0] - 2026-04-21
 
 ### Added
@@ -330,7 +352,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
-[Unreleased]: https://github.com/graelo/gh-board/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/graelo/gh-board/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/graelo/gh-board/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/graelo/gh-board/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/graelo/gh-board/compare/v0.10.3...v0.11.0

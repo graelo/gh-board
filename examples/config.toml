@@ -7,12 +7,14 @@
 #   - ANSI-256 index: "0" through "255" (indices 0-15 respect terminal palette)
 #   - Hex color: "#RRGGBB" or "#RGB"
 #
-# Config priority (highest to lowest):
-#   1. --config flag
-#   2. gh-board.toml or .gh-board.toml in Git repo root
-#   3. $GH_BOARD_CONFIG env var
-#   4. $XDG_CONFIG_HOME/gh-board/config.toml
-#   5. ~/.config/gh-board/config.toml
+# Config layers (each overrides the previous):
+#   1. Global: $GH_BOARD_CONFIG / $XDG_CONFIG_HOME/gh-board/config.toml /
+#      ~/.config/gh-board/config.toml
+#   2. Ancestor dirs: gh-board.toml or .gh-board.toml in parent directories
+#      above the Git root (up to $HOME, farthest ancestor first)
+#   3. Project: gh-board.toml or .gh-board.toml at the Git repo root
+#
+# --config <path> bypasses all discovery and loads only the given file.
 
 # ==============================================================================
 # THEME FILE

@@ -173,24 +173,28 @@ gh-board [COMMAND] [OPTIONS] [URL]
 
 ### Configuration
 
-Configuration files are loaded in this priority order:
+Configuration files are loaded and merged in this priority order (each layer
+overrides the previous):
 
-1. `--config` flag
-2. `gh-board.toml` or `.gh-board.toml` in current Git repository root
-3. `$GH_BOARD_CONFIG` environment variable
-4. `$XDG_CONFIG_HOME/gh-board/config.toml`
-5. `~/.config/gh-board/config.toml` (macOS:
+1. **Global**: `$GH_BOARD_CONFIG` → `$XDG_CONFIG_HOME/gh-board/config.toml` →
+   `~/.config/gh-board/config.toml` (macOS:
    `~/Library/Application Support/gh-board/config.toml`)
+2. **Ancestor directories**: walking up from the Git root toward `$HOME`, each
+   `gh-board.toml` or `.gh-board.toml` found in a parent directory is merged on
+   top (farthest ancestor first). This lets you define shared `repo_paths`,
+   filters, or theme settings for a group of repositories.
+3. **Project**: `gh-board.toml` or `.gh-board.toml` at the Git repository root.
 
-Repo-local config (`gh-board.toml` or `.gh-board.toml`) merges on top of global
-config:
+`--config <path>` bypasses all discovery and loads only the given file.
 
-- Settings in the local config override global values for the same key
-- Missing keys in local config fall back to global settings
-- Filter lists (`pr_filters`, `issues_filters`, etc.) replace global only when
-    non-empty; otherwise, global filters are preserved
-- `repo_paths` from both configs are merged (local entries override matching
-    global keys)
+Merge rules (applied at each layer):
+
+- Settings override previous values for the same key
+- Missing keys fall back to the previous layer
+- Filter lists (`pr_filters`, `issues_filters`, etc.) replace the previous
+    layer only when non-empty
+- `repo_paths` are merged (closer entries override matching keys from farther
+    layers)
 
 ## Documentation
 

@@ -721,9 +721,7 @@ pub fn RepoView<'a>(props: &RepoViewProps<'a>, mut hooks: Hooks) -> impl Into<An
                         prs, rate_limit, ..
                     } = ev
                     {
-                        if rate_limit.is_some() {
-                            rate_limit_state.set(rate_limit);
-                        }
+                        super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         let mut map = pr_map.read().clone();
                         for pr in prs {
                             if let Some(repo_ref) = &pr.repo {

@@ -552,9 +552,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             issues,
                             rate_limit,
                         } => {
-                            if rate_limit.is_some() {
-                                rate_limit_state.set(rate_limit);
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                             let detail_snap = detail_cache.read().clone();
                             let rows: Vec<Row> = issues
                                 .iter()
@@ -597,9 +595,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             let mut cache = detail_cache.read().clone();
                             cache.insert(number, detail);
                             detail_cache.set(cache);
-                            if let Some(rl) = rate_limit {
-                                rate_limit_state.set(Some(rl));
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         }
                         Event::IssueRefreshed {
                             number,
@@ -607,9 +603,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             detail,
                             rate_limit,
                         } => {
-                            if rate_limit.is_some() {
-                                rate_limit_state.set(rate_limit);
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                             let mut state = issues_state.read().clone();
                             for fd in &mut state.filters {
                                 if let Some(idx) = fd.issues.iter().position(|i| i.number == number)
@@ -1292,6 +1286,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         filter_fetch_times.set(times);
                                         pending_detail.set(None);
                                         detail_cache.set(HashMap::new());
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -1306,6 +1301,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         filter_fetch_times.set(times);
                                         pending_detail.set(None);
                                         detail_cache.set(HashMap::new());
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);

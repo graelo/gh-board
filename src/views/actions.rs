@@ -634,9 +634,7 @@ pub fn ActionsView<'a>(
                             // displaying stale results from the previous poll.
                             jobs_cache.set(HashMap::new());
                             jobs_in_flight.set(HashSet::new());
-                            if let Some(rl) = rate_limit {
-                                rate_limit_state.set(Some(rl));
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
 
                             // If this is an ephemeral tab with a pending run_id,
                             // check whether the target run is in the results.
@@ -687,9 +685,7 @@ pub fn ActionsView<'a>(
                             let mut ifl = jobs_in_flight.read().clone();
                             ifl.remove(&run_id);
                             jobs_in_flight.set(ifl);
-                            if let Some(rl) = rate_limit {
-                                rate_limit_state.set(Some(rl));
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         }
                         Event::MutationOk { description } => {
                             action_status.set(Some(ActionFeedback::Success(description)));
@@ -775,9 +771,7 @@ pub fn ActionsView<'a>(
                                 ))));
                                 status_set_at.set(Some(std::time::Instant::now()));
                             }
-                            if let Some(rl) = rate_limit {
-                                rate_limit_state.set(Some(rl));
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         }
                         Event::FetchError { message, .. } => {
                             let ifl = filter_in_flight.read().clone();
@@ -823,9 +817,7 @@ pub fn ActionsView<'a>(
                                 }
                             }
                             actions_state.set(state);
-                            if let Some(rl) = rate_limit {
-                                rate_limit_state.set(Some(rl));
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         }
                         Event::WatchHookResult {
                             run_id,
@@ -1493,6 +1485,9 @@ pub fn ActionsView<'a>(
                                         // a new FetchRunJobs from being sent).
                                         jobs_cache.set(HashMap::new());
                                         jobs_in_flight.set(HashSet::new());
+                                        // Reset the monotonic rate-limit guard so
+                                        // the next response seeds the counter.
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -1507,6 +1502,7 @@ pub fn ActionsView<'a>(
                                         filter_fetch_times.set(times);
                                         jobs_cache.set(HashMap::new());
                                         jobs_in_flight.set(HashSet::new());
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);

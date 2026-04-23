@@ -884,9 +884,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                             }
                             filter_fetch_times.set(times);
                             super::common::set_in_flight(&mut filter_in_flight, filter_idx, false);
-                            if let Some(rl) = rate_limit {
-                                rate_limit_state.set(Some(rl));
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         }
                         Event::SecretLocationsFetched {
                             alert_number,
@@ -1120,6 +1118,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                                             times[idx] = None;
                                         }
                                         filter_fetch_times.set(times);
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -1127,6 +1126,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                                         alerts_state.set(vec![FilterData::default(); filter_count]);
                                         filter_fetch_times.set(vec![None; filter_count]);
                                         filter_in_flight.set(vec![false; filter_count]);
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);

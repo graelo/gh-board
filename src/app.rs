@@ -16,6 +16,7 @@ use crate::color::ColorDepth;
 use crate::components::selection_overlay::{
     RenderedSelectionOverlay, SelectionOverlay, SelectionOverlayBuildConfig, SelectionOverlayItem,
 };
+use crate::components::text_input::filter_suggestions;
 use crate::config::keybindings::MergedBindings;
 use crate::config::types::{AppConfig, Scope};
 use crate::engine::EngineHandle;
@@ -273,6 +274,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     // Repo picker overlay state.
     let mut picker_visible = hooks.use_state(|| false);
     let mut picker_cursor = hooks.use_state(|| 0_usize);
+    let mut picker_filter = hooks.use_state(String::new);
 
     // Repo picker signal: child views set this to request the picker overlay.
     let mut picker_signal = hooks.use_state(|| false);
@@ -282,6 +284,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         let has_items = detected_repo.is_some() || config.is_some_and(|c| !c.repo_paths.is_empty());
         if has_items {
             picker_cursor.set(0);
+            picker_filter.set(String::new());
             picker_visible.set(true);
         }
     }
@@ -302,7 +305,6 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
         }
         items
     };
-    let picker_items_len = picker_items.len();
     let picker_items_for_closure = picker_items.clone();
     let detected_repo_name = detected_repo.map(RepoRef::full_name);
 
@@ -316,17 +318,22 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 if kind == KeyEventKind::Release {
                     return;
                 }
+                // Compute filtered list for navigation & selection.
+                let filter_buf = picker_filter.read().clone();
+                let filtered = filter_suggestions(&picker_items_for_closure, &filter_buf);
+                let filtered_len = filtered.len();
+
                 match code {
-                    KeyCode::Char('j') | KeyCode::Down => {
+                    KeyCode::Down => {
                         picker_cursor
-                            .set((picker_cursor.get() + 1).min(picker_items_len.saturating_sub(1)));
+                            .set((picker_cursor.get() + 1).min(filtered_len.saturating_sub(1)));
                     }
-                    KeyCode::Char('k') | KeyCode::Up => {
+                    KeyCode::Up => {
                         picker_cursor.set(picker_cursor.get().saturating_sub(1));
                     }
                     KeyCode::Enter => {
                         let idx = picker_cursor.get();
-                        if let Some(name) = picker_items_for_closure.get(idx) {
+                        if let Some(name) = filtered.get(idx) {
                             // If selecting the originally detected repo, clear override.
                             let is_detected =
                                 detected_repo_name.as_ref().is_some_and(|d| d == name);
@@ -338,10 +345,31 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                             // Activate scope so the selection takes effect immediately.
                             repo_scoped.set(true);
                         }
+                        picker_filter.set(String::new());
                         picker_visible.set(false);
                     }
                     KeyCode::Esc => {
+                        picker_filter.set(String::new());
                         picker_visible.set(false);
+                    }
+                    KeyCode::Backspace => {
+                        let mut buf = picker_filter.read().clone();
+                        buf.pop();
+                        picker_filter.set(buf);
+                        // Clamp cursor to new filtered length.
+                        let new_len =
+                            filter_suggestions(&picker_items_for_closure, &picker_filter.read())
+                                .len();
+                        if picker_cursor.get() >= new_len {
+                            picker_cursor.set(new_len.saturating_sub(1));
+                        }
+                    }
+                    KeyCode::Char(ch) => {
+                        let mut buf = picker_filter.read().clone();
+                        buf.push(ch);
+                        picker_filter.set(buf);
+                        // Reset cursor and clamp to new filtered length.
+                        picker_cursor.set(0);
                     }
                     _ => {}
                 }
@@ -381,11 +409,14 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let rendered_repo_picker: Option<RenderedSelectionOverlay> = if picker_visible.get() {
         let theme_ref = theme.unwrap();
         let anchor_icon = &theme_ref.icons.repo_anchor;
-        let overlay_items: Vec<SelectionOverlayItem> = picker_items
+        let filter_buf = picker_filter.read().clone();
+        let filtered = filter_suggestions(&picker_items, &filter_buf);
+        let overlay_items: Vec<SelectionOverlayItem> = filtered
             .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                let label = if i == 0 && detected_repo.is_some() {
+            .map(|name| {
+                // Detected repo (first in unfiltered list) gets the anchor icon.
+                let is_detected = detected_repo.is_some_and(|d| d.full_name() == *name);
+                let label = if is_detected {
                     format!("{name} {anchor_icon}")
                 } else {
                     name.clone()
@@ -398,6 +429,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 title: "Select repo".to_owned(),
                 items: overlay_items,
                 cursor: picker_cursor.get(),
+                show_filter: true,
+                filter_text: filter_buf,
                 depth,
                 title_color: Some(theme_ref.text_primary),
                 item_color: Some(theme_ref.text_secondary),
@@ -405,6 +438,8 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                 selected_bg: Some(theme_ref.bg_selected),
                 border_color: Some(theme_ref.border_primary),
                 hint_color: Some(theme_ref.text_faint),
+                filter_prompt_color: Some(theme_ref.text_faint),
+                filter_text_color: Some(theme_ref.text_primary),
                 cursor_marker: theme_ref.icons.select_cursor.clone(),
             },
         ))

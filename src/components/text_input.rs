@@ -117,7 +117,7 @@ impl RenderedTextInput {
 // Autocomplete filtering helper (T085)
 // ---------------------------------------------------------------------------
 
-/// Filter a list of candidates by a query string (case-insensitive prefix match).
+/// Filter a list of candidates by a query string (case-insensitive substring match).
 pub(crate) fn filter_suggestions(candidates: &[String], query: &str) -> Vec<String> {
     if query.is_empty() {
         return candidates.to_vec();

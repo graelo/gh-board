@@ -2797,6 +2797,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 title: "Select workflow run".to_owned(),
                 items: overlay_items,
                 cursor: run_selector_cursor.get(),
+                show_filter: false,
+                filter_text: String::new(),
                 depth,
                 title_color: Some(theme.text_primary),
                 item_color: Some(theme.text_secondary),
@@ -2804,6 +2806,8 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                 selected_bg: Some(theme.bg_selected),
                 border_color: Some(theme.border_primary),
                 hint_color: Some(theme.text_faint),
+                filter_prompt_color: None,
+                filter_text_color: None,
                 cursor_marker: theme.icons.select_cursor.clone(),
             })
         })

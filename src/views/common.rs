@@ -182,3 +182,58 @@ pub(crate) fn handle_multiselect_input(
         _ => {}
     }
 }
+
+// ---------------------------------------------------------------------------
+// Mouse scroll helpers
+// ---------------------------------------------------------------------------
+
+/// Number of rows to scroll per mouse wheel tick.
+pub const MOUSE_SCROLL_LINES: isize = 3;
+
+/// Scroll the table viewport by `delta` rows without moving the selection
+/// cursor. If the cursor falls outside the new visible window it is clamped to
+/// the nearest visible row.
+pub fn mouse_scroll_table(
+    mut scroll_offset: State<usize>,
+    mut cursor: State<usize>,
+    total_rows: usize,
+    visible_rows: usize,
+    delta: isize,
+) {
+    if total_rows == 0 {
+        return;
+    }
+    let max_offset = total_rows.saturating_sub(visible_rows);
+    let current = scroll_offset.get();
+    let new_offset = if delta > 0 {
+        current
+            .saturating_add(delta.cast_unsigned())
+            .min(max_offset)
+    } else {
+        current.saturating_sub((-delta).cast_unsigned())
+    };
+    scroll_offset.set(new_offset);
+
+    // Clamp cursor into the visible window.
+    let cur = cursor.get();
+    if cur < new_offset {
+        cursor.set(new_offset);
+    } else if cur >= new_offset + visible_rows {
+        cursor.set((new_offset + visible_rows).saturating_sub(1));
+    }
+}
+
+/// Scroll the sidebar viewport by `delta` rows.
+///
+/// Bounds are handled by the sidebar's existing render-time clamping in
+/// `compute_visual_layout`, so we only need `saturating_add`/`saturating_sub`
+/// here.
+pub fn mouse_scroll_sidebar(mut preview_scroll: State<usize>, delta: isize) {
+    let current = preview_scroll.get();
+    let new_val = if delta > 0 {
+        current.saturating_add(delta.cast_unsigned())
+    } else {
+        current.saturating_sub((-delta).cast_unsigned())
+    };
+    preview_scroll.set(new_val);
+}

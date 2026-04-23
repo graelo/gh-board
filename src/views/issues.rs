@@ -324,6 +324,7 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
     let scope_repo = &props.scope_repo;
     let filter_count = filters_cfg.len();
     let is_active = props.is_active;
+    let width = props.width;
     let preview_pct_state = props.preview_width_pct;
     let preview_pct = preview_pct_state.map_or(0.45, |s| s.get());
     let default_pct = props.default_preview_pct;
@@ -1508,6 +1509,33 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                             }
                         }
                     }
+                }
+            }
+            TerminalEvent::FullscreenMouse(mouse_event) => {
+                if !is_active || help_visible.get() {
+                    return;
+                }
+                let delta = match mouse_event.kind {
+                    MouseEventKind::ScrollDown => super::common::MOUSE_SCROLL_LINES,
+                    MouseEventKind::ScrollUp => -super::common::MOUSE_SCROLL_LINES,
+                    _ => return,
+                };
+                let in_sidebar = preview_open.get() && {
+                    let pct = preview_pct_state.map_or(default_pct, |s| s.get());
+                    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let sb_w = (f64::from(width) * pct).round() as u16;
+                    mouse_event.column >= width.saturating_sub(sb_w)
+                };
+                if in_sidebar {
+                    super::common::mouse_scroll_sidebar(preview_scroll, delta);
+                } else {
+                    super::common::mouse_scroll_table(
+                        scroll_offset,
+                        cursor,
+                        total_rows,
+                        visible_rows,
+                        delta,
+                    );
                 }
             }
             _ => {}

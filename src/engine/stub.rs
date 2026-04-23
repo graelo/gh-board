@@ -217,6 +217,7 @@ impl StubEngine {
                             run_started_at: None,
                         },
                         completed: true,
+                        jobs: None,
                         rate_limit: None,
                     });
                 }

@@ -64,14 +64,19 @@ impl WatchScheduler {
     }
 
     /// Return entries whose poll interval has elapsed (or never been polled).
+    ///
+    /// A 1-second tolerance absorbs the delay between the tokio tick firing
+    /// and `mark_polled` recording the wall-clock time after the API call.
+    /// Without it, the next tick consistently misses by that delta and the
+    /// effective period doubles.
     pub(super) fn due_entries(&self) -> Vec<DueWatchEntry> {
         let now = SystemTime::now();
+        let threshold = self.interval.saturating_sub(Duration::from_secs(1));
         self.entries
             .iter()
             .filter(|e| {
-                e.last_poll.is_none_or(|t| {
-                    now.duration_since(t).unwrap_or(Duration::ZERO) >= self.interval
-                })
+                e.last_poll
+                    .is_none_or(|t| now.duration_since(t).unwrap_or(Duration::ZERO) >= threshold)
             })
             .map(|e| DueWatchEntry {
                 owner: e.owner.clone(),

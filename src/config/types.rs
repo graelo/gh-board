@@ -98,6 +98,9 @@ pub struct AppConfig {
 pub struct ActionsConfig {
     /// Seconds between polls for watched runs (default: 30).
     pub watch_poll_interval_seconds: Option<u32>,
+    /// Also fetch job/step progress on each watch poll so the sidebar updates
+    /// live. Costs one extra REST call per poll per watched run (default: false).
+    pub watch_fetch_jobs: Option<bool>,
     /// Shell command to run when a watched run completes.
     /// Supports template variables: `{{.Url}}`, `{{.RepoName}}`,
     /// `{{.RunId}}`, `{{.RunName}}`, `{{.RunNumber}}`, `{{.Conclusion}}`,

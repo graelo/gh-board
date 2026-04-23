@@ -259,10 +259,12 @@ fn parse_actions_config() {
     let toml = r#"
 [actions]
 watch_poll_interval_seconds = 15
+watch_fetch_jobs = true
 watch_complete_command = "notify-send '{{.RunName}} done'"
 "#;
     let config: AppConfig = toml::from_str(toml).unwrap();
     assert_eq!(config.actions.watch_poll_interval_seconds, Some(15));
+    assert_eq!(config.actions.watch_fetch_jobs, Some(true));
     assert_eq!(
         config.actions.watch_complete_command.as_deref(),
         Some("notify-send '{{.RunName}} done'")

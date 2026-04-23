@@ -828,7 +828,7 @@ async fn handle_approve_pr(
     };
     let result = pr_actions::approve(&octocrab, &owner, &repo, number, body.as_deref()).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -837,6 +837,9 @@ async fn handle_approve_pr(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_merge_pr(
@@ -851,7 +854,7 @@ async fn handle_merge_pr(
     };
     let result = pr_actions::merge(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -860,6 +863,9 @@ async fn handle_merge_pr(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_close_pr(
@@ -874,7 +880,7 @@ async fn handle_close_pr(
     };
     let result = pr_actions::close(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -883,6 +889,9 @@ async fn handle_close_pr(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_reopen_pr(
@@ -897,7 +906,7 @@ async fn handle_reopen_pr(
     };
     let result = pr_actions::reopen(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -906,6 +915,9 @@ async fn handle_reopen_pr(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_add_pr_comment(
@@ -921,7 +933,7 @@ async fn handle_add_pr_comment(
     };
     let result = pr_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -930,6 +942,9 @@ async fn handle_add_pr_comment(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_update_branch(
@@ -944,7 +959,7 @@ async fn handle_update_branch(
     };
     let result = pr_actions::update_branch(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -953,6 +968,9 @@ async fn handle_update_branch(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_ready_for_review(
@@ -967,7 +985,7 @@ async fn handle_ready_for_review(
     };
     let result = pr_actions::ready_for_review(&octocrab, &owner, &repo, number).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -976,6 +994,9 @@ async fn handle_ready_for_review(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_set_pr_assignees(
@@ -991,7 +1012,7 @@ async fn handle_set_pr_assignees(
     };
     let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -1000,6 +1021,9 @@ async fn handle_set_pr_assignees(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_set_pr_labels(
@@ -1015,7 +1039,7 @@ async fn handle_set_pr_labels(
     };
     let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
     let ck = Some(format!("pr:{owner}/{repo}#{number}"));
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -1024,6 +1048,9 @@ async fn handle_set_pr_labels(
         ck,
     )
     .await;
+    if ok {
+        post_mutation_refresh_pr(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_close_issue(
@@ -1037,7 +1064,7 @@ async fn handle_close_issue(
         return;
     };
     let result = issue_actions::close(&octocrab, &owner, &repo, number).await;
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -1046,6 +1073,9 @@ async fn handle_close_issue(
         None,
     )
     .await;
+    if ok {
+        post_mutation_refresh_issue(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_reopen_issue(
@@ -1059,7 +1089,7 @@ async fn handle_reopen_issue(
         return;
     };
     let result = issue_actions::reopen(&octocrab, &owner, &repo, number).await;
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -1068,6 +1098,9 @@ async fn handle_reopen_issue(
         None,
     )
     .await;
+    if ok {
+        post_mutation_refresh_issue(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_add_issue_comment(
@@ -1082,7 +1115,7 @@ async fn handle_add_issue_comment(
         return;
     };
     let result = issue_actions::add_comment(&octocrab, &owner, &repo, number, &body).await;
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -1091,6 +1124,9 @@ async fn handle_add_issue_comment(
         None,
     )
     .await;
+    if ok {
+        post_mutation_refresh_issue(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_set_issue_labels(
@@ -1105,7 +1141,7 @@ async fn handle_set_issue_labels(
         return;
     };
     let result = issue_actions::set_labels(&octocrab, &owner, &repo, number, &labels).await;
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -1114,6 +1150,9 @@ async fn handle_set_issue_labels(
         None,
     )
     .await;
+    if ok {
+        post_mutation_refresh_issue(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_set_issue_assignees(
@@ -1128,7 +1167,7 @@ async fn handle_set_issue_assignees(
         return;
     };
     let result = issue_actions::set_assignees(&octocrab, &owner, &repo, number, &logins).await;
-    send_mutation_result(
+    let ok = send_mutation_result(
         client,
         &reply_tx,
         result,
@@ -1137,6 +1176,9 @@ async fn handle_set_issue_assignees(
         None,
     )
     .await;
+    if ok {
+        post_mutation_refresh_issue(client, &owner, &repo, number, &reply_tx).await;
+    }
 }
 
 async fn handle_rerun_workflow_run(
@@ -1670,6 +1712,9 @@ fn get_octocrab(
 
 /// Dispatch a mutation result: on success, optionally invalidate the cache and
 /// send `MutationOk`; on failure, send `MutationError`.
+///
+/// Returns `true` when the mutation succeeded (so the caller can trigger a
+/// post-mutation per-item refresh).
 async fn send_mutation_result(
     client: &GitHubClient,
     reply_tx: &Sender<Event>,
@@ -1677,7 +1722,7 @@ async fn send_mutation_result(
     ok_desc: String,
     err_desc: String,
     cache_key: Option<String>,
-) {
+) -> bool {
     match result {
         Ok(()) => {
             if let Some(key) = cache_key {
@@ -1686,12 +1731,100 @@ async fn send_mutation_result(
             let _ = reply_tx.send(Event::MutationOk {
                 description: ok_desc,
             });
+            true
         }
         Err(e) => {
             let _ = reply_tx.send(Event::MutationError {
                 description: err_desc,
                 message: e.to_string(),
             });
+            false
+        }
+    }
+}
+
+/// After a successful PR mutation, fetch the updated PR data and send a
+/// `PrRefreshed` event so the view can update the row in place instead of
+/// doing a full table refresh.
+async fn post_mutation_refresh_pr(
+    client: &mut GitHubClient,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    reply_tx: &Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", reply_tx, "PostMutationRefreshPr")
+    else {
+        return;
+    };
+    let cache = client.cache();
+    let full_key = format!("full_pr:{owner}/{repo}#{number}");
+    let detail_key = format!("pr:{owner}/{repo}#{number}");
+    cache.remove(&full_key).await;
+    cache.remove(&detail_key).await;
+    match graphql::fetch_single_pr(&octocrab, owner, repo, number, Some(&cache)).await {
+        Ok((pr, mut detail, rate_limit)) => {
+            if detail.behind_by.is_none()
+                && let Some(ref head_owner) = pr.head_repo_owner
+            {
+                match graphql::fetch_compare(
+                    &octocrab,
+                    owner,
+                    repo,
+                    &pr.base_ref,
+                    head_owner,
+                    &pr.head_ref,
+                )
+                .await
+                {
+                    Ok(n) => detail.behind_by = n,
+                    Err(e) => {
+                        tracing::warn!("engine: post-mutation compare for #{number}: {e:#}");
+                    }
+                }
+            }
+            let _ = reply_tx.send(Event::PrRefreshed {
+                number,
+                pr: Box::new(pr),
+                detail,
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: post-mutation refresh for PR #{number}: {e}");
+        }
+    }
+}
+
+/// After a successful issue mutation, fetch the updated issue data and send an
+/// `IssueRefreshed` event so the view can update the row in place.
+async fn post_mutation_refresh_issue(
+    client: &mut GitHubClient,
+    owner: &str,
+    repo: &str,
+    number: u64,
+    reply_tx: &Sender<Event>,
+) {
+    let Some(octocrab) = get_octocrab(client, "github.com", reply_tx, "PostMutationRefreshIssue")
+    else {
+        return;
+    };
+    let cache = client.cache();
+    let full_key = format!("full_issue:{owner}/{repo}#{number}");
+    let detail_key = format!("issue:{owner}/{repo}#{number}");
+    cache.remove(&full_key).await;
+    cache.remove(&detail_key).await;
+    match graphql::fetch_single_issue(&octocrab, owner, repo, number, Some(&cache)).await {
+        Ok((issue, detail, rate_limit)) => {
+            let _ = reply_tx.send(Event::IssueRefreshed {
+                number,
+                issue: Box::new(issue),
+                detail,
+                rate_limit,
+            });
+        }
+        Err(e) => {
+            tracing::warn!("engine: post-mutation refresh for issue #{number}: {e}");
         }
     }
 }

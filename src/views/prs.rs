@@ -807,7 +807,6 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
         let theme_for_poll = theme.clone();
         let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
         let prefetch_limit = props.prefetch_pr_details as usize;
-        let current_filter_for_poll = current_filter_idx;
         let engine = engine_for_poll;
         let event_tx = event_tx.clone();
         hooks.use_future(async move {
@@ -1005,29 +1004,10 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                         Event::MutationOk { description } => {
                             action_status.set(Some(ActionFeedback::Success(description)));
                             status_set_at.set(Some(std::time::Instant::now()));
-                            // Invalidate detail state so activity sidebar refreshes.
-                            detail_cache.set(HashMap::new());
-                            pending_detail.set(None);
-                            force_detail.set(true);
-                            // Trigger a refetch of the active filter.
-                            let mut state = prs_state.read().clone();
-                            if current_filter_for_poll < state.filters.len() {
-                                state.filters[current_filter_for_poll] = FilterData::default();
-                            }
-                            prs_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            if current_filter_for_poll < times.len() {
-                                times[current_filter_for_poll] = None;
-                            }
-                            filter_fetch_times.set(times);
-                            // Must come LAST: force_refresh is consumed by the
-                            // lazy-fetch trigger only when active_needs_fetch
-                            // (loading=true) is already visible in the same
-                            // render. Setting it before prs_state.set() risks
-                            // a render where loading is still false and the
-                            // flag is silently dropped, causing a non-forced
-                            // (cached) refetch.
-                            force_refresh.set(true);
+                            // The engine sends a PrRefreshed event right after
+                            // MutationOk, which will update the row in place
+                            // and refresh the detail cache — no full table
+                            // refresh needed.
                         }
                         Event::MutationError {
                             description,

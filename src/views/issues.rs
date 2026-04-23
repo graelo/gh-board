@@ -526,7 +526,6 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
         let rx_for_poll = event_rx_arc.clone();
         let theme_for_poll = theme.clone();
         let date_format_for_poll = props.date_format.unwrap_or("relative").to_owned();
-        let current_filter_for_poll = current_filter_idx;
         hooks.use_future(async move {
             loop {
                 smol::Timer::after(std::time::Duration::from_millis(100)).await;
@@ -655,25 +654,9 @@ pub fn IssuesView<'a>(props: &IssuesViewProps<'a>, mut hooks: Hooks) -> impl Int
                         Event::MutationOk { description } => {
                             action_status.set(Some(ActionFeedback::Success(description)));
                             status_set_at.set(Some(std::time::Instant::now()));
-                            // Trigger a refetch of the active filter.
-                            let mut state = issues_state.read().clone();
-                            if current_filter_for_poll < state.filters.len() {
-                                state.filters[current_filter_for_poll] = FilterData::default();
-                            }
-                            issues_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            if current_filter_for_poll < times.len() {
-                                times[current_filter_for_poll] = None;
-                            }
-                            filter_fetch_times.set(times);
-                            // Must come LAST: force_refresh is consumed by the
-                            // lazy-fetch trigger only when active_needs_fetch
-                            // (loading=true) is already visible in the same
-                            // render. Setting it before issues_state.set()
-                            // risks a render where loading is still false and
-                            // the flag is silently dropped, causing a
-                            // non-forced (cached) refetch.
-                            force_refresh.set(true);
+                            // The engine sends an IssueRefreshed event right
+                            // after MutationOk, which will update the row in
+                            // place — no full table refresh needed.
                         }
                         Event::MutationError {
                             description,

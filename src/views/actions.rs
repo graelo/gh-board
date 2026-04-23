@@ -391,6 +391,7 @@ pub fn ActionsView<'a>(
     let goto_view = props.goto_view;
     let filter_count = filters_cfg.len();
     let is_active = props.is_active;
+    let width = props.width;
     let preview_pct_state = props.preview_width_pct;
     let preview_pct = preview_pct_state.map_or(0.45, |s| s.get());
     let default_pct = props.default_preview_pct;
@@ -1866,6 +1867,35 @@ pub fn ActionsView<'a>(
                             }
                         }
                     }
+                }
+            }
+            TerminalEvent::FullscreenMouse(mouse_event) => {
+                if !is_active || help_visible.get() {
+                    return;
+                }
+                let delta = match mouse_event.kind {
+                    MouseEventKind::ScrollDown => super::common::MOUSE_SCROLL_LINES,
+                    MouseEventKind::ScrollUp => -super::common::MOUSE_SCROLL_LINES,
+                    _ => return,
+                };
+                // Actions has 3 panels: nav | table | detail sidebar.
+                let nav_w: u16 = if nav_open.get() { NAV_W } else { 0 };
+                let in_sidebar = detail_open.get() && {
+                    let pct = preview_pct_state.map_or(default_pct, |s| s.get());
+                    #[expect(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+                    let sb_w = (f64::from(width) * pct).round() as u16;
+                    mouse_event.column >= width.saturating_sub(sb_w)
+                };
+                if in_sidebar {
+                    super::common::mouse_scroll_sidebar(detail_scroll, delta);
+                } else if mouse_event.column >= nav_w {
+                    super::common::mouse_scroll_table(
+                        scroll_offset,
+                        cursor,
+                        total_rows,
+                        visible_rows,
+                        delta,
+                    );
                 }
             }
             _ => {}

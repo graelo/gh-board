@@ -822,6 +822,23 @@ pub fn NotificationsView<'a>(
                     }
                 }
             }
+            TerminalEvent::FullscreenMouse(mouse_event) => {
+                if !is_active || help_visible.get() {
+                    return;
+                }
+                let delta = match mouse_event.kind {
+                    MouseEventKind::ScrollDown => super::common::MOUSE_SCROLL_LINES,
+                    MouseEventKind::ScrollUp => -super::common::MOUSE_SCROLL_LINES,
+                    _ => return,
+                };
+                super::common::mouse_scroll_table(
+                    scroll_offset,
+                    cursor,
+                    total_rows,
+                    visible_rows,
+                    delta,
+                );
+            }
             _ => {}
         }
     });

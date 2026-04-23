@@ -1007,11 +1007,25 @@ pub fn ActionsView<'a>(
             ref host,
         }) = target
         {
-            // 1. Search all loaded filter data (config + ephemeral) for this run.
+            // 1. Search all loaded filter data (config + ephemeral) for this run,
+            //    scoped to tabs whose repo matches the navigation target.
+            let full_repo = format!("{owner}/{repo}");
             let found = {
                 let state = actions_state.read();
                 state.filters.iter().enumerate().find_map(|(fi, fd)| {
                     if fd.loading {
+                        return None;
+                    }
+                    // Only consider tabs whose configured repo matches the target.
+                    let tab_matches = all_filters.get(fi).is_some_and(|(cfg, _)| {
+                        resolve_filter_repo(
+                            &cfg.repo,
+                            scope_repo.as_deref(),
+                            detected_repo.as_deref(),
+                        )
+                        .is_some_and(|r| r == full_repo)
+                    });
+                    if !tab_matches {
                         return None;
                     }
                     fd.runs
@@ -1038,7 +1052,6 @@ pub fn ActionsView<'a>(
                 // 2. Check if any config filter for the same repo is still
                 //    pending (in-flight or never-fetched). Only wait for
                 //    those — don't block on unrelated filters.
-                let full_repo = format!("{owner}/{repo}");
                 let repo_matches = |fi: usize| {
                     all_filters.get(fi).is_some_and(|(cfg, _)| {
                         resolve_filter_repo(

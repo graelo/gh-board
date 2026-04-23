@@ -7,6 +7,19 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-04-23
+
+### Added
+
+- **Mouse scroll wheel** — position-aware scroll wheel support across all six
+  views. Scrolls the table or sidebar depending on mouse cursor position, 3
+  rows per tick, without moving the selection cursor (clamped to visible range
+  when scrolled off-screen)
+
+### Changed
+
+- Bump `tree-sitter-c` 0.24.1 → 0.24.2
+
 ## [0.13.0] - 2026-04-22
 
 ### Added
@@ -352,7 +365,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
-[Unreleased]: https://github.com/graelo/gh-board/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/graelo/gh-board/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/graelo/gh-board/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/graelo/gh-board/compare/v0.11.1...v0.12.0
 [0.11.1]: https://github.com/graelo/gh-board/compare/v0.11.0...v0.11.1

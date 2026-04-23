@@ -7,6 +7,7 @@ use crate::app::ViewKind;
 use crate::components::text_input;
 use crate::config::keybindings::BuiltinAction;
 use crate::engine::Event;
+use crate::types::RateLimitInfo;
 
 /// Type alias for the event channel pair used by every view.
 ///
@@ -53,6 +54,34 @@ pub fn set_in_flight(state: &mut State<Vec<bool>>, idx: usize, value: bool) {
         v[idx] = value;
     }
     state.set(v);
+}
+
+/// Update the displayed rate-limit only when the new `remaining` count is
+/// lower than (or equal to) the currently stored value.
+///
+/// GitHub's `x-ratelimit-remaining` header is eventually consistent across
+/// their distributed API servers: two sequential REST calls can report
+/// different `remaining` values because they hit different servers whose
+/// counters have not yet synced.  Blindly overwriting the displayed value on
+/// every response causes visible flickering (e.g. 4981 → 4962 → 4978).
+///
+/// A monotonic-decrease guard eliminates this: within a single rate-limit
+/// window the counter can only go down, so any *increase* is a stale read
+/// and should be ignored.
+///
+/// The guard is reset on explicit full-refresh ('R' / ctrl-r) by calling
+/// `rate_limit_state.set(None)`, which lets the next response seed the
+/// counter unconditionally.
+pub fn update_rate_limit(state: &mut State<Option<RateLimitInfo>>, new: Option<RateLimitInfo>) {
+    if let Some(rl) = new {
+        let dominated = state
+            .read()
+            .as_ref()
+            .is_none_or(|cur| rl.remaining <= cur.remaining);
+        if dominated {
+            state.set(Some(rl));
+        }
+    }
 }
 
 /// Resolve the final selection list from the current multiselect state.

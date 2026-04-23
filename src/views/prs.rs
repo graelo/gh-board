@@ -854,9 +854,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                 "prs: PrsFetched received: filter_idx={filter_idx} count={}",
                                 prs.len()
                             );
-                            if rate_limit.is_some() {
-                                rate_limit_state.set(rate_limit);
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                             let detail_snap = detail_cache.read().clone();
                             let rows: Vec<Row> = prs
                                 .iter()
@@ -923,9 +921,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             detail,
                             rate_limit,
                         } => {
-                            if rate_limit.is_some() {
-                                rate_limit_state.set(rate_limit);
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                             // Update the "update" cell in the table row.
                             // Skip for closed/merged PRs — branch status is irrelevant.
                             let mut state = prs_state.read().clone();
@@ -955,9 +951,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                             detail,
                             rate_limit,
                         } => {
-                            if rate_limit.is_some() {
-                                rate_limit_state.set(rate_limit);
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                             // Update table row in ALL filters.
                             let mut state = prs_state.read().clone();
                             for fd in &mut state.filters {
@@ -2056,6 +2050,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         pending_detail.set(None);
                                         detail_cache.set(HashMap::new());
                                         force_detail.set(true);
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -2072,6 +2067,7 @@ pub fn PrsView<'a>(props: &PrsViewProps<'a>, mut hooks: Hooks) -> impl Into<AnyE
                                         pending_detail.set(None);
                                         detail_cache.set(HashMap::new());
                                         force_detail.set(true);
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);

@@ -422,9 +422,7 @@ pub fn NotificationsView<'a>(
                             }
                             filter_fetch_times.set(times);
                             super::common::set_in_flight(&mut filter_in_flight, filter_idx, false);
-                            if let Some(rl) = rate_limit {
-                                rate_limit_state.set(Some(rl));
-                            }
+                            super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         }
                         Event::FetchError {
                             context: _,
@@ -681,6 +679,7 @@ pub fn NotificationsView<'a>(
                                             times[idx] = None;
                                         }
                                         filter_fetch_times.set(times);
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                     }
@@ -693,6 +692,7 @@ pub fn NotificationsView<'a>(
                                         let mut times = filter_fetch_times.read().clone();
                                         times.fill(None);
                                         filter_fetch_times.set(times);
+                                        rate_limit_state.set(None);
                                         cursor.set(0);
                                         scroll_offset.set(0);
                                         refresh_all.set(true);

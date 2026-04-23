@@ -157,6 +157,7 @@ fn merge_actions_config(
         watch_poll_interval_seconds: local
             .watch_poll_interval_seconds
             .or(global.watch_poll_interval_seconds),
+        watch_fetch_jobs: local.watch_fetch_jobs.or(global.watch_fetch_jobs),
         watch_complete_command: local
             .watch_complete_command
             .clone()

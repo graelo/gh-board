@@ -63,6 +63,7 @@ impl GitHubEngine {
                 .unwrap_or(30),
         );
         let mut watch_scheduler = WatchScheduler::new(Duration::from_secs(watch_poll_secs));
+        let watch_fetch_jobs = self.config.actions.watch_fetch_jobs.unwrap_or(false);
         let complete_command = self.config.actions.watch_complete_command.clone();
 
         let refresh_interval = Duration::from_mins(u64::from(refetch_mins).max(1));
@@ -132,7 +133,7 @@ impl GitHubEngine {
                     }
                 }
                 _ = watch_tick.tick(), if !watch_scheduler.is_empty() => {
-                    tick_watches(&mut client, &mut watch_scheduler, complete_command.as_ref()).await;
+                    tick_watches(&mut client, &mut watch_scheduler, watch_fetch_jobs, complete_command.as_ref()).await;
                 }
             }
         }
@@ -1499,6 +1500,7 @@ async fn handle_watch_run(
                 run_id: p.run_id,
                 run: run.clone(),
                 completed,
+                jobs: None,
                 rate_limit,
             });
             if completed {
@@ -1582,6 +1584,7 @@ async fn tick_refresh(
 async fn tick_watches(
     client: &mut GitHubClient,
     watch_scheduler: &mut WatchScheduler,
+    fetch_jobs: bool,
     complete_command: Option<&String>,
 ) {
     let due: Vec<_> = watch_scheduler.due_entries();
@@ -1601,12 +1604,37 @@ async fn tick_watches(
         {
             Ok((run, rate_limit)) => {
                 let completed = run.status == RunStatus::Completed;
+
+                // Optionally fetch job/step progress for live sidebar updates.
+                let jobs = if fetch_jobs {
+                    match gh_actions::fetch_run_jobs(
+                        &octocrab,
+                        &entry.owner,
+                        &entry.repo,
+                        entry.run_id,
+                    )
+                    .await
+                    {
+                        Ok((jobs, _)) => Some(jobs),
+                        Err(e) => {
+                            tracing::warn!(
+                                "engine: watch poll jobs for run_id={} error: {e}",
+                                entry.run_id
+                            );
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 let send_ok = entry
                     .reply_tx
                     .send(Event::WatchedRunUpdated {
                         run_id: entry.run_id,
                         run: run.clone(),
                         completed,
+                        jobs,
                         rate_limit,
                     })
                     .is_ok();

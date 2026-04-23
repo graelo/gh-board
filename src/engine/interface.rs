@@ -482,6 +482,8 @@ pub enum Event {
         run_id: u64,
         run: WorkflowRun,
         completed: bool,
+        /// Job/step progress, present when `watch_fetch_jobs` is enabled.
+        jobs: Option<Vec<WorkflowJob>>,
         rate_limit: Option<RateLimitInfo>,
     },
     /// Result of the watch completion hook execution.

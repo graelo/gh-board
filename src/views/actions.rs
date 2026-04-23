@@ -798,6 +798,7 @@ pub fn ActionsView<'a>(
                             run_id,
                             run,
                             completed,
+                            jobs,
                             rate_limit,
                         } => {
                             // Remove from watched set first so run_to_row
@@ -817,6 +818,13 @@ pub fn ActionsView<'a>(
                                 }
                             }
                             actions_state.set(state);
+                            // Update jobs cache so the sidebar reflects live
+                            // step progress (when watch_fetch_jobs is enabled).
+                            if let Some(j) = jobs {
+                                let mut cache = jobs_cache.read().clone();
+                                cache.insert(run_id, j);
+                                jobs_cache.set(cache);
+                            }
                             super::common::update_rate_limit(&mut rate_limit_state, rate_limit);
                         }
                         Event::WatchHookResult {

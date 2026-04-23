@@ -134,6 +134,10 @@ repo = "@current"
 # Polling interval in seconds when watching a workflow run (default: 30)
 # watch_poll_interval_seconds = 30
 
+# Also fetch job/step progress on each watch poll so the sidebar updates live.
+# This costs one extra REST API call per poll per watched run (default: false).
+# watch_fetch_jobs = false
+
 # Shell command to run when a watched run completes.
 # Template variables:
 #   {{.Url}}             — run's HTML URL

@@ -473,8 +473,8 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
             padding_left: 1,
             padding_right: 1,
         ) {
-            // Title bar
-            View(margin_bottom: 1) {
+            // Title bar — extra margin only when tabs follow.
+            View(margin_bottom: u32::from(has_tabs)) {
                 View(flex_grow: 1.0_f32) {
                     Text(
                         content: sb.title,
@@ -485,14 +485,20 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                 }
             }
 
-            // Tab labels (with bottom border separator when tabs are present)
-            View(
-                border_style: if has_tabs { BorderStyle::Single } else { BorderStyle::None },
-                border_edges: Edges::Bottom,
-                border_color: sb.border_fg,
-            ) {
-                    MixedText(contents: tab_contents, wrap: TextWrap::NoWrap)
-            }
+            // Tab labels (only rendered when tabs are present)
+            #(if has_tabs {
+                Some(element! {
+                    View(
+                        border_style: BorderStyle::Single,
+                        border_edges: Edges::Bottom,
+                        border_color: sb.border_fg,
+                    ) {
+                        MixedText(contents: tab_contents, wrap: TextWrap::NoWrap)
+                    }
+                })
+            } else {
+                None
+            })
 
             // Meta section (pill badge + author + participants + overview metadata, Overview tab only)
             #(meta.map(|m| {

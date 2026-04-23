@@ -9,7 +9,9 @@ use crate::components::footer::{
     self, ActionFeedback, Footer, FooterColors, FooterContent, RenderedFooter,
 };
 use crate::components::help_overlay::{HelpOverlay, HelpOverlayBuildConfig, RenderedHelpOverlay};
-use crate::components::sidebar::{RenderedSidebar, Sidebar, SidebarColors};
+use crate::components::sidebar::{
+    RenderedSidebar, Sidebar, SidebarColors, SidebarMeta, SidebarTabConfig,
+};
 use crate::components::tab_bar::{RenderedTabBar, Tab, TabBar, TabBarColors};
 use crate::components::table::{
     Cell, Column, RenderedTable, Row, ScrollableTable, TableBuildConfig,
@@ -275,6 +277,121 @@ fn merged_filters<'a>(
     let mut out: Vec<_> = config.iter().map(|f| (f, false)).collect();
     out.extend(ephemeral.iter().map(|(f, _)| (f, true)));
     out
+}
+
+/// Build a `SidebarMeta` header for a workflow run (pill + event/branch +
+/// actor + timestamps), mirroring the PR sidebar's layout.
+fn build_run_sidebar_meta(
+    run: &WorkflowRun,
+    theme: &ResolvedTheme,
+    depth: ColorDepth,
+) -> SidebarMeta {
+    let icons = &theme.icons;
+
+    // Pill: map run status/conclusion to color + label.
+    let (pill_icon, pill_text, pill_bg_app) = match run.status {
+        RunStatus::Completed => match run.conclusion {
+            Some(RunConclusion::Success) => (
+                icons.action_success.clone(),
+                "Success".to_owned(),
+                theme.pill_open_bg,
+            ),
+            Some(RunConclusion::Failure | RunConclusion::TimedOut) => (
+                icons.action_failure.clone(),
+                "Failure".to_owned(),
+                theme.pill_closed_bg,
+            ),
+            Some(RunConclusion::Cancelled) => (
+                icons.action_cancelled.clone(),
+                "Cancelled".to_owned(),
+                theme.pill_draft_bg,
+            ),
+            _ => (
+                icons.action_skipped.clone(),
+                "Skipped".to_owned(),
+                theme.pill_draft_bg,
+            ),
+        },
+        RunStatus::InProgress => (
+            icons.action_running.clone(),
+            "In Progress".to_owned(),
+            theme.text_warning,
+        ),
+        RunStatus::Queued => (
+            icons.action_queued.clone(),
+            "Queued".to_owned(),
+            theme.pill_draft_bg,
+        ),
+        RunStatus::Unknown => ("?".to_owned(), "Unknown".to_owned(), theme.pill_draft_bg),
+    };
+
+    // Workflow name right after the pill badge.
+    let branch_text = run.name.clone();
+
+    // Event + branch as secondary info (like "behind by" in PR sidebar).
+    let event_info = Some(
+        run.head_branch
+            .as_ref()
+            .map_or_else(|| run.event.clone(), |b| format!("{} on {b}", run.event)),
+    );
+
+    // Actor
+    let author_login = run
+        .actor
+        .as_ref()
+        .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
+
+    // Timestamps
+    let fmt = "%Y-%m-%d %H:%M:%S";
+    let created_text = run
+        .created_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let created_age = crate::util::format_date(&run.created_at, "relative");
+    let updated_text = run
+        .updated_at
+        .with_timezone(&chrono::Local)
+        .format(fmt)
+        .to_string();
+    let updated_age = crate::util::format_date(&run.updated_at, "relative");
+
+    SidebarMeta {
+        pill_icon,
+        pill_text,
+        pill_bg: pill_bg_app.to_crossterm_color(depth),
+        pill_fg: theme.pill_fg.to_crossterm_color(depth),
+        pill_left: icons.pill_left.clone(),
+        pill_right: icons.pill_right.clone(),
+        branch_text,
+        branch_fg: theme.pill_branch.to_crossterm_color(depth),
+        update_text: event_info,
+        update_fg: theme.text_secondary.to_crossterm_color(depth),
+        author_login,
+        role_icon: String::new(),
+        role_text: String::new(),
+        role_fg: Color::Reset,
+        label_fg: theme.text_secondary.to_crossterm_color(depth),
+        participants: Vec::new(),
+        participants_fg: theme.text_actor.to_crossterm_color(depth),
+        labels_text: None,
+        assignees_text: None,
+        created_text,
+        created_age,
+        updated_text,
+        updated_age,
+        lines_added: None,
+        lines_deleted: None,
+        reactions_text: None,
+        date_fg: theme.text_faint.to_crossterm_color(depth),
+        date_age_fg: theme.text_secondary.to_crossterm_color(depth),
+        additions_fg: theme.text_success.to_crossterm_color(depth),
+        deletions_fg: theme.text_error.to_crossterm_color(depth),
+        separator_fg: theme.md_horizontal_rule.to_crossterm_color(depth),
+        primary_fg: theme.text_primary.to_crossterm_color(depth),
+        actor_fg: theme.text_actor.to_crossterm_color(depth),
+        reactions_fg: theme.text_primary.to_crossterm_color(depth),
+    }
 }
 
 fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) -> Vec<StyledLine> {
@@ -2090,7 +2207,7 @@ pub fn ActionsView<'a>(
         None
     };
 
-    // Right sidebar: jobs detail.
+    // Right sidebar: jobs detail with run metadata header.
     let current_run_for_detail = filtered_run_indices
         .get(cursor.get())
         .and_then(|&idx| all_runs.get(idx));
@@ -2099,7 +2216,6 @@ pub fn ActionsView<'a>(
     let sidebar_jobs = sidebar_run_id
         .and_then(|id| jobs_cache.read().get(&id).cloned())
         .unwrap_or_default();
-    let sidebar_visible_lines = props.height.saturating_sub(6) as usize;
     let rendered_sidebar = if detail_open.get() && sidebar_w > 0 {
         let jobs_lines = build_jobs_lines(&sidebar_jobs, sidebar_loading, &theme);
         let sidebar_title = current_run_for_detail
@@ -2111,13 +2227,27 @@ pub fn ActionsView<'a>(
             thumb: Some(theme.border_primary),
             depth,
         };
-        let sidebar = RenderedSidebar::build(
+        let sidebar_meta = current_run_for_detail.map(|r| build_run_sidebar_meta(r, &theme, depth));
+        let meta_lines = sidebar_meta.as_ref().map_or(0, SidebarMeta::line_count);
+        #[expect(clippy::cast_possible_truncation)]
+        let sidebar_visible_lines = props
+            .height
+            .saturating_sub(6)
+            .saturating_sub(meta_lines as u16) as usize;
+        let sidebar = RenderedSidebar::build_tabbed(
             &sidebar_title,
             &jobs_lines,
             detail_scroll.get(),
             sidebar_visible_lines,
             sidebar_w,
             &sidebar_colors,
+            Some(SidebarTabConfig {
+                active_tab: None,
+                icons: None,
+                meta: sidebar_meta,
+                visible_tabs: Some(&[]),
+                tab_label_overrides: None,
+            }),
         );
         if detail_scroll.get() != sidebar.clamped_scroll {
             detail_scroll.set(sidebar.clamped_scroll);

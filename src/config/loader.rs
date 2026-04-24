@@ -191,7 +191,7 @@ fn merge_defaults(global: &Defaults, local: &Defaults) -> Defaults {
     }
 }
 
-fn find_local_config_chain() -> Vec<PathBuf> {
+pub(crate) fn find_local_config_chain() -> Vec<PathBuf> {
     let Some(cwd) = std::env::current_dir().ok() else {
         return Vec::new();
     };
@@ -257,7 +257,7 @@ fn find_config_in(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-fn find_global_config() -> Option<PathBuf> {
+pub(crate) fn find_global_config() -> Option<PathBuf> {
     // $GH_BOARD_CONFIG
     if let Ok(path) = std::env::var("GH_BOARD_CONFIG") {
         let p = PathBuf::from(&path);
@@ -289,7 +289,7 @@ fn dirs_fallback() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
 }
 
-fn expand_tilde(path: &str) -> PathBuf {
+pub(crate) fn expand_tilde(path: &str) -> PathBuf {
     if let Some(rest) = path.strip_prefix("~/")
         && let Some(home) = dirs_fallback()
     {

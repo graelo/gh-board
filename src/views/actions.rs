@@ -807,17 +807,17 @@ pub fn ActionsView<'a>(
                         Event::MutationOk { description } => {
                             action_status.set(Some(ActionFeedback::Success(description)));
                             status_set_at.set(Some(std::time::Instant::now()));
-                            // Refetch current filter.
+                            // Mark the current filter as needing a re-fetch
+                            // but keep existing rows visible until the fresh
+                            // response arrives (avoids blanking the table).
                             let mut state = actions_state.read().clone();
-                            if current_filter_for_poll < state.filters.len() {
-                                state.filters[current_filter_for_poll] = FilterData::default();
+                            if let Some(fd) = state.filters.get_mut(current_filter_for_poll) {
+                                fd.loading = true;
                             }
                             actions_state.set(state);
-                            let mut times = filter_fetch_times.read().clone();
-                            if current_filter_for_poll < times.len() {
-                                times[current_filter_for_poll] = None;
-                            }
-                            filter_fetch_times.set(times);
+                            // Clear jobs cache so the sidebar re-fetches after
+                            // the mutation.
+                            jobs_cache.set(HashMap::new());
                         }
                         Event::MutationError {
                             description,

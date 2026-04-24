@@ -366,6 +366,7 @@ fn build_alert_sidebar_meta(
         assignees_text: None,
         created_text,
         created_age,
+        updated_label: "Updated:".to_owned(),
         // Alerts have no separate updated_at — reuse created
         updated_text: String::new(),
         updated_age: String::new(),

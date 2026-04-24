@@ -7,6 +7,22 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-04-24
+
+### Added
+
+- **`config` subcommand** — `gh-board config` dumps the final merged
+  configuration as flat key=value pairs. Add `--show-origin` to prefix each
+  entry with the file it comes from, mirroring `git config --show-origin`.
+  Handles all merge rules (filter array replacement, repo_paths individual-key
+  merge, theme file base+overlay) and tracks per-key provenance across layers
+
+### Fixed
+
+- **Repo picker ordering** — the repo picker now preserves the insertion order
+  from config files. The `toml` crate was sorting keys alphabetically by
+  default; enabling its `preserve_order` feature restores the intended order
+
 ## [0.15.0] - 2026-04-24
 
 ### Added
@@ -420,7 +436,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
-[Unreleased]: https://github.com/graelo/gh-board/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/graelo/gh-board/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/graelo/gh-board/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/graelo/gh-board/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/graelo/gh-board/compare/v0.12.0...v0.13.0

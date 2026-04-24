@@ -38,6 +38,12 @@ enum Commands {
     Init,
     /// List available built-in themes.
     Themes,
+    /// Show resolved configuration.
+    Config {
+        /// Prefix each entry with the file it originates from.
+        #[arg(long)]
+        show_origin: bool,
+    },
     /// Open a GitHub URL directly in the appropriate view.
     Open {
         /// GitHub PR, issue, or actions run URL.
@@ -108,6 +114,17 @@ fn main() -> Result<()> {
         }
         Some(Commands::Init) => {
             return gh_board::init::run();
+        }
+        Some(Commands::Config { show_origin }) => {
+            let entries = gh_board::config::show::load_config_entries(cli.config.as_deref())?;
+            for entry in &entries {
+                if show_origin {
+                    println!("file:{}\t{} = {}", entry.origin, entry.key, entry.value);
+                } else {
+                    println!("{} = {}", entry.key, entry.value);
+                }
+            }
+            return Ok(());
         }
         Some(Commands::Open { url }) => Some(url),
         None => {

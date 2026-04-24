@@ -49,7 +49,7 @@ thiserror = "2"
 #
 # Async runtime for the Engine
 tokio = { version = "1", features = ["full"] }
-toml = "1"
+toml = { version = "1", features = ["preserve_order"] }
 #
 # Logging
 tracing = "0.1"

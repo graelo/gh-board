@@ -761,4 +761,17 @@ mod tests {
         assert_eq!(chain.len(), 1);
         assert_eq!(chain[0].parent().unwrap().file_name().unwrap(), "parent");
     }
+
+    #[test]
+    fn repo_paths_preserve_toml_insertion_order() {
+        let toml_str = r#"
+[repo_paths]
+"zeta/last" = "/tmp/zeta"
+"alpha/first" = "/tmp/alpha"
+"mu/middle" = "/tmp/mu"
+"#;
+        let config: AppConfig = toml::from_str(toml_str).unwrap();
+        let keys: Vec<&String> = config.repo_paths.keys().collect();
+        assert_eq!(keys, &["zeta/last", "alpha/first", "mu/middle"]);
+    }
 }

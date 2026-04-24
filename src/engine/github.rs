@@ -1602,11 +1602,13 @@ async fn tick_watches(
         };
         match gh_actions::fetch_run_by_id(&octocrab, &entry.owner, &entry.repo, entry.run_id).await
         {
-            Ok((run, rate_limit)) => {
+            Ok((run, run_rl)) => {
                 let completed = run.status == RunStatus::Completed;
 
                 // Optionally fetch job/step progress for live sidebar updates.
-                let jobs = if fetch_jobs {
+                // When fetched, prefer the jobs response's rate limit since
+                // it is the most recent API call.
+                let (jobs, rate_limit) = if fetch_jobs {
                     match gh_actions::fetch_run_jobs(
                         &octocrab,
                         &entry.owner,
@@ -1615,17 +1617,17 @@ async fn tick_watches(
                     )
                     .await
                     {
-                        Ok((jobs, _)) => Some(jobs),
+                        Ok((jobs, jobs_rl)) => (Some(jobs), jobs_rl.or(run_rl)),
                         Err(e) => {
                             tracing::warn!(
                                 "engine: watch poll jobs for run_id={} error: {e}",
                                 entry.run_id
                             );
-                            None
+                            (None, run_rl)
                         }
                     }
                 } else {
-                    None
+                    (None, run_rl)
                 };
 
                 let send_ok = entry

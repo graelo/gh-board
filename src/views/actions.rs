@@ -341,7 +341,7 @@ fn build_run_sidebar_meta(
         .as_ref()
         .map_or_else(|| "unknown".to_owned(), |a| a.login.clone());
 
-    // Timestamps
+    // Created timestamp
     let fmt = "%Y-%m-%d %H:%M:%S";
     let created_text = run
         .created_at
@@ -349,12 +349,17 @@ fn build_run_sidebar_meta(
         .format(fmt)
         .to_string();
     let created_age = crate::util::format_date(&run.created_at, "relative");
-    let updated_text = run
-        .updated_at
-        .with_timezone(&chrono::Local)
-        .format(fmt)
-        .to_string();
-    let updated_age = crate::util::format_date(&run.updated_at, "relative");
+
+    // Duration: elapsed (in-progress) or total (completed).
+    let start = run.run_started_at.or(Some(run.created_at));
+    let (updated_label, updated_age) = if run.status == RunStatus::Completed {
+        let dur = crate::util::format_duration(start, Some(run.updated_at));
+        ("Duration:".to_owned(), dur)
+    } else {
+        let dur = crate::util::format_duration(start, Some(chrono::Utc::now()));
+        ("Elapsed:".to_owned(), dur)
+    };
+    let updated_text = String::new();
 
     SidebarMeta {
         pill_icon,
@@ -378,6 +383,7 @@ fn build_run_sidebar_meta(
         assignees_text: None,
         created_text,
         created_age,
+        updated_label,
         updated_text,
         updated_age,
         lines_added: None,

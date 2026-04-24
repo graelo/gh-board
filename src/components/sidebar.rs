@@ -137,6 +137,8 @@ pub struct SidebarMeta {
     pub assignees_text: Option<String>,
     pub created_text: String,
     pub created_age: String,
+    /// Label for the second date row (e.g. `"Updated:"`, `"Elapsed:"`).
+    pub updated_label: String,
     pub updated_text: String,
     pub updated_age: String,
     pub lines_added: Option<String>,
@@ -527,7 +529,12 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                 let assignees_text = m.assignees_text.unwrap_or_default();
                 let created_label = format!(" {} ", m.created_text);
                 let created_age_label = format!("({})", m.created_age);
-                let updated_label = format!(" {} ", m.updated_text);
+                let updated_row_label = m.updated_label;
+                let updated_label = if m.updated_text.is_empty() {
+                    " ".to_owned()
+                } else {
+                    format!(" {} ", m.updated_text)
+                };
                 let updated_age_label = format!("({})", m.updated_age);
                 let has_lines = m.lines_added.is_some();
                 let lines_added = m.lines_added.unwrap_or_default();
@@ -681,11 +688,11 @@ pub fn Sidebar(props: &mut SidebarProps) -> impl Into<AnyElement<'static>> {
                                 wrap: TextWrap::NoWrap,
                             )
                         }
-                        // Updated
+                        // Updated / Elapsed / Duration
                         View {
                             MixedText(
                                 contents: vec![
-                                    MixedTextContent::new("Updated:")
+                                    MixedTextContent::new(updated_row_label)
                                         .color(label_fg)
                                         .weight(Weight::Bold),
                                     MixedTextContent::new(updated_label)

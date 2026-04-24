@@ -2156,6 +2156,7 @@ fn build_issue_sidebar_meta(
         assignees_text,
         created_text,
         created_age,
+        updated_label: "Updated:".to_owned(),
         updated_text,
         updated_age,
         lines_added: None,

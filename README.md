@@ -157,6 +157,8 @@ gh-board [COMMAND] [OPTIONS] [URL]
   matching view
 - `init`: Interactive wizard that generates a starter config
 - `themes`: List all built-in theme names
+- `config`: Show the resolved (merged) configuration; add `--show-origin` to
+  prefix each entry with the file it comes from (like `git config --show-origin`)
 
 **Options:**
 

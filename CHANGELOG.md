@@ -7,6 +7,61 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-04-24
+
+### Added
+
+- **Repo picker filter** — the repo picker (`s`) now has a text input at the
+  bottom for filtering repos by substring. Type to narrow the list, Up/Down to
+  navigate, Enter to select, Esc to dismiss. The filter row is opt-in per
+  overlay via `show_filter`; the workflow run disambiguation picker stays
+  compact without it
+- **Live job progress during watch** — new `watch_fetch_jobs` boolean under
+  `[actions]` (default: false). When enabled, each watch poll also fetches
+  job/step data so the sidebar updates live. Costs one extra REST call per poll
+  per watched run
+- **Actions sidebar metadata header** — the actions sidebar now shows a status
+  pill badge (Success/Failure/In Progress/etc.), workflow name, event and
+  branch info, triggering actor, created timestamp, and elapsed/duration
+  display — matching the PR sidebar's design language
+- **Elapsed/Duration display** — in-progress runs show `Elapsed: (43s)`,
+  completed runs show `Duration: (6m20s)`, computed from `run_started_at`.
+  Replaces the less useful "Updated" timestamp. The second date row label is
+  now customisable via `SidebarMeta::updated_label`
+
+### Fixed
+
+- **Rate-limit counter frozen during watch** — the monotonic-decrease guard
+  prevented updates from watch polls whose remaining count didn't strictly
+  decrease, freezing the displayed counter. Removed the guard; the counter now
+  always reflects the latest API response
+- **Watch tick period doubling** — the watch tick interval now equals the
+  configured poll interval (was `interval / 2`), with a 1-second tolerance in
+  `due_entries` to absorb the delay between the tick firing and `mark_polled`
+  recording the wall clock
+- **Deep-link cross-repo mismatch** — jumping from a PR to its Actions run
+  (`ctrl+]`) could land on the wrong repo's run when multiple repos shared a
+  filter tab layout. The initial fast-path scan now checks the filter tab's
+  resolved repo
+- **Actions table blanking after mutations** — triggering a rerun or cancel
+  replaced the filter data with an empty default, blanking the table for
+  several seconds. Now sets `loading=true` on existing data so rows stay
+  visible until the re-fetch completes
+- **Per-item refresh after mutations** (PR #54) — mutations now refresh only
+  the affected item in-place instead of refetching the entire filter tab
+- **Rate-limit counter flickering** (PR #55) — prevented the counter from
+  jumping around during bulk fetches (subsequently replaced by direct
+  passthrough in this release)
+- **Sidebar whitespace** — the tab bar View is now skipped entirely when no
+  tabs are present, removing extra blank lines between the title and content
+
+### Changed
+
+- Bump patch dependencies (PR #57)
+- Watch poll path now prefers the jobs response's rate limit over the run
+  response when `watch_fetch_jobs` is enabled, since it is the most recent API
+  call
+
 ## [0.14.0] - 2026-04-23
 
 ### Added
@@ -365,7 +420,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
-[Unreleased]: https://github.com/graelo/gh-board/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/graelo/gh-board/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/graelo/gh-board/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/graelo/gh-board/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/graelo/gh-board/compare/v0.11.1...v0.12.0

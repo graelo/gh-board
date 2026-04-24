@@ -76,11 +76,35 @@ Three refresh levels exist (`r` / `R` / `ctrl+r`):
 
 The same shape applies to every mutation (`CloseIssue`, `AssignIssue`, …):
 engine replies with `Event::MutationOk` or `Event::MutationError`, then the
-view resets its filter and triggers a fresh fetch.
+view marks the filter as `loading` (keeping existing rows visible) and
+triggers a lazy re-fetch.
 
 The **Alerts** view issues three REST calls per filter tab (dependabot, code
 scanning, secret scanning). Individual 403 errors are non-fatal — the engine
 merges whatever succeeds and sends a single `AlertsFetched` event.
+
+### Watch polling
+
+`WatchScheduler` tracks workflow runs being watched (`W` key). The tokio
+tick interval equals the configured `watch_poll_interval_seconds` (default
+30). A 1-second tolerance in `due_entries` absorbs the delay between the
+tick firing and `mark_polled` recording the wall clock after the API call,
+preventing the effective period from doubling. When `watch_fetch_jobs` is
+enabled, each tick also calls `fetch_run_jobs` so the sidebar updates live.
+
+### Cross-view deep-links
+
+Jumping from a PR to its Actions run (`ctrl+]`) creates a
+`NavigationTarget::ActionsRun { owner, repo, run_id, host }`. The Actions
+view's initial scan matches on both `run_id` and the filter tab's resolved
+repo, preventing cross-repo mismatches in multi-repo setups.
+
+### Sidebar meta header
+
+`SidebarMeta` provides the pill badge, author, timestamps, and other
+metadata rendered above the scrollable content. The `updated_label` field
+lets each view customise the second date row: PRs/Issues use `"Updated:"`,
+Actions uses `"Elapsed:"` (in-progress) or `"Duration:"` (completed).
 
 ---
 

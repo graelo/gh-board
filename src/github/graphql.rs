@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use moka::future::Cache;
 use octocrab::Octocrab;
@@ -244,17 +244,6 @@ struct PrDetailVariables {
 // ---------------------------------------------------------------------------
 // Response types (mirror the GraphQL response shape)
 // ---------------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-struct GraphQLResponse<D> {
-    data: Option<D>,
-    errors: Option<Vec<GraphQLError>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GraphQLError {
-    message: String,
-}
 
 #[derive(Debug, Deserialize)]
 struct SearchData {
@@ -1013,19 +1002,10 @@ pub async fn search_pull_requests(
         },
     };
 
-    let response: GraphQLResponse<SearchData> = octocrab
+    let data: SearchData = octocrab
         .graphql(&payload)
         .await
         .with_context(|| format!("GraphQL PR search failed for query: {query}"))?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     let rate_limit = data.rate_limit;
 
@@ -1132,19 +1112,10 @@ pub async fn search_issues(
         },
     };
 
-    let response: GraphQLResponse<IssueSearchData> = octocrab
+    let data: IssueSearchData = octocrab
         .graphql(&payload)
         .await
         .context("GraphQL request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     let rate_limit = data.rate_limit;
 
@@ -1337,19 +1308,10 @@ pub async fn fetch_pr_detail(
         },
     };
 
-    let response: GraphQLResponse<PrDetailData> = octocrab
+    let data: PrDetailData = octocrab
         .graphql(&payload)
         .await
         .context("GraphQL PR detail request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     let rate_limit = data.rate_limit;
 
@@ -1405,19 +1367,10 @@ pub async fn fetch_issue_detail(
         },
     };
 
-    let response: GraphQLResponse<IssueDetailData> = octocrab
+    let data: IssueDetailData = octocrab
         .graphql(&payload)
         .await
         .context("GraphQL issue detail request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     let rate_limit = data.rate_limit;
 
@@ -1592,19 +1545,10 @@ pub async fn fetch_repo_labels(
         },
     };
 
-    let response: GraphQLResponse<RepoLabelsData> = octocrab
+    let data: RepoLabelsData = octocrab
         .graphql(&payload)
         .await
         .context("GraphQL repo labels request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     let rate_limit = data.rate_limit;
 
@@ -1663,19 +1607,10 @@ pub async fn fetch_repo_collaborators(
         },
     };
 
-    let response: GraphQLResponse<RepoCollaboratorsData> = octocrab
+    let data: RepoCollaboratorsData = octocrab
         .graphql(&payload)
         .await
         .context("GraphQL repo collaborators request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     // Extract rate limit
     let rate_limit = data.rate_limit;
@@ -2122,19 +2057,10 @@ pub async fn fetch_single_pr(
         },
     };
 
-    let response: GraphQLResponse<SinglePrData> = octocrab
+    let data: SinglePrData = octocrab
         .graphql(&payload)
         .await
         .context("GraphQL single PR request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     let rate_limit = data.rate_limit;
 
@@ -2183,19 +2109,10 @@ pub async fn fetch_single_issue(
         },
     };
 
-    let response: GraphQLResponse<SingleIssueData> = octocrab
+    let data: SingleIssueData = octocrab
         .graphql(&payload)
         .await
         .context("GraphQL single issue request failed")?;
-
-    if let Some(errors) = response.errors {
-        let messages: Vec<_> = errors.iter().map(|e| e.message.as_str()).collect();
-        bail!("GraphQL errors: {}", messages.join("; "));
-    }
-
-    let data = response
-        .data
-        .context("GraphQL response missing data field")?;
 
     let rate_limit = data.rate_limit;
 

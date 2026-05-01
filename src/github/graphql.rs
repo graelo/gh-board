@@ -2484,3 +2484,126 @@ mod tests {
         assert!(!q.starts_with("is:pr is:"));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Endpoint contract tests
+// ---------------------------------------------------------------------------
+
+/// Verify the live request → response → deserialization path against a mock
+/// GitHub GraphQL endpoint. These tests guard the contract between
+/// `octocrab::Octocrab::graphql()` and our response-shape deserializers — e.g.
+/// octocrab 0.49.8 silently changed the `data`-envelope unwrap behavior (see
+/// XAMPPRocky/octocrab#874), and an empty-results response is enough to catch
+/// that class of regression for every query.
+#[cfg(test)]
+mod graphql_endpoint_tests {
+    use std::sync::{Arc, Once};
+
+    use serde_json::{Value, json};
+    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::path};
+
+    use super::*;
+
+    /// Build an `Octocrab` wired to a mock server that responds to any POST
+    /// `/graphql` with `body`. The returned `MockServer` must be held alive
+    /// for the duration of the call.
+    async fn graphql_returns(body: Value) -> (MockServer, Arc<Octocrab>) {
+        static INSTALL_CRYPTO: Once = Once::new();
+        INSTALL_CRYPTO.call_once(|| {
+            rustls::crypto::aws_lc_rs::default_provider()
+                .install_default()
+                .expect("install rustls CryptoProvider");
+        });
+
+        let server = MockServer::start().await;
+        Mock::given(path("/graphql"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(body))
+            .mount(&server)
+            .await;
+        let octocrab = Arc::new(
+            Octocrab::builder()
+                .base_uri(server.uri())
+                .unwrap()
+                .build()
+                .unwrap(),
+        );
+        (server, octocrab)
+    }
+
+    /// Wrap a GraphQL `data` payload in the standard envelope GitHub returns.
+    fn envelope(data: &Value) -> Value {
+        json!({ "data": data })
+    }
+
+    fn empty_page() -> Value {
+        json!({"pageInfo": {"hasNextPage": false, "endCursor": null}, "nodes": []})
+    }
+
+    #[tokio::test]
+    async fn search_pull_requests_returns_empty_page() {
+        let (_s, oc) = graphql_returns(envelope(&json!({"search": empty_page()}))).await;
+        let page = search_pull_requests(&oc, "is:pr", 10, None).await.unwrap();
+        assert!(page.pull_requests.is_empty());
+        assert!(!page.page_info.has_next_page);
+    }
+
+    #[tokio::test]
+    async fn search_issues_returns_empty_page() {
+        let (_s, oc) = graphql_returns(envelope(&json!({"search": empty_page()}))).await;
+        let page = search_issues(&oc, "is:issue", 10, None).await.unwrap();
+        assert!(page.issues.is_empty());
+        assert!(!page.page_info.has_next_page);
+    }
+
+    #[tokio::test]
+    async fn fetch_pr_detail_handles_missing_repo() {
+        let (_s, oc) = graphql_returns(envelope(&json!({"repository": null}))).await;
+        let Err(err) = fetch_pr_detail(&oc, "x", "y", 1, None).await else {
+            panic!("expected PR-not-found error");
+        };
+        assert!(err.to_string().contains("PR not found"));
+    }
+
+    #[tokio::test]
+    async fn fetch_issue_detail_handles_missing_repo() {
+        let (_s, oc) = graphql_returns(envelope(&json!({"repository": null}))).await;
+        let Err(err) = fetch_issue_detail(&oc, "x", "y", 1, None).await else {
+            panic!("expected Issue-not-found error");
+        };
+        assert!(err.to_string().contains("Issue not found"));
+    }
+
+    #[tokio::test]
+    async fn fetch_repo_labels_returns_empty_list() {
+        let body = envelope(&json!({"repository": {"labels": {"nodes": []}}}));
+        let (_s, oc) = graphql_returns(body).await;
+        let (labels, _rl) = fetch_repo_labels(&oc, "x", "y", None).await.unwrap();
+        assert!(labels.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fetch_repo_collaborators_returns_empty_list() {
+        let body = envelope(&json!({"repository": {"collaborators": {"nodes": []}}}));
+        let (_s, oc) = graphql_returns(body).await;
+        let (logins, _rl) = fetch_repo_collaborators(&oc, "x", "y", None).await.unwrap();
+        assert!(logins.is_empty());
+    }
+
+    #[tokio::test]
+    async fn fetch_single_pr_handles_missing_repo() {
+        let (_s, oc) = graphql_returns(envelope(&json!({"repository": null}))).await;
+        let Err(err) = fetch_single_pr(&oc, "x", "y", 1, None).await else {
+            panic!("expected PR-not-found error");
+        };
+        assert!(err.to_string().contains("PR not found"));
+    }
+
+    #[tokio::test]
+    async fn fetch_single_issue_handles_missing_repo() {
+        let (_s, oc) = graphql_returns(envelope(&json!({"repository": null}))).await;
+        let Err(err) = fetch_single_issue(&oc, "x", "y", 1, None).await else {
+            panic!("expected Issue-not-found error");
+        };
+        assert!(err.to_string().contains("Issue not found"));
+    }
+}

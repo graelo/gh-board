@@ -1356,9 +1356,9 @@ dependencies = [
 
 [[package]]
 name = "iocraft"
-version = "0.8.1"
+version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79eea64459947be28f3897f2026592134a3bbaac5854ce90801284d0a080bc44"
+checksum = "58c8c25269f0eae8c9791eed1519d04ca1ebcd7e11c8a10fc6c15091a4ed0019"
 dependencies = [
  "bitflags",
  "crossterm",
@@ -1626,9 +1626,9 @@ dependencies = [
 
 [[package]]
 name = "octocrab"
-version = "0.49.8"
+version = "0.49.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a559d5d4b3e86c6a0459af93d6e09adc61962b757497f7ec811e5cdd4b7a857b"
+checksum = "4ddbc3bb87e8c680febf16f56855bbd8b44a38e18c913334213ab34908e71a09"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -2092,9 +2092,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.39"
+version = "0.23.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c2c118cb077cca2822033836dfb1b975355dfb784b5e8da48f7b6c5db74e60e"
+checksum = "ef86cd5876211988985292b91c96a8f2d298df24e75989a43a3c73f2d4d8168b"
 dependencies = [
  "aws-lc-rs",
  "log",

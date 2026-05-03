@@ -14,6 +14,7 @@ jobs:
     permissions:
       contents: read
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -92,8 +93,17 @@ jobs:
         run: cp "target/${TARGET}/release/${REPO_NAME}${SUFFIX}" "${REPO_NAME}-${GH_OS}-${GH_ARCH}${SUFFIX}"
         shell: bash
 
-      - name: Compress to zip (macOS, Windows)
-        if: ${{ matrix.archive_ext == 'zip' }}
+      - name: Compress to zip (macOS)
+        if: ${{ matrix.gh_os == 'darwin' }}
+        env:
+          REPO_NAME: ${{ github.event.repository.name }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          cp "target/${TARGET}/release/${REPO_NAME}" .
+          zip -A "${REPO_NAME}-${TARGET}.zip" "${REPO_NAME}"
+
+      - name: Compress to zip (Windows)
+        if: ${{ matrix.gh_os == 'windows' }}
         shell: bash
         env:
           REPO_NAME: ${{ github.event.repository.name }}
@@ -101,7 +111,7 @@ jobs:
           SUFFIX: ${{ matrix.suffix }}
         run: |
           cp "target/${TARGET}/release/${REPO_NAME}${SUFFIX}" .
-          zip -A "${REPO_NAME}-${TARGET}.zip" "${REPO_NAME}${SUFFIX}"
+          7z a "${REPO_NAME}-${TARGET}.zip" "${REPO_NAME}${SUFFIX}"
 
       - name: Compress to tar.xz (Linux)
         if: ${{ matrix.archive_ext == 'tar.xz' }}

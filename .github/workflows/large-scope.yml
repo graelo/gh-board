@@ -69,6 +69,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     strategy:
       matrix:
         include:
@@ -83,6 +86,14 @@ jobs:
           - os: macos-latest
             target: aarch64-apple-darwin
             type: unix
+            toolchain: stable
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            type: windows
+            toolchain: stable
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            type: windows
             toolchain: stable
     steps:
       - name: Rust install

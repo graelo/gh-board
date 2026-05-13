@@ -13,7 +13,6 @@ concurrency:
 jobs:
   prepare-artifacts:
     name: ${{ matrix.target }}
-    # if: github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -26,55 +25,48 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            gh_os: darwin
-            gh_arch: arm64
-            rust: stable
-            suffix: ''
-            archive_ext: zip
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-            gh_os: darwin
-            gh_arch: amd64
-            rust: stable
-            suffix: ''
-            archive_ext: zip
-          - os: ubuntu-latest
-            target: x86_64-unknown-linux-musl
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
             gh_os: linux
             gh_arch: amd64
-            rust: stable
             suffix: ''
             archive_ext: tar.xz
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
             gh_os: linux
             gh_arch: arm64
-            rust: stable
             suffix: ''
             archive_ext: tar.xz
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            gh_os: darwin
+            gh_arch: amd64
+            suffix: ''
+            archive_ext: tar.xz
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            gh_os: darwin
+            gh_arch: arm64
+            suffix: ''
+            archive_ext: tar.xz
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
             gh_os: windows
             gh_arch: amd64
-            rust: stable
             suffix: .exe
             archive_ext: zip
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
             gh_os: windows
             gh_arch: arm64
-            rust: stable
             suffix: .exe
             archive_ext: zip
     steps:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
-          toolchain: ${{ matrix.rust }}
+          toolchain: stable
           targets: ${{ matrix.target }}
-          components: rustfmt, clippy
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -94,72 +86,65 @@ jobs:
       - name: Stage binary and archive
         env:
           REPO_NAME: ${{ github.event.repository.name }}
-          SUFFIX: ${{ matrix.suffix }}
+          TARGET: ${{ matrix.target }}
+          ARCHIVE_EXT: ${{ matrix.archive_ext }}
           GH_OS: ${{ matrix.gh_os }}
           GH_ARCH: ${{ matrix.gh_arch }}
-          TARGET: ${{ matrix.target }}
-        run: cp "target/${TARGET}/release/${REPO_NAME}${SUFFIX}" "${REPO_NAME}-${GH_OS}-${GH_ARCH}${SUFFIX}"
-
-      - name: Package – compress (zip, macOS)
-        if: ${{ matrix.gh_os == 'darwin' }}
-        env:
-          REPO_NAME: ${{ github.event.repository.name }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          cp "target/${TARGET}/release/${REPO_NAME}" .
-          zip -A "${REPO_NAME}-${TARGET}.zip" "${REPO_NAME}"
-
-      - name: Package – compress (zip, Windows)
-        if: ${{ matrix.gh_os == 'windows' }}
-        env:
-          REPO_NAME: ${{ github.event.repository.name }}
-          TARGET: ${{ matrix.target }}
           SUFFIX: ${{ matrix.suffix }}
+          TAG: ${{ github.ref_name }}
         run: |
-          cp "target/${TARGET}/release/${REPO_NAME}${SUFFIX}" .
-          7z a "${REPO_NAME}-${TARGET}.zip" "${REPO_NAME}${SUFFIX}"
+          set -euo pipefail
+          SRC="target/${TARGET}/release/${REPO_NAME}${SUFFIX}"
 
-      - name: Package – compress (tar.xz, Linux)
-        if: ${{ matrix.archive_ext == 'tar.xz' }}
-        env:
-          REPO_NAME: ${{ github.event.repository.name }}
-          TARGET: ${{ matrix.target }}
-        run: |
-          cp "target/${TARGET}/release/${REPO_NAME}" .
-          tar Jcf "${REPO_NAME}-${TARGET}.tar.xz" "${REPO_NAME}"
+          # Standalone binary: <bin>-<gh_os>-<gh_arch>[.exe].
+          # Naming locked: `gh extension upgrade graelo/gh-board` looks
+          # up assets by this exact pattern.
+          STANDALONE="${REPO_NAME}-${GH_OS}-${GH_ARCH}${SUFFIX}"
+          cp "${SRC}" "${STANDALONE}"
 
-      - name: List files
-        env:
-          TARGET: ${{ matrix.target }}
-        run: |
-          ls -alF .
-          ls -alF "target/${TARGET}/release/"
+          # Archive: <bin>-<tag>-<target>.{tar.xz,zip} containing the
+          # binary, README, and LICENSE.
+          PKG_DIR="${REPO_NAME}-${TAG}-${TARGET}"
+          mkdir "${PKG_DIR}"
+          cp "${SRC}" "${PKG_DIR}/"
+          cp README.md LICENSE* "${PKG_DIR}/" 2>/dev/null || true
+
+          if [[ "${ARCHIVE_EXT}" == "zip" ]]; then
+            ARCHIVE_FILE="${PKG_DIR}.zip"
+            7z a "${ARCHIVE_FILE}" "${PKG_DIR}" >/dev/null
+          else
+            ARCHIVE_FILE="${PKG_DIR}.tar.xz"
+            tar -cJf "${ARCHIVE_FILE}" "${PKG_DIR}"
+          fi
+
+          echo "STANDALONE=${STANDALONE}" >> "${GITHUB_ENV}"
+          echo "ARCHIVE_FILE=${ARCHIVE_FILE}" >> "${GITHUB_ENV}"
 
       - name: Attest provenance
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
         with:
           subject-path: |
-            ${{ github.event.repository.name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
-            ${{ github.event.repository.name }}-${{ matrix.gh_os }}-${{ matrix.gh_arch }}${{ matrix.suffix }}
+            ${{ env.STANDALONE }}
+            ${{ env.ARCHIVE_FILE }}
+
+      - name: Upload – standalone
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.STANDALONE }}
+          path: ${{ env.STANDALONE }}
+          retention-days: 1
 
       - name: Upload – archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ github.event.repository.name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
-          path: ${{ github.event.repository.name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
-          retention-days: 1
-
-      - name: Upload – binary
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: ${{ github.event.repository.name }}-${{ matrix.gh_os }}-${{ matrix.gh_arch }}${{ matrix.suffix }}
-          path: ${{ github.event.repository.name }}-${{ matrix.gh_os }}-${{ matrix.gh_arch }}${{ matrix.suffix }}
+          name: ${{ env.ARCHIVE_FILE }}
+          path: ${{ env.ARCHIVE_FILE }}
           retention-days: 1
 
   release:
     name: Publish release
-    # if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    environment: release
     permissions:
       contents: write
     needs:
@@ -172,14 +157,8 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Extract version
-        id: extract-version
-        run: |
-          echo "tag-name=${GITHUB_REF#refs/tags/}" >> "${GITHUB_OUTPUT}"
-
       - name: Install convco
         run: |
-          git show-ref
           curl -sSfLO https://github.com/convco/convco/releases/latest/download/convco-ubuntu.zip
           unzip convco-ubuntu.zip
           chmod +x convco
@@ -189,54 +168,11 @@ jobs:
           ./convco changelog -c .convco --max-versions 1 --include-hidden-sections > CHANGELOG.md
           rm convco convco-ubuntu.zip
 
-      - name: Download – archive (aarch64-apple-darwin)
+      - name: Download artifacts
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: ${{ github.event.repository.name }}-aarch64-apple-darwin.zip
-      - name: Download – archive (x86_64-apple-darwin)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-x86_64-apple-darwin.zip
-      - name: Download – archive (x86_64-unknown-linux-musl)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-x86_64-unknown-linux-musl.tar.xz
-      - name: Download – archive (aarch64-unknown-linux-musl)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-aarch64-unknown-linux-musl.tar.xz
-      - name: Download – archive (x86_64-pc-windows-msvc)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-x86_64-pc-windows-msvc.zip
-      - name: Download – archive (aarch64-pc-windows-msvc)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-aarch64-pc-windows-msvc.zip
-      - name: Download – binary (darwin-amd64)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-darwin-amd64
-      - name: Download – binary (darwin-arm64)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-darwin-arm64
-      - name: Download – binary (linux-amd64)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-linux-amd64
-      - name: Download – binary (linux-arm64)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-linux-arm64
-      - name: Download – binary (windows-amd64)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-windows-amd64.exe
-      - name: Download – binary (windows-arm64)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: ${{ github.event.repository.name }}-windows-arm64.exe
+          path: artifacts
+          merge-multiple: true
 
       - name: Create GitHub release
         env:
@@ -246,14 +182,10 @@ jobs:
           gh release create "${TAG_NAME}" \
             --title "${TAG_NAME}" \
             --notes-file CHANGELOG.md \
-            ./*.zip ./*.tar.xz \
-            ./gh-board-linux-amd64 ./gh-board-linux-arm64 \
-            ./gh-board-darwin-arm64 ./gh-board-darwin-amd64 \
-            ./gh-board-windows-amd64.exe ./gh-board-windows-arm64.exe
+            ./artifacts/*
 
   homebrew:
     name: Bump Homebrew formula
-    # if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: release
     permissions:

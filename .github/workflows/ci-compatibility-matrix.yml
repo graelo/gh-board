@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-versions:
+  test-all-versions:
     name: ubuntu-latest (${{ matrix.rust }})
     runs-on: ubuntu-latest
     permissions:
@@ -54,13 +54,13 @@ jobs:
 
       - name: Quality – cargo clippy
         run: |
-          cargo clippy --all-targets --all-features -- -D warnings
+          cargo clippy --locked --all-targets --all-features -- -D warnings
 
       - name: Build (dev)
-        run: cargo build --all-features
+        run: cargo build --locked --all-features
 
       - name: Build (release)
-        run: cargo build --all-features --release
+        run: cargo build --locked --all-features --release
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
@@ -70,8 +70,8 @@ jobs:
       - name: Test
         run: ./ci/test_full.sh
 
-  test-other-platforms:
-    name: ${{ matrix.os }} (stable)
+  test-all-platforms:
+    name: ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
@@ -122,21 +122,15 @@ jobs:
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-stable-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build (dev)
-        run: cargo build --all-features
+        run: cargo build --locked --all-features
 
       - name: Build (release)
-        run: cargo build --all-features --release
+        run: cargo build --locked --all-features --release
 
       - name: Install cargo-nextest
         uses: taiki-e/install-action@7769b73c2ec98c38dfcf2e18c83cfd4880c038c1 # v2.75.27
         with:
           tool: cargo-nextest@0.9.133
 
-      - name: Test (Unix)
-        if: runner.os != 'Windows'
-        run: ./ci/test_full.sh
-
-      - name: Test (Windows)
-        if: runner.os == 'Windows'
-        shell: bash
+      - name: Test
         run: ./ci/test_full.sh

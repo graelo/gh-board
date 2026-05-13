@@ -12,11 +12,16 @@ concurrency:
 
 jobs:
   prepare-artifacts:
-    name: Build artifacts
+    name: ${{ matrix.target }}
     # if: github.ref == 'refs/heads/main'
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -77,17 +82,16 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Install musl toolchain
+      - name: Install musl-tools (Linux)
         if: contains(matrix.target, 'linux-musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Build (release)
         env:
           TARGET: ${{ matrix.target }}
-        run: cargo build --release --target "${TARGET}"
-        shell: bash
+        run: cargo build --locked --release --target "${TARGET}"
 
-      - name: Package – prepare binary
+      - name: Stage binary and archive
         env:
           REPO_NAME: ${{ github.event.repository.name }}
           SUFFIX: ${{ matrix.suffix }}
@@ -95,7 +99,6 @@ jobs:
           GH_ARCH: ${{ matrix.gh_arch }}
           TARGET: ${{ matrix.target }}
         run: cp "target/${TARGET}/release/${REPO_NAME}${SUFFIX}" "${REPO_NAME}-${GH_OS}-${GH_ARCH}${SUFFIX}"
-        shell: bash
 
       - name: Package – compress (zip, macOS)
         if: ${{ matrix.gh_os == 'darwin' }}
@@ -108,7 +111,6 @@ jobs:
 
       - name: Package – compress (zip, Windows)
         if: ${{ matrix.gh_os == 'windows' }}
-        shell: bash
         env:
           REPO_NAME: ${{ github.event.repository.name }}
           TARGET: ${{ matrix.target }}
@@ -127,10 +129,18 @@ jobs:
           tar Jcf "${REPO_NAME}-${TARGET}.tar.xz" "${REPO_NAME}"
 
       - name: List files
+        env:
+          TARGET: ${{ matrix.target }}
         run: |
           ls -alF .
-          ls -alF target/${{ matrix.target }}/release/
-        shell: bash
+          ls -alF "target/${TARGET}/release/"
+
+      - name: Attest provenance
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            ${{ github.event.repository.name }}-${{ matrix.target }}.${{ matrix.archive_ext }}
+            ${{ github.event.repository.name }}-${{ matrix.gh_os }}-${{ matrix.gh_arch }}${{ matrix.suffix }}
 
       - name: Upload – archive
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -152,8 +162,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
-      attestations: write
     needs:
       - prepare-artifacts
     steps:
@@ -169,14 +177,14 @@ jobs:
         run: |
           echo "tag-name=${GITHUB_REF#refs/tags/}" >> "${GITHUB_OUTPUT}"
 
-      - name: Setup – download convco
+      - name: Install convco
         run: |
           git show-ref
           curl -sSfLO https://github.com/convco/convco/releases/latest/download/convco-ubuntu.zip
           unzip convco-ubuntu.zip
           chmod +x convco
 
-      - name: Setup – generate changelog
+      - name: Generate changelog
         run: |
           ./convco changelog -c .convco --max-versions 1 --include-hidden-sections > CHANGELOG.md
           rm convco convco-ubuntu.zip
@@ -230,7 +238,7 @@ jobs:
         with:
           name: ${{ github.event.repository.name }}-windows-arm64.exe
 
-      - name: Create GitHub Release
+      - name: Create GitHub release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ github.ref_name }}
@@ -242,19 +250,6 @@ jobs:
             ./gh-board-linux-amd64 ./gh-board-linux-arm64 \
             ./gh-board-darwin-arm64 ./gh-board-darwin-amd64 \
             ./gh-board-windows-amd64.exe ./gh-board-windows-arm64.exe
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
-        with:
-          subject-path: |
-            *.zip
-            *.tar.xz
-            gh-board-linux-amd64
-            gh-board-linux-arm64
-            gh-board-darwin-amd64
-            gh-board-darwin-arm64
-            gh-board-windows-amd64.exe
-            gh-board-windows-arm64.exe
 
   homebrew:
     name: Bump Homebrew formula
@@ -280,7 +275,8 @@ jobs:
         run: |
           echo "tag-name=${GITHUB_REF#refs/tags/}" >> "${GITHUB_OUTPUT}"
 
-      - uses: mislav/bump-homebrew-formula-action@ccf2332299a883f6af50a1d2d41e5df7904dd769 # v4.1
+      - name: Bump Homebrew formula
+        uses: mislav/bump-homebrew-formula-action@ccf2332299a883f6af50a1d2d41e5df7904dd769 # v4.1
         if: '!contains(github.ref, ''-'')' # skip prereleases
         with:
           formula-name: gh-board

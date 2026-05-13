@@ -5,7 +5,7 @@ edition = "2024"
 rust-version = "1.95.0"
 description = "A fast terminal dashboard for GitHub pull requests, issues, and notifications"
 repository = "https://github.com/graelo/gh-board"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 keywords = ["cli", "dashboard", "github", "tui"]
 categories = ["command-line-utilities"]
 

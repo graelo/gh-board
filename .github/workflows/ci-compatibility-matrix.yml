@@ -19,10 +19,12 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    defaults:
+      run:
+        shell: bash
     strategy:
-      fail-fast: false
       matrix:
-        rust: [1.95.0, beta, nightly]
+        rust: ['1.95.0', beta, nightly]
 
     steps:
       - name: Install Rust
@@ -78,36 +80,41 @@ jobs:
     defaults:
       run:
         shell: bash
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.target }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-15-intel
-            target: x86_64-apple-darwin
-            toolchain: stable
-          - os: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            toolchain: stable
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            toolchain: stable
-          - os: windows-latest
-            target: x86_64-pc-windows-msvc
-            toolchain: stable
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            toolchain: stable
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-24.04-arm
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-11-arm
     steps:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
-          toolchain: ${{ matrix.toolchain }}
+          toolchain: stable
           targets: ${{ matrix.target }}
 
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
+
+      - name: Install musl-tools (Linux)
+        if: contains(matrix.target, 'linux-musl')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
 
       - name: Cache crates
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5

@@ -27,6 +27,10 @@ if ! check_version $MSRV ; then
   exit 1
 fi
 
+# List crate-specific features here.
+FEATURES=()
+echo "Testing supported features: ${FEATURES[*]}"
+
 NEXTEST_PROFILE=""
 if [ -n "$CI" ]; then
   NEXTEST_PROFILE="--profile ci"
@@ -34,9 +38,36 @@ fi
 
 set -x
 
-# test the default build
-cargo build
-cargo nextest run $NEXTEST_PROFILE
+# test the default
+cargo build --locked
+cargo nextest run --locked $NEXTEST_PROFILE
+
+# test no-default-features
+cargo build --locked --no-default-features
+cargo nextest run --locked $NEXTEST_PROFILE --no-default-features
+
+# test each feature in isolation
+for feature in "${FEATURES[@]}"; do
+  cargo build --locked --no-default-features --features="$feature"
+  cargo nextest run --locked $NEXTEST_PROFILE --no-default-features --features="$feature"
+done
+
+# test all features combined
+if [ ${#FEATURES[@]} -gt 0 ]; then
+  cargo build --locked --features="${FEATURES[*]}"
+  cargo nextest run --locked $NEXTEST_PROFILE --features="${FEATURES[*]}"
+fi
 
 # doc tests (not supported by nextest)
-cargo test --doc
+cargo test --locked --doc
+
+# CLI smoke test (release binary). CARGO_BUILD_TARGET (set in the compat
+# matrix) redirects output to target/<target>/release; Git Bash on Windows
+# reports OSTYPE=msys.
+cargo build --locked --release
+
+BIN="target/${CARGO_BUILD_TARGET:+${CARGO_BUILD_TARGET}/}release/${CRATE}"
+case "${OSTYPE:-}" in
+  msys*|cygwin*) BIN="${BIN}.exe" ;;
+esac
+"${BIN}" --help

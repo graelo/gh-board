@@ -1,9 +1,9 @@
 # gh-board
 
 [![crate](https://img.shields.io/crates/v/gh-board.svg)](https://crates.io/crates/gh-board)
-[![minimum rustc 1.95](https://img.shields.io/badge/rustc-1.95+-red.svg)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
+[![minimum rustc 1.95](https://img.shields.io/badge/rustc-1.95+-blue.svg)](https://rust-lang.github.io/rfcs/2495-min-rust-version.html)
 [![rust 2024 edition](https://img.shields.io/badge/edition-2024-blue.svg)](https://doc.rust-lang.org/edition-guide/rust-2024/index.html)
-[![build status](https://github.com/graelo/gh-board/actions/workflows/essentials.yml/badge.svg)](https://github.com/graelo/gh-board/actions/workflows/essentials.yml)
+[![build status](https://github.com/graelo/gh-board/actions/workflows/ci-essentials.yml/badge.svg)](https://github.com/graelo/gh-board/actions/workflows/ci-essentials.yml)
 
 A fast terminal dashboard for GitHub pull requests, issues, notifications, and
 repository branches.
@@ -13,7 +13,8 @@ repository branches.
 ## Features
 
 **Six views, one dashboard** — jump to any with `1`–`6` or cycle with `n`/`N`,
-organize each with named filter tabs (`h`/`l`), and press `?` for contextual help.
+organize each with named filter tabs (`h`/`l`), and press `?` for contextual
+help.
 
 ### Review & merge PRs
 
@@ -158,7 +159,8 @@ gh-board [COMMAND] [OPTIONS] [URL]
 - `init`: Interactive wizard that generates a starter config
 - `themes`: List all built-in theme names
 - `config`: Show the resolved (merged) configuration; add `--show-origin` to
-  prefix each entry with the file it comes from (like `git config --show-origin`)
+    prefix each entry with the file it comes from (like
+    `git config --show-origin`)
 
 **Options:**
 
@@ -216,7 +218,8 @@ Merge rules (applied at each layer):
 - **Async Runtimes**: smol (UI thread) + Tokio (engine thread)
 - **Syntax Highlighting**: tree-sitter with custom color model integration
 - **Markdown**: pulldown-cmark parser with custom ANSI renderer
-- **GitHub API**: octocrab (GraphQL for PRs/issues, REST for notifications/actions/alerts)
+- **GitHub API**: octocrab (GraphQL for PRs/issues, REST for
+    notifications/actions/alerts)
 - **Cache**: moka in-process LRU cache with async support
 
 ## License

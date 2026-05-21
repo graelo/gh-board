@@ -150,6 +150,13 @@ repo = "@current"
 #   {{.HeadBranch}}      — branch that triggered the run
 # watch_complete_command = "osascript -e 'display notification \"{{.RunName}} #{{.RunNumber}} — {{.ConclusionEmoji}} {{.Conclusion}}\" with title \"gh-board: {{.RepoName}}\"'"
 
+# Group matrix-job variants under a parent header in the run-detail sidebar.
+# Only effective when the workflow uses GitHub's auto-format job names
+# (i.e. no `name:` template), so the rendered names look like
+# `parent (variant)`. Jobs that don't match the pattern render flat as today.
+# Default: false.
+# group_matrix_jobs = true
+
 # ==============================================================================
 # ALERTS FILTERS
 # ==============================================================================

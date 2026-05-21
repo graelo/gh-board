@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use iocraft::prelude::*;
 
@@ -400,7 +400,136 @@ fn build_run_sidebar_meta(
     }
 }
 
-fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) -> Vec<StyledLine> {
+/// Parse a job name like `prefix (variant)` into its parts.
+///
+/// Returns `None` when the name doesn't match the auto-format pattern
+/// GitHub uses for matrix jobs without a custom `name:` template.
+fn parse_matrix_name(name: &str) -> Option<(&str, &str)> {
+    let inner = name.strip_suffix(')')?;
+    let (prefix, variant) = inner.rsplit_once(" (")?;
+    if prefix.is_empty() || variant.is_empty() {
+        return None;
+    }
+    Some((prefix, variant))
+}
+
+/// Severity ranking for rolling up matrix-sibling conclusions: lower = worse.
+fn conclusion_severity(c: RunConclusion) -> u8 {
+    match c {
+        RunConclusion::Failure | RunConclusion::TimedOut => 0,
+        RunConclusion::ActionRequired => 1,
+        RunConclusion::Cancelled => 2,
+        RunConclusion::Stale => 3,
+        RunConclusion::Neutral => 4,
+        RunConclusion::Skipped => 5,
+        RunConclusion::Success => 6,
+        RunConclusion::Unknown => 7,
+    }
+}
+
+/// Worst-case rollup across a matrix group: any running/queued → that status;
+/// otherwise the most-severe conclusion among completed siblings.
+fn rollup_group_status(jobs: &[&WorkflowJob]) -> (RunStatus, Option<RunConclusion>) {
+    if jobs.iter().any(|j| j.status == RunStatus::InProgress) {
+        return (RunStatus::InProgress, None);
+    }
+    if jobs.iter().any(|j| j.status == RunStatus::Queued) {
+        return (RunStatus::Queued, None);
+    }
+    let worst = jobs
+        .iter()
+        .filter_map(|j| j.conclusion)
+        .min_by_key(|c| conclusion_severity(*c));
+    (RunStatus::Completed, worst)
+}
+
+/// Wall-clock duration spanning a matrix group: earliest start → latest end.
+fn group_duration(jobs: &[&WorkflowJob]) -> String {
+    let start = jobs.iter().filter_map(|j| j.started_at).min();
+    let end = jobs.iter().filter_map(|j| j.completed_at).max();
+    crate::util::format_duration(start, end)
+}
+
+/// Render one job's header row + its step list, indented by `indent` spaces.
+fn push_job_block(
+    lines: &mut Vec<StyledLine>,
+    job: &WorkflowJob,
+    label: &str,
+    indent: usize,
+    theme: &ResolvedTheme,
+) {
+    let header_indent: String = " ".repeat(indent);
+    let (icon, color) = run_status_icon_color(job.status, job.conclusion, theme);
+    let duration = crate::util::format_duration(job.started_at, job.completed_at);
+    let dur_text = if duration.is_empty() {
+        String::new()
+    } else {
+        format!("  ({duration})")
+    };
+    let mut header_spans = Vec::with_capacity(4);
+    if !header_indent.is_empty() {
+        header_spans.push(StyledSpan::text(header_indent.clone(), theme.text_faint));
+    }
+    header_spans.push(StyledSpan::text(icon, color));
+    header_spans.push(StyledSpan::text(format!("  {label}"), theme.text_primary));
+    header_spans.push(StyledSpan::text(dur_text, theme.text_faint));
+    lines.push(StyledLine::from_spans(header_spans));
+
+    let max_step_name_width = job
+        .steps
+        .iter()
+        .map(|s| UnicodeWidthStr::width(s.name.as_str()))
+        .max()
+        .unwrap_or(0);
+    let step_indent: String = " ".repeat(indent + 3);
+    for step in &job.steps {
+        let (step_icon, step_color) = run_status_icon_color(step.status, step.conclusion, theme);
+        let step_dur = crate::util::format_duration(step.started_at, step.completed_at);
+        let mut spans = vec![
+            StyledSpan::text(step_indent.clone(), theme.text_faint),
+            StyledSpan::text(step_icon, step_color),
+            StyledSpan::text(format!("  {}", step.name), theme.text_secondary),
+        ];
+        if !step_dur.is_empty() {
+            let name_w = UnicodeWidthStr::width(step.name.as_str());
+            let pad = max_step_name_width - name_w + 2;
+            spans.push(StyledSpan::text(
+                format!("{:pad$}{step_dur}", "", pad = pad),
+                theme.text_faint,
+            ));
+        }
+        lines.push(StyledLine::from_spans(spans));
+    }
+}
+
+/// Render the rolled-up parent header for a matrix group.
+fn push_group_header(
+    lines: &mut Vec<StyledLine>,
+    prefix: &str,
+    members: &[&WorkflowJob],
+    theme: &ResolvedTheme,
+) {
+    let (status, conclusion) = rollup_group_status(members);
+    let (icon, color) = run_status_icon_color(status, conclusion, theme);
+    let duration = group_duration(members);
+    let dur_text = if duration.is_empty() {
+        String::new()
+    } else {
+        format!("  ({duration})")
+    };
+    lines.push(StyledLine::from_spans(vec![
+        StyledSpan::text(icon, color),
+        StyledSpan::text(format!("  {prefix}"), theme.text_primary),
+        StyledSpan::text(dur_text, theme.text_faint),
+    ]));
+}
+
+fn build_jobs_lines(
+    jobs: &[WorkflowJob],
+    loading: bool,
+    group_matrix: bool,
+    theme: &ResolvedTheme,
+) -> Vec<StyledLine> {
     let mut lines = Vec::new();
     if loading {
         lines.push(StyledLine::from_span(StyledSpan::text(
@@ -416,51 +545,68 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
         )));
         return lines;
     }
-    let mut sorted_jobs: Vec<&WorkflowJob> = jobs.iter().collect();
-    sorted_jobs.sort_by(|a, b| a.name.cmp(&b.name));
 
-    for (i, job) in sorted_jobs.iter().enumerate() {
-        if i > 0 {
-            lines.push(StyledLine::from_spans(vec![]));
-        }
-        let (icon, color) = run_status_icon_color(job.status, job.conclusion, theme);
-        let duration = crate::util::format_duration(job.started_at, job.completed_at);
-        let dur_text = if duration.is_empty() {
-            String::new()
-        } else {
-            format!("  ({duration})")
-        };
-        lines.push(StyledLine::from_spans(vec![
-            StyledSpan::text(icon, color),
-            StyledSpan::text(format!("  {}", job.name), theme.text_primary),
-            StyledSpan::text(dur_text, theme.text_faint),
-        ]));
-        let max_step_name_width = job
-            .steps
-            .iter()
-            .map(|s| UnicodeWidthStr::width(s.name.as_str()))
-            .max()
-            .unwrap_or(0);
-        for step in &job.steps {
-            let (step_icon, step_color) =
-                run_status_icon_color(step.status, step.conclusion, theme);
-            let step_dur = crate::util::format_duration(step.started_at, step.completed_at);
-            let mut spans = vec![
-                StyledSpan::text("   ", theme.text_faint),
-                StyledSpan::text(step_icon, step_color),
-                StyledSpan::text(format!("  {}", step.name), theme.text_secondary),
-            ];
-            if !step_dur.is_empty() {
-                let name_w = UnicodeWidthStr::width(step.name.as_str());
-                let pad = max_step_name_width - name_w + 2;
-                spans.push(StyledSpan::text(
-                    format!("{:pad$}{step_dur}", "", pad = pad),
-                    theme.text_faint,
-                ));
+    // When grouping is disabled, fall back to the original flat alphabetical
+    // render — every job rendered as a top-level block.
+    if !group_matrix {
+        let mut sorted_jobs: Vec<&WorkflowJob> = jobs.iter().collect();
+        sorted_jobs.sort_by(|a, b| a.name.cmp(&b.name));
+        for (i, job) in sorted_jobs.iter().enumerate() {
+            if i > 0 {
+                lines.push(StyledLine::from_spans(vec![]));
             }
-            lines.push(StyledLine::from_spans(spans));
+            push_job_block(&mut lines, job, &job.name, 0, theme);
+        }
+        return lines;
+    }
+
+    // Partition jobs by parsed `prefix (variant)`. Prefixes with only one
+    // member don't constitute a group — those jobs render flat.
+    let mut groups: BTreeMap<&str, Vec<&WorkflowJob>> = BTreeMap::new();
+    let mut standalone: Vec<&WorkflowJob> = Vec::new();
+    for job in jobs {
+        match parse_matrix_name(&job.name) {
+            Some((prefix, _)) => groups.entry(prefix).or_default().push(job),
+            None => standalone.push(job),
         }
     }
+    let mut multi_groups: Vec<(&str, Vec<&WorkflowJob>)> = Vec::new();
+    for (prefix, members) in groups {
+        if members.len() >= 2 {
+            multi_groups.push((prefix, members));
+        } else {
+            standalone.extend(members);
+        }
+    }
+    standalone.sort_by(|a, b| a.name.cmp(&b.name));
+
+    // Groups first (alphabetical by prefix via BTreeMap iteration), then
+    // standalone jobs alphabetically. Blank line between each top-level block
+    // and between sibling variants inside a group.
+    let mut first_block = true;
+    for (prefix, mut members) in multi_groups {
+        if !first_block {
+            lines.push(StyledLine::from_spans(vec![]));
+        }
+        first_block = false;
+        members.sort_by(|a, b| a.name.cmp(&b.name));
+        push_group_header(&mut lines, prefix, &members, theme);
+        for (vi, member) in members.iter().enumerate() {
+            if vi > 0 {
+                lines.push(StyledLine::from_spans(vec![]));
+            }
+            let variant = parse_matrix_name(&member.name).map_or(member.name.as_str(), |(_, v)| v);
+            push_job_block(&mut lines, member, variant, 3, theme);
+        }
+    }
+    for job in &standalone {
+        if !first_block {
+            lines.push(StyledLine::from_spans(vec![]));
+        }
+        first_block = false;
+        push_job_block(&mut lines, job, &job.name, 0, theme);
+    }
+
     lines
 }
 
@@ -469,6 +615,7 @@ fn build_jobs_lines(jobs: &[WorkflowJob], loading: bool, theme: &ResolvedTheme) 
 // ---------------------------------------------------------------------------
 
 #[derive(Default, Props)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct ActionsViewProps<'a> {
     pub filters: Option<&'a [ActionsFilter]>,
     pub engine: Option<&'a EngineHandle>,
@@ -498,6 +645,8 @@ pub struct ActionsViewProps<'a> {
     pub go_back: Option<State<bool>>,
     /// Shared rate-limit state (owned by App).
     pub rate_limit: Option<State<Option<RateLimitInfo>>>,
+    /// Group matrix-job variants in the run-detail sidebar.
+    pub group_matrix_jobs: bool,
 }
 
 #[component]
@@ -2236,7 +2385,12 @@ pub fn ActionsView<'a>(
         .and_then(|id| jobs_cache.read().get(&id).cloned())
         .unwrap_or_default();
     let rendered_sidebar = if detail_open.get() && sidebar_w > 0 {
-        let jobs_lines = build_jobs_lines(&sidebar_jobs, sidebar_loading, &theme);
+        let jobs_lines = build_jobs_lines(
+            &sidebar_jobs,
+            sidebar_loading,
+            props.group_matrix_jobs,
+            &theme,
+        );
         let sidebar_title = current_run_for_detail
             .map_or_else(|| "Jobs".to_owned(), |r| format!("Run #{}", r.run_number));
         let sidebar_colors = SidebarColors {
@@ -2455,4 +2609,131 @@ fn send_cancel(
 
 fn default_theme() -> ResolvedTheme {
     super::default_theme()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{conclusion_severity, parse_matrix_name, rollup_group_status};
+    use crate::types::{RunConclusion, RunStatus, WorkflowJob};
+
+    fn job(status: RunStatus, conclusion: Option<RunConclusion>) -> WorkflowJob {
+        WorkflowJob {
+            id: 0,
+            name: String::new(),
+            status,
+            conclusion,
+            started_at: None,
+            completed_at: None,
+            html_url: String::new(),
+            steps: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn parse_matrix_name_auto_format() {
+        assert_eq!(
+            parse_matrix_name("test (ubuntu-latest)"),
+            Some(("test", "ubuntu-latest"))
+        );
+        assert_eq!(
+            parse_matrix_name("test-all-versions (1.95.0)"),
+            Some(("test-all-versions", "1.95.0"))
+        );
+        // Multi-key matrix renders all values comma-separated.
+        assert_eq!(
+            parse_matrix_name("all-platforms (x86_64-unknown-linux-musl, ubuntu-latest)"),
+            Some(("all-platforms", "x86_64-unknown-linux-musl, ubuntu-latest"))
+        );
+    }
+
+    #[test]
+    fn parse_matrix_name_rejects_non_matrix() {
+        // Plain job name with no matrix expansion.
+        assert!(parse_matrix_name("Build").is_none());
+        // Missing closing paren.
+        assert!(parse_matrix_name("test (ubuntu").is_none());
+        // Empty prefix or variant.
+        assert!(parse_matrix_name(" (variant)").is_none());
+        assert!(parse_matrix_name("prefix ()").is_none());
+        // Parens with no leading space — not the auto-format pattern.
+        assert!(parse_matrix_name("(only)").is_none());
+    }
+
+    #[test]
+    fn parse_matrix_name_nested_parens_keeps_outer_split() {
+        // Outer `)` and last ` (` define the split — inner parens stay in prefix.
+        assert_eq!(
+            parse_matrix_name("Build (debug) (linux)"),
+            Some(("Build (debug)", "linux"))
+        );
+    }
+
+    #[test]
+    fn conclusion_severity_ordering() {
+        // Failure and TimedOut share the worst rank.
+        assert_eq!(
+            conclusion_severity(RunConclusion::Failure),
+            conclusion_severity(RunConclusion::TimedOut)
+        );
+        assert!(
+            conclusion_severity(RunConclusion::Failure)
+                < conclusion_severity(RunConclusion::Cancelled)
+        );
+        assert!(
+            conclusion_severity(RunConclusion::Cancelled)
+                < conclusion_severity(RunConclusion::Success)
+        );
+        assert!(
+            conclusion_severity(RunConclusion::Success)
+                < conclusion_severity(RunConclusion::Unknown)
+        );
+    }
+
+    #[test]
+    fn rollup_running_takes_priority_over_completed() {
+        let jobs = [
+            job(RunStatus::Completed, Some(RunConclusion::Success)),
+            job(RunStatus::InProgress, None),
+            job(RunStatus::Completed, Some(RunConclusion::Failure)),
+        ];
+        let refs: Vec<&WorkflowJob> = jobs.iter().collect();
+        assert_eq!(rollup_group_status(&refs), (RunStatus::InProgress, None));
+    }
+
+    #[test]
+    fn rollup_queued_when_no_running_but_some_queued() {
+        let jobs = [
+            job(RunStatus::Completed, Some(RunConclusion::Success)),
+            job(RunStatus::Queued, None),
+        ];
+        let refs: Vec<&WorkflowJob> = jobs.iter().collect();
+        assert_eq!(rollup_group_status(&refs), (RunStatus::Queued, None));
+    }
+
+    #[test]
+    fn rollup_completed_surfaces_worst_conclusion() {
+        let jobs = [
+            job(RunStatus::Completed, Some(RunConclusion::Success)),
+            job(RunStatus::Completed, Some(RunConclusion::Cancelled)),
+            job(RunStatus::Completed, Some(RunConclusion::Success)),
+        ];
+        let refs: Vec<&WorkflowJob> = jobs.iter().collect();
+        assert_eq!(
+            rollup_group_status(&refs),
+            (RunStatus::Completed, Some(RunConclusion::Cancelled))
+        );
+    }
+
+    #[test]
+    fn rollup_failure_outranks_cancelled() {
+        let jobs = [
+            job(RunStatus::Completed, Some(RunConclusion::Cancelled)),
+            job(RunStatus::Completed, Some(RunConclusion::Failure)),
+        ];
+        let refs: Vec<&WorkflowJob> = jobs.iter().collect();
+        assert_eq!(
+            rollup_group_status(&refs),
+            (RunStatus::Completed, Some(RunConclusion::Failure))
+        );
+    }
 }

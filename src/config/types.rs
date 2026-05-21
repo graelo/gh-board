@@ -106,6 +106,11 @@ pub struct ActionsConfig {
     /// `{{.RunId}}`, `{{.RunName}}`, `{{.RunNumber}}`, `{{.Conclusion}}`,
     /// `{{.ConclusionEmoji}}`, `{{.HeadBranch}}`.
     pub watch_complete_command: Option<String>,
+    /// In the run-detail sidebar, group matrix-job variants under a parent
+    /// header whose label is the rendered prefix (`prefix (variant)`). Only
+    /// effective when the workflow uses GitHub's auto-format job names
+    /// (no `name:` template). Default: `false`.
+    pub group_matrix_jobs: Option<bool>,
 }
 
 // ---------------------------------------------------------------------------

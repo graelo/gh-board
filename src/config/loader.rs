@@ -162,6 +162,7 @@ fn merge_actions_config(
             .watch_complete_command
             .clone()
             .or_else(|| global.watch_complete_command.clone()),
+        group_matrix_jobs: local.group_matrix_jobs.or(global.group_matrix_jobs),
     }
 }
 

@@ -7,6 +7,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Matrix-job grouping in the run-detail sidebar** — new `group_matrix_jobs`
+  boolean under `[actions]` (default: false). When enabled, jobs whose
+  rendered names follow GitHub's auto-format `prefix (variant)` pattern and
+  share a prefix with ≥1 sibling render under a rolled-up parent header, with
+  variants indented beneath. Worst-case status icon and earliest→latest
+  wall-clock duration on the parent. Only effective when the workflow omits
+  the `name:` template, since GitHub strips the YAML job key from custom name
+  strings; workflows using `name:` render flat as before
+
 ## [0.16.0] - 2026-04-24
 
 ### Added

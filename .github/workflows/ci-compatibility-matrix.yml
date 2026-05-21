@@ -14,8 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-all-versions:
-    name: ubuntu-latest (${{ matrix.rust }})
+  test-rust-versions:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -72,8 +71,7 @@ jobs:
       - name: Test
         run: ./ci/test_full.sh
 
-  test-all-platforms:
-    name: ${{ matrix.target }}
+  test-platforms:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read

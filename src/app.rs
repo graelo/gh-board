@@ -398,6 +398,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
     let refetch_minutes = config.map_or(10, |c| c.github.refetch_interval_minutes.unwrap_or(10));
     let prefetch_pr_details = config.map_or(0, |c| c.github.prefetch_pr_details.unwrap_or(0));
     let auto_clone = config.is_some_and(|c| c.github.auto_clone.unwrap_or(false));
+    let group_matrix_jobs = config.is_some_and(|c| c.actions.group_matrix_jobs.unwrap_or(false));
     let filters_pr = config.map(|c| c.pr_filters.as_slice());
     let filters_issue = config.map(|c| c.issues_filters.as_slice());
     let filters_actions = config.map(|c| c.actions_filters.as_slice());
@@ -543,6 +544,7 @@ pub fn App<'a>(props: &AppProps<'a>, mut hooks: Hooks) -> impl Into<AnyElement<'
                     nav_target,
                     go_back: go_back_signal,
                     rate_limit: rest_rate_limit,
+                    group_matrix_jobs,
                 )
             }
             View(

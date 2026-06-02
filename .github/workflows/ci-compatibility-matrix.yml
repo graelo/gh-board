@@ -1,5 +1,9 @@
 # Test pre-releases on a larger scope (platforms & versions) to avoid bad surprises.
 # Opt-in via push to a `compat/*` branch (e.g., `compat/0.17-prerelease`).
+#
+# Local:
+#   act push -W .github/workflows/ci-compatibility-matrix.yml -j test-rust-versions
+#   act push -W .github/workflows/ci-compatibility-matrix.yml -j test-platforms
 
 name: 'CI: Compatibility Matrix'
 on:
@@ -26,28 +30,16 @@ jobs:
         rust: ['1.95.0', beta, nightly]
 
     steps:
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
-        with:
-          toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
-
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Cache crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        continue-on-error: false
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ matrix.rust }}-hash-${{ hashFiles('**/Cargo.lock') }}
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
 
       - name: Quality – cargo fmt
         run: |
@@ -97,34 +89,22 @@ jobs:
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
     steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
 
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
       - name: Install musl-tools (Linux)
         if: contains(matrix.target, 'linux-musl')
         run: |
           sudo apt-get update
           sudo apt-get install -y musl-tools
-
-      - name: Cache crates
-        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
-        continue-on-error: false
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-stable-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build (dev)
         run: cargo build --locked --all-features

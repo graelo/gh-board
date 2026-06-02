@@ -1,6 +1,6 @@
 [package]
 name = "gh-board"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2024"
 rust-version = "1.95.0"
 description = "A fast terminal dashboard for GitHub pull requests, issues, and notifications"
@@ -35,7 +35,11 @@ octocrab = "0.51"
 #
 # Markdown
 pulldown-cmark = "0.13"
-rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
+rustls = {
+  version = "0.23",
+  default-features = false,
+  features = ["aws_lc_rs"]
+}
 #
 # Serialization / Config
 serde = { version = "1", features = ["derive"] }

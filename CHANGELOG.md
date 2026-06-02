@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-06-02
+
 ### Added
 
 - **Matrix-job grouping in the run-detail sidebar** — new `group_matrix_jobs`
@@ -17,6 +19,46 @@ project adheres to [Semantic Versioning](https://semver.org/).
   wall-clock duration on the parent. Only effective when the workflow omits
   the `name:` template, since GitHub strips the YAML job key from custom name
   strings; workflows using `name:` render flat as before
+- **Linux musl builds + Windows binaries** — release artifacts now include
+  statically-linked musl builds for Linux (amd64, arm64) and native binaries
+  for Windows (amd64, arm64). All artifacts are attested
+- **Dual license** — the project is now licensed under MIT OR Apache-2.0
+- **GraphQL contract tests** — wiremock-based test per public GraphQL helper
+  (8 total) guarding against silent deserialization shifts in the `octocrab`
+  client, such as the 0.49.8 unwrap regression that bypassed every PR/issue
+  fetch at runtime while unit tests still passed
+
+### Fixed
+
+- **GraphQL deserialization** — stopped double-unwrapping the response data
+  field, which caused every PR and issue fetch to fail with "missing data
+  field" after the `octocrab` 0.49.8 update
+- **Windows release archive** — switched Windows runners from `zip` (which
+  is not available in the bundled Git Bash on `windows-11-arm`) to `7z`, and
+  disabled `fail-fast` in the release matrix so one platform failing no
+  longer cancels the others
+
+### Changed
+
+- **CI playbook v1.1 conformance** — workflow naming, concurrency groups, job
+  structure, action SHA pinning, and supply-chain hardening conventions applied
+  uniformly across all workflows; release packaging consolidated
+- **Compatibility matrix expanded** — now covers Linux (musl, amd64 + arm64),
+  macOS, and Windows (amd64 + arm64)
+- **`test_full.sh`** — pass `--locked` to all cargo invocations, add a CLI
+  smoke test, and run an extra `--no-default-features` build
+- Dependencies updated to latest patch and minor versions
+
+### Security
+
+- **GitHub App tokens scoped to required permissions** — without explicit
+  `permission-*` inputs, `create-github-app-token` returned a token with all
+  installation permissions. The homebrew job now requests only `contents`
+  and `pull-requests`; the renovate job requests `contents`, `issues`,
+  `pull-requests`, `workflows`, and `statuses`
+- **Renovate `minimumReleaseAge: 3 days`** — delays adoption of newly
+  published crate versions to reduce exposure to compromised releases. Also
+  switched to a weekly Friday schedule
 
 ## [0.16.0] - 2026-04-24
 
@@ -447,7 +489,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
-[Unreleased]: https://github.com/graelo/gh-board/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/graelo/gh-board/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/graelo/gh-board/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/graelo/gh-board/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/graelo/gh-board/compare/v0.13.0...v0.14.0

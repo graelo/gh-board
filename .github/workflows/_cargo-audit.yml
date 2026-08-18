@@ -39,7 +39,7 @@ jobs:
           key: ${{ runner.os }}-cargo-stable-audit-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@b20dedce73af6905cdc30d6611090c9b67557c8d # v2.85.12
+        uses: taiki-e/install-action@b27e114ddbae5cc01df19a22cf70a124d5177567 # v2.86.0
         with:
           tool: cargo-deny@0.19.6
 

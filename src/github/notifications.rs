@@ -295,7 +295,7 @@ mod tests {
         assert_eq!(f.repo.as_deref(), Some("torvalds/linux"));
         assert_eq!(f.reason, Some(NotificationReason::ReviewRequested));
         assert_eq!(f.status, Some(NotificationStatus::Unread));
-        assert!(f.excluded_reasons.is_empty());
+        assert_eq!(f.excluded_reasons, Vec::<NotificationReason>::new());
         assert!(!f.all);
         assert_eq!(f.per_page, 100);
     }

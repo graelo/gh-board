@@ -297,7 +297,7 @@ mod tests {
     fn filter_rows_no_match() {
         let rows = vec![make_row(&[("title", "Fix bug"), ("author", "alice")])];
         let result = filter_rows(&rows, "xyz");
-        assert!(result.is_empty());
+        assert_eq!(result, [] as [usize; 0]);
     }
 
     #[test]
@@ -311,7 +311,7 @@ mod tests {
     fn filter_rows_empty_rows() {
         let rows: Vec<Row> = vec![];
         let result = filter_rows(&rows, "test");
-        assert!(result.is_empty());
+        assert_eq!(result, [] as [usize; 0]);
     }
 
     // --- parse_notification_query tests ---
@@ -319,7 +319,7 @@ mod tests {
     #[test]
     fn parse_empty_query() {
         let q = parse_notification_query("");
-        assert!(q.text.is_empty());
+        assert_eq!(q.text, "");
         assert!(q.repo.is_none());
         assert!(q.reason.is_none());
         assert!(q.read_filter.is_none());
@@ -336,7 +336,7 @@ mod tests {
     fn parse_repo_prefix() {
         let q = parse_notification_query("repo:owner/repo");
         assert_eq!(q.repo.as_deref(), Some("owner/repo"));
-        assert!(q.text.is_empty());
+        assert_eq!(q.text, "");
     }
 
     #[test]

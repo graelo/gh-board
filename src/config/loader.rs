@@ -676,7 +676,7 @@ mod tests {
         std::fs::write(subdir.join("gh-board.toml"), "defaults.view = \"prs\"").unwrap();
 
         let chain = find_local_config_chain_from(subdir);
-        assert!(chain.is_empty());
+        assert_eq!(chain, Vec::<PathBuf>::new());
     }
 
     #[test]

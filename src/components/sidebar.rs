@@ -844,7 +844,7 @@ mod tests {
     #[test]
     fn tab_labels_no_active_tab() {
         let labels = build_tab_labels(None, None, None, None);
-        assert!(labels.is_empty());
+        assert_eq!(labels, []);
     }
 
     #[test]

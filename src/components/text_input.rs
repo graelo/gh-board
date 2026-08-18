@@ -229,7 +229,7 @@ mod tests {
     fn filter_no_match() {
         let candidates = vec!["bug".to_owned(), "feature".to_owned()];
         let result = filter_suggestions(&candidates, "xyz");
-        assert!(result.is_empty());
+        assert_eq!(result, Vec::<String>::new());
     }
 
     #[test]

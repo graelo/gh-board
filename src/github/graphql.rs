@@ -2578,7 +2578,7 @@ mod graphql_endpoint_tests {
         let body = envelope(&json!({"repository": {"labels": {"nodes": []}}}));
         let (_s, oc) = graphql_returns(body).await;
         let (labels, _rl) = fetch_repo_labels(&oc, "x", "y", None).await.unwrap();
-        assert!(labels.is_empty());
+        assert_eq!(labels.len(), 0);
     }
 
     #[tokio::test]
@@ -2586,7 +2586,7 @@ mod graphql_endpoint_tests {
         let body = envelope(&json!({"repository": {"collaborators": {"nodes": []}}}));
         let (_s, oc) = graphql_returns(body).await;
         let (logins, _rl) = fetch_repo_collaborators(&oc, "x", "y", None).await.unwrap();
-        assert!(logins.is_empty());
+        assert_eq!(logins, Vec::<String>::new());
     }
 
     #[tokio::test]

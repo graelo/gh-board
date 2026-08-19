@@ -52,14 +52,14 @@ document maps each configuration field to the exact UI elements it affects.
 
 ### `warning`
 
-| View / Component  | Element                                        |
-| ----------------- | ---------------------------------------------- |
+| View / Component  | Element                                                                         |
+| ----------------- | ------------------------------------------------------------------------------- |
 | PR list           | Pending/running CI icon, action-required CI icon, changes-requested review icon |
-| Issue list        | _(not directly used)_                          |
-| Notification list | Issue-type badge icon                          |
-| Sidebar           | Force-push timeline event                      |
-| Sidebar Files     | Modified file entries                          |
-| Sidebar Checks    | Pending, running, and action-required check icons |
+| Issue list        | _(not directly used)_                                                           |
+| Notification list | Issue-type badge icon                                                           |
+| Sidebar           | Force-push timeline event                                                       |
+| Sidebar Files     | Modified file entries                                                           |
+| Sidebar Checks    | Pending, running, and action-required check icons                               |
 
 ### `success`
 

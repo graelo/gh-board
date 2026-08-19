@@ -200,6 +200,13 @@ Merge rules (applied at each layer):
 - `repo_paths` are merged (closer entries override matching keys from farther
     layers)
 
+## Development
+
+For local verification, read the [`Makefile`](Makefile) for the canonical task
+definitions, or run `make help` to list them. Run `make check` before pushing
+and `make check-all` before opening a pull request. See [CONTRIBUTING.md] for
+focused testing, code coverage, and demo asset maintenance.
+
 ## Documentation
 
 | Topic                   | File                                           |

@@ -12,21 +12,37 @@ discuss the approach.
 - The [GitHub CLI](https://cli.github.com/) (`gh`) authenticated, or a
   `GITHUB_TOKEN` / `GH_TOKEN` environment variable
 
-### Build & test
+`make check-all` also requires cargo-deny, cargo-pants, Convco, Poutine,
+Zizmor, and Rumdl. `make coverage` requires cargo-llvm-cov.
+
+### Build, test, check
+
+The `Makefile` is the canonical definition of local tasks; run `make help` to
+list them. The ones needed day to day are:
 
 ```bash
-cargo build
-cargo nextest run               # unit + integration tests
-cargo test --doc                # doctests (nextest doesn't run these)
-cargo clippy                    # pedantic flags configured in .cargo/config.toml
-cargo fmt --all -- --check      # formatting check
+cargo build         # debug build
+make release        # release build
+make test           # full test suite, including doctests and the MSRV check
+make check          # fmt + lint + test — run before `git push`
+make check-all      # adds audits, commit lint, Markdown, and workflow checks
+make fix            # auto-format and apply Clippy fixes
 ```
 
-### Full CI check
+For focused tests, use Nextest directly:
 
 ```bash
-./ci/test_full.sh               # runs all of the above, also checks MSRV
+cargo nextest run <test_name>
+cargo nextest run --test config_test
 ```
+
+### Code coverage
+
+```bash
+make coverage
+```
+
+The HTML report is written to `target/llvm-cov/html/index.html`.
 
 ### Debug logging
 
@@ -50,13 +66,13 @@ Demo videos and screenshots live in `demo/` and are recorded with
 
 ### Files
 
-| File | Purpose |
-|------|---------|
+| File             | Purpose                                                |
+| ---------------- | ------------------------------------------------------ |
 | `demo/hero.tape` | VHS script — captures a static screenshot (`hero.png`) |
-| `demo/hero.png` | Static screenshot used as the video poster frame |
-| `demo/nav.tape` | VHS script — records the navigation walkthrough |
-| `demo/nav.gif` | GIF output of the walkthrough |
-| `demo/nav.mp4` | MP4 output of the walkthrough (embedded in README) |
+| `demo/hero.png`  | Static screenshot used as the video poster frame       |
+| `demo/nav.tape`  | VHS script — records the navigation walkthrough        |
+| `demo/nav.gif`   | GIF output of the walkthrough                          |
+| `demo/nav.mp4`   | MP4 output of the walkthrough (embedded in README)     |
 
 ### Re-recording
 

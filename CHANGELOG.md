@@ -7,6 +7,23 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Local verification workflow** — the `Makefile` now defines pre-push and
+  pre-PR checks, dependency and workflow audits, Markdown linting, and coverage;
+  the unused pre-commit configuration was removed
+- **Dependency updates** — `octocrab` 0.51 → 0.54 (its GraphQL surface is
+  guarded by the contract tests added in 0.17.0), `tokio` 1.53, `anyhow`
+  1.0.104, `iocraft` 0.8.4, `moka` 0.12.16, plus security-driven bumps of
+  `h2` and `crossbeam-epoch`; no functional changes, MSRV unchanged (1.95.0)
+- **CI playbook v1.7 conformance** — workflow naming, concurrency groups,
+  and action SHA pinning aligned across all workflows; Renovate groups
+  improved with squash automerge and a 1st/15th schedule; `brew trust` added
+  to the release workflow
+- **Nightly Clippy compliance** — tests now use `assert_eq!(..., [])` instead
+  of `assert!(...is_empty())` to satisfy the `clippy::assert_is_empty` lint;
+  test-only change, no production code touched
+
 ## [0.17.0] - 2026-06-02
 
 ### Added

@@ -18,17 +18,17 @@ Because the full GitHub search syntax applies, any qualifier that works on
 
 ### Common qualifiers
 
-| Qualifier | Example | Effect |
-|---|---|---|
-| `author:` | `author:@me` | PRs/issues you opened |
-| `assignee:` | `assignee:@me` | Assigned to you |
-| `review-requested:` | `review-requested:@me` | Review requested from you |
-| `involves:` | `involves:@me` | You opened, commented, were assigned, or review-requested |
-| `is:open` / `is:closed` / `is:merged` | `is:open` | Limit by state |
-| `label:` | `label:bug` | Has a specific label |
-| `milestone:` | `milestone:"v1.0"` | Belongs to a milestone |
-| `repo:` | `repo:owner/name` | Restrict to one repository |
-| `sort:` | `sort:updated-desc` | Sort order |
+| Qualifier                             | Example                | Effect                                                    |
+| ------------------------------------- | ---------------------- | --------------------------------------------------------- |
+| `author:`                             | `author:@me`           | PRs/issues you opened                                     |
+| `assignee:`                           | `assignee:@me`         | Assigned to you                                           |
+| `review-requested:`                   | `review-requested:@me` | Review requested from you                                 |
+| `involves:`                           | `involves:@me`         | You opened, commented, were assigned, or review-requested |
+| `is:open` / `is:closed` / `is:merged` | `is:open`              | Limit by state                                            |
+| `label:`                              | `label:bug`            | Has a specific label                                      |
+| `milestone:`                          | `milestone:"v1.0"`     | Belongs to a milestone                                    |
+| `repo:`                               | `repo:owner/name`      | Restrict to one repository                                |
+| `sort:`                               | `sort:updated-desc`    | Sort order                                                |
 
 ### Config example
 
@@ -59,14 +59,14 @@ read and done in GitHub's sense.
 
 ### Status qualifiers
 
-| Qualifier | Meaning | API behaviour |
-|---|---|---|
-| *(none)* | Unread only **(default)** | `all=false` |
-| `is:unread` | Unread only (explicit) | `all=false` |
-| `is:read` | Not-unread (read + done) | `all=true`, then filtered client-side |
-| `is:all` | Everything | `all=true` |
-| `-is:unread` | Same as `is:read` | `all=true`, then filtered client-side |
-| `-is:read` | Same as `is:unread` | `all=false` |
+| Qualifier    | Meaning                   | API behaviour                         |
+| ------------ | ------------------------- | ------------------------------------- |
+| *(none)*     | Unread only **(default)** | `all=false`                           |
+| `is:unread`  | Unread only (explicit)    | `all=false`                           |
+| `is:read`    | Not-unread (read + done)  | `all=true`, then filtered client-side |
+| `is:all`     | Everything                | `all=true`                            |
+| `-is:unread` | Same as `is:read`         | `all=true`, then filtered client-side |
+| `-is:read`   | Same as `is:unread`       | `all=false`                           |
 
 > **Note:** The default is unread-only, matching the GitHub web UI inbox.
 > A bare filter like `reason:subscribed` fetches only unread notifications.
@@ -76,9 +76,9 @@ read and done in GitHub's sense.
 
 Filter by the reason GitHub sent the notification:
 
-| Qualifier | Example |
-|---|---|
-| `reason:<value>` | `reason:subscribed` |
+| Qualifier         | Example              |
+| ----------------- | -------------------- |
+| `reason:<value>`  | `reason:subscribed`  |
 | `-reason:<value>` | `-reason:subscribed` |
 
 Valid reason values:
@@ -136,14 +136,14 @@ repository.
 
 ### Fields
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `title` | string | yes | Tab label |
-| `repo` | string | yes | `"owner/repo"` or `"@current"` |
-| `host` | string | no | GHE hostname; defaults to `github.com` |
-| `limit` | integer | no | Max runs to fetch (1–100, default 30) |
-| `status` | string | no | `queued`, `in_progress`, `completed`, `waiting`, `requested`, `pending`, or a conclusion value (`success`, `failure`, `cancelled`, …) |
-| `event` | string | no | `push`, `pull_request`, `schedule`, `workflow_dispatch`, … |
+| Field    | Type    | Required | Description                                                                                                                           |
+| -------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `title`  | string  | yes      | Tab label                                                                                                                             |
+| `repo`   | string  | yes      | `"owner/repo"` or `"@current"`                                                                                                        |
+| `host`   | string  | no       | GHE hostname; defaults to `github.com`                                                                                                |
+| `limit`  | integer | no       | Max runs to fetch (1–100, default 30)                                                                                                 |
+| `status` | string  | no       | `queued`, `in_progress`, `completed`, `waiting`, `requested`, `pending`, or a conclusion value (`success`, `failure`, `cancelled`, …) |
+| `event`  | string  | no       | `push`, `pull_request`, `schedule`, `workflow_dispatch`, …                                                                            |
 
 ### `@current` — follow the working directory
 
@@ -185,12 +185,12 @@ they always target a specific repository.
 
 ### Fields
 
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `title` | string | yes | Tab label |
-| `repo` | string | yes | `"owner/repo"` or `"@current"` |
-| `host` | string | no | GHE hostname; defaults to `github.com` |
-| `limit` | integer | no | Max alerts to fetch per category (1–100, default 30) |
+| Field   | Type    | Required | Description                                          |
+| ------- | ------- | -------- | ---------------------------------------------------- |
+| `title` | string  | yes      | Tab label                                            |
+| `repo`  | string  | yes      | `"owner/repo"` or `"@current"`                       |
+| `host`  | string  | no       | GHE hostname; defaults to `github.com`               |
+| `limit` | integer | no       | Max alerts to fetch per category (1–100, default 30) |
 
 ### `@current` — follow the working directory
 
@@ -219,9 +219,9 @@ A category navigator sidebar lets you drill down by alert type or tool
 ## GitHub Enterprise (GHE) support
 
 Every filter type (`[[pr_filters]]`, `[[issues_filters]]`,
-`[[actions_filters]]`, `[[alerts_filters]]`, `[[notifications_filters]]`) accepts an optional
-`host` field. When set, all API calls for that filter are routed to the
-specified GHE hostname instead of `github.com`.
+`[[actions_filters]]`, `[[alerts_filters]]`, `[[notifications_filters]]`)
+accepts an optional `host` field. When set, all API calls for that filter are
+routed to the specified GHE hostname instead of `github.com`.
 
 ```toml
 [[pr_filters]]

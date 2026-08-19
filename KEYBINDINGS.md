@@ -9,55 +9,55 @@ any of them — or add custom shell commands — in your `config.toml`.
 
 ### Universal (active in every view)
 
-| Key | Action | Description |
-|---|---|---|
-| `j` / `↓` | `move_down` | Move cursor down |
-| `k` / `↑` | `move_up` | Move cursor up |
-| `g` / `Home` | `first` | Jump to first item |
-| `G` / `End` | `last` | Jump to last item |
-| `ctrl+d` | `half_page_down` | Half page down / scroll sidebar |
-| `ctrl+u` | `half_page_up` | Half page up / scroll sidebar |
-| `PageDown` | `page_down` | Page down |
-| `PageUp` | `page_up` | Page up |
-| `h` / `←` | `prev_filter` | Previous filter tab |
-| `l` / `→` | `next_filter` | Next filter tab |
-| `p` | `toggle_preview` | Toggle preview pane |
-| `+` | `sidebar_wider` | Widen sidebar |
-| `-` | `sidebar_narrower` | Narrow sidebar |
-| `=` | `sidebar_reset_width` | Reset sidebar width |
-| `o` | `open_browser` | Open item in browser |
-| `r` | `refresh_item` | Refresh selected item |
-| `R` | `refresh` | Refresh current filter |
-| `ctrl+r` | `refresh_all` | Refresh all filters (clear cache) |
-| `/` | `search` | Search / filter |
-| `y` | `copy_number` | Copy number to clipboard |
-| `Y` | `copy_url` | Copy URL to clipboard |
-| `?` | `toggle_help` | Toggle help overlay |
-| `q` | `quit` | Quit |
-| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
-| `1`–`6` | `go_to_prs` … `go_to_repo` | Jump directly to a view |
-| `S` | `toggle_scope` | Toggle repo scope |
-| `s` | `select_repo` | Select active repo |
+| Key          | Action                             | Description                       |
+| ------------ | ---------------------------------- | --------------------------------- |
+| `j` / `↓`    | `move_down`                        | Move cursor down                  |
+| `k` / `↑`    | `move_up`                          | Move cursor up                    |
+| `g` / `Home` | `first`                            | Jump to first item                |
+| `G` / `End`  | `last`                             | Jump to last item                 |
+| `ctrl+d`     | `half_page_down`                   | Half page down / scroll sidebar   |
+| `ctrl+u`     | `half_page_up`                     | Half page up / scroll sidebar     |
+| `PageDown`   | `page_down`                        | Page down                         |
+| `PageUp`     | `page_up`                          | Page up                           |
+| `h` / `←`    | `prev_filter`                      | Previous filter tab               |
+| `l` / `→`    | `next_filter`                      | Next filter tab                   |
+| `p`          | `toggle_preview`                   | Toggle preview pane               |
+| `+`          | `sidebar_wider`                    | Widen sidebar                     |
+| `-`          | `sidebar_narrower`                 | Narrow sidebar                    |
+| `=`          | `sidebar_reset_width`              | Reset sidebar width               |
+| `o`          | `open_browser`                     | Open item in browser              |
+| `r`          | `refresh_item`                     | Refresh selected item             |
+| `R`          | `refresh`                          | Refresh current filter            |
+| `ctrl+r`     | `refresh_all`                      | Refresh all filters (clear cache) |
+| `/`          | `search`                           | Search / filter                   |
+| `y`          | `copy_number`                      | Copy number to clipboard          |
+| `Y`          | `copy_url`                         | Copy URL to clipboard             |
+| `?`          | `toggle_help`                      | Toggle help overlay               |
+| `q`          | `quit`                             | Quit                              |
+| `n` / `N`    | `switch_view` / `switch_view_back` | Switch view                       |
+| `1`–`6`      | `go_to_prs` … `go_to_repo`         | Jump directly to a view           |
+| `S`          | `toggle_scope`                     | Toggle repo scope                 |
+| `s`          | `select_repo`                      | Select active repo                |
 
 ### PR view
 
-| Key | Action | Description |
-|---|---|---|
-| `v` | `approve` | Approve PR |
-| `L` | `label` | Label (autocomplete) |
-| `a` | `assign` | Assign/Unassign (multiselect) |
-| `C` | `comment` | Comment |
-| `d` | `view_diff` | View diff in pager |
-| `c` | `checkout` | Checkout branch |
-| `w` | `worktree` | Create/open git worktree |
-| `x` | `close` | Close PR |
-| `X` | `reopen` | Reopen PR |
-| `W` | `mark_ready` | Mark as ready for review |
-| `m` | `merge` | Merge PR |
-| `u` | `update_from_base` | Update from base branch |
-| `ctrl+]` | `jump_to_run` | Jump to Actions run |
-| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
-| `S` | `toggle_scope` | Toggle repo scope |
+| Key       | Action                             | Description                   |
+| --------- | ---------------------------------- | ----------------------------- |
+| `v`       | `approve`                          | Approve PR                    |
+| `L`       | `label`                            | Label (autocomplete)          |
+| `a`       | `assign`                           | Assign/Unassign (multiselect) |
+| `C`       | `comment`                          | Comment                       |
+| `d`       | `view_diff`                        | View diff in pager            |
+| `c`       | `checkout`                         | Checkout branch               |
+| `w`       | `worktree`                         | Create/open git worktree      |
+| `x`       | `close`                            | Close PR                      |
+| `X`       | `reopen`                           | Reopen PR                     |
+| `W`       | `mark_ready`                       | Mark as ready for review      |
+| `m`       | `merge`                            | Merge PR                      |
+| `u`       | `update_from_base`                 | Update from base branch       |
+| `ctrl+]`  | `jump_to_run`                      | Jump to Actions run           |
+| `n` / `N` | `switch_view` / `switch_view_back` | Switch view                   |
+| `S`       | `toggle_scope`                     | Toggle repo scope             |
 
 > **Worktree notes:** `checkout` and `worktree` require a `[repo_paths]` entry
 > for the PR's repository. If the local clone doesn't exist yet, you'll be asked
@@ -74,53 +74,53 @@ any of them — or add custom shell commands — in your `config.toml`.
 
 ### Issue view
 
-| Key | Action | Description |
-|---|---|---|
-| `L` | `label` | Label (autocomplete) |
-| `a` | `assign` | Assign/Unassign (multiselect) |
-| `c` | `comment` | Comment |
-| `x` | `close` | Close issue |
-| `X` | `reopen` | Reopen issue |
+| Key | Action    | Description                   |
+| --- | --------- | ----------------------------- |
+| `L` | `label`   | Label (autocomplete)          |
+| `a` | `assign`  | Assign/Unassign (multiselect) |
+| `c` | `comment` | Comment                       |
+| `x` | `close`   | Close issue                   |
+| `X` | `reopen`  | Reopen issue                  |
 
 ### Notifications view
 
-| Key | Action | Description |
-|---|---|---|
-| `m` | `mark_read` | Mark as read |
-| `M` | `mark_all_read` | Mark all as read |
-| `u` | `unsubscribe` | Unsubscribe |
-| `n` / `N` | `switch_view` / `switch_view_back` | Switch view |
-| `S` | `toggle_scope` | Toggle repo scope |
+| Key       | Action                             | Description       |
+| --------- | ---------------------------------- | ----------------- |
+| `m`       | `mark_read`                        | Mark as read      |
+| `M`       | `mark_all_read`                    | Mark all as read  |
+| `u`       | `unsubscribe`                      | Unsubscribe       |
+| `n` / `N` | `switch_view` / `switch_view_back` | Switch view       |
+| `S`       | `toggle_scope`                     | Toggle repo scope |
 
 ### Actions view
 
-| Key | Action | Description |
-|---|---|---|
-| `w` | `toggle_workflow_nav` | Toggle workflow navigator sidebar |
-| `ctrl+t` | `go_back` | Go back to previous view |
-| `d` | `close_tab` | Close ephemeral tab |
-| `e` | `rerun_failed` | Re-run failed jobs |
-| `E` | `rerun_all` | Re-run all jobs |
-| `ctrl+x` | `cancel_run` | Cancel run |
-| `W` | `watch_run` | Watch/unwatch workflow run |
+| Key      | Action                | Description                       |
+| -------- | --------------------- | --------------------------------- |
+| `w`      | `toggle_workflow_nav` | Toggle workflow navigator sidebar |
+| `ctrl+t` | `go_back`             | Go back to previous view          |
+| `d`      | `close_tab`           | Close ephemeral tab               |
+| `e`      | `rerun_failed`        | Re-run failed jobs                |
+| `E`      | `rerun_all`           | Re-run all jobs                   |
+| `ctrl+x` | `cancel_run`          | Cancel run                        |
+| `W`      | `watch_run`           | Watch/unwatch workflow run        |
 
 ### Alerts view
 
-| Key | Action | Description |
-|---|---|---|
+| Key | Action                | Description                       |
+| --- | --------------------- | --------------------------------- |
 | `w` | `toggle_workflow_nav` | Toggle category navigator sidebar |
 
 ### Branches view
 
-| Key | Action | Description |
-|---|---|---|
-| `c` | `checkout` | Checkout branch |
-| `Delete` / `D` | `delete_branch` | Delete branch |
-| `+` | `new_branch` | Create new branch |
-| `P` | `create_pr_from_branch` | Create PR from branch |
-| `v` | `view_prs_for_branch` | View PRs for branch |
-| `ctrl+]` | `jump_to_pr` | Jump to PR |
-| `w` | `worktree` | Create/open worktree |
+| Key            | Action                  | Description           |
+| -------------- | ----------------------- | --------------------- |
+| `c`            | `checkout`              | Checkout branch       |
+| `Delete` / `D` | `delete_branch`         | Delete branch         |
+| `+`            | `new_branch`            | Create new branch     |
+| `P`            | `create_pr_from_branch` | Create PR from branch |
+| `v`            | `view_prs_for_branch`   | View PRs for branch   |
+| `ctrl+]`       | `jump_to_pr`            | Jump to PR            |
+| `w`            | `worktree`              | Create/open worktree  |
 
 ---
 
@@ -175,29 +175,29 @@ name = "Open in browser (custom)"
 
 Available template variables:
 
-| Variable | Value |
-|---|---|
-| `{{.Url}}` | Item's HTML URL |
-| `{{.Number}}` | PR / issue number |
-| `{{.RepoName}}` | `owner/repo` string |
-| `{{.HeadBranch}}` | Head branch name (PRs only) |
-| `{{.BaseBranch}}` | Base branch name (PRs only) |
-| `{{.RunId}}` | Numeric run ID (Actions only) |
-| `{{.RunName}}` | Workflow name, e.g. "CI" (Actions only) |
-| `{{.RunNumber}}` | Run number, e.g. "78" (Actions only) |
-| `{{.Conclusion}}` | `success`, `failure`, `cancelled`, `timed_out`, etc. (Actions only) |
-| `{{.ConclusionEmoji}}` | Conclusion emoji: `✅`, `❌`, `🚫`, `⏰`, … (Actions only) |
+| Variable               | Value                                                               |
+| ---------------------- | ------------------------------------------------------------------- |
+| `{{.Url}}`             | Item's HTML URL                                                     |
+| `{{.Number}}`          | PR / issue number                                                   |
+| `{{.RepoName}}`        | `owner/repo` string                                                 |
+| `{{.HeadBranch}}`      | Head branch name (PRs only)                                         |
+| `{{.BaseBranch}}`      | Base branch name (PRs only)                                         |
+| `{{.RunId}}`           | Numeric run ID (Actions only)                                       |
+| `{{.RunName}}`         | Workflow name, e.g. "CI" (Actions only)                             |
+| `{{.RunNumber}}`       | Run number, e.g. "78" (Actions only)                                |
+| `{{.Conclusion}}`      | `success`, `failure`, `cancelled`, `timed_out`, etc. (Actions only) |
+| `{{.ConclusionEmoji}}` | Conclusion emoji: `✅`, `❌`, `🚫`, `⏰`, … (Actions only)          |
 
 ### Available contexts
 
-| TOML key | Active in |
-|---|---|
-| `[[keybindings.universal]]` | All views |
-| `[[keybindings.prs]]` | PR view |
-| `[[keybindings.issues]]` | Issue view |
-| `[[keybindings.actions]]` | Actions view |
-| `[[keybindings.alerts]]` | Alerts view |
-| `[[keybindings.branches]]` | Branches view |
+| TOML key                    | Active in     |
+| --------------------------- | ------------- |
+| `[[keybindings.universal]]` | All views     |
+| `[[keybindings.prs]]`       | PR view       |
+| `[[keybindings.issues]]`    | Issue view    |
+| `[[keybindings.actions]]`   | Actions view  |
+| `[[keybindings.alerts]]`    | Alerts view   |
+| `[[keybindings.branches]]`  | Branches view |
 
 > **Note:** Notifications keybindings are not currently user-configurable.
 
@@ -216,68 +216,68 @@ universal binding in a specific view without affecting other views.
 
 The full list of names accepted by the `builtin` field:
 
-| Name | Description |
-|---|---|
-| `move_down` | Move cursor down |
-| `move_up` | Move cursor up |
-| `first` | Jump to first item |
-| `last` | Jump to last item |
-| `page_down` | Page down |
-| `page_up` | Page up |
-| `half_page_down` | Half page down / scroll sidebar |
-| `half_page_up` | Half page up / scroll sidebar |
-| `prev_filter` | Previous filter tab |
-| `next_filter` | Next filter tab |
-| `toggle_preview` | Toggle preview pane |
-| `sidebar_wider` | Widen sidebar |
-| `sidebar_narrower` | Narrow sidebar |
-| `sidebar_reset_width` | Reset sidebar width |
-| `open_browser` | Open in browser |
-| `refresh_item` | Refresh selected item |
-| `refresh` | Refresh current filter |
-| `refresh_all` | Refresh all filters |
-| `search` | Search / filter |
-| `copy_number` | Copy number to clipboard |
-| `copy_url` | Copy URL to clipboard |
-| `toggle_help` | Toggle help overlay |
-| `quit` | Quit |
-| `approve` | Approve PR |
-| `assign` | Assign (autocomplete) |
-| `unassign` | Unassign |
-| `comment` | Comment |
-| `view_diff` | View diff in pager |
-| `checkout` | Checkout branch |
-| `worktree` | Create/open git worktree (PRs) |
-| `close` | Close PR or issue |
-| `reopen` | Reopen PR or issue |
-| `mark_ready` | Mark PR as ready for review |
-| `merge` | Merge PR |
-| `update_from_base` | Update PR from base branch |
-| `label` | Label (autocomplete, issues) |
-| `mark_read` | Mark notification as read |
-| `mark_all_read` | Mark all notifications as read |
-| `unsubscribe` | Unsubscribe from notification |
-| `delete_branch` | Delete branch |
-| `new_branch` | Create new branch |
-| `create_pr_from_branch` | Create PR from branch |
-| `view_prs_for_branch` | View PRs for branch |
-| `switch_view` | Switch to next view |
-| `switch_view_back` | Switch to previous view |
-| `toggle_scope` | Toggle repo scope |
-| `toggle_workflow_nav` | Toggle workflow navigator (actions) |
-| `rerun_failed` | Re-run failed jobs (actions) |
-| `rerun_all` | Re-run all jobs (actions) |
-| `cancel_run` | Cancel workflow run (actions) |
-| `jump_to_run` | Jump to Actions run (from PR view) |
-| `go_back` | Go back to previous view (actions) |
-| `close_tab` | Close ephemeral tab (actions) |
-| `watch_run` | Watch/unwatch workflow run (actions) |
-| `go_to_prs` | Go to PRs view |
-| `go_to_issues` | Go to Issues view |
-| `go_to_actions` | Go to Actions view |
-| `go_to_alerts` | Go to Alerts view |
-| `go_to_notifications` | Go to Notifications view |
-| `go_to_repo` | Go to Repo view |
+| Name                    | Description                          |
+| ----------------------- | ------------------------------------ |
+| `move_down`             | Move cursor down                     |
+| `move_up`               | Move cursor up                       |
+| `first`                 | Jump to first item                   |
+| `last`                  | Jump to last item                    |
+| `page_down`             | Page down                            |
+| `page_up`               | Page up                              |
+| `half_page_down`        | Half page down / scroll sidebar      |
+| `half_page_up`          | Half page up / scroll sidebar        |
+| `prev_filter`           | Previous filter tab                  |
+| `next_filter`           | Next filter tab                      |
+| `toggle_preview`        | Toggle preview pane                  |
+| `sidebar_wider`         | Widen sidebar                        |
+| `sidebar_narrower`      | Narrow sidebar                       |
+| `sidebar_reset_width`   | Reset sidebar width                  |
+| `open_browser`          | Open in browser                      |
+| `refresh_item`          | Refresh selected item                |
+| `refresh`               | Refresh current filter               |
+| `refresh_all`           | Refresh all filters                  |
+| `search`                | Search / filter                      |
+| `copy_number`           | Copy number to clipboard             |
+| `copy_url`              | Copy URL to clipboard                |
+| `toggle_help`           | Toggle help overlay                  |
+| `quit`                  | Quit                                 |
+| `approve`               | Approve PR                           |
+| `assign`                | Assign (autocomplete)                |
+| `unassign`              | Unassign                             |
+| `comment`               | Comment                              |
+| `view_diff`             | View diff in pager                   |
+| `checkout`              | Checkout branch                      |
+| `worktree`              | Create/open git worktree (PRs)       |
+| `close`                 | Close PR or issue                    |
+| `reopen`                | Reopen PR or issue                   |
+| `mark_ready`            | Mark PR as ready for review          |
+| `merge`                 | Merge PR                             |
+| `update_from_base`      | Update PR from base branch           |
+| `label`                 | Label (autocomplete, issues)         |
+| `mark_read`             | Mark notification as read            |
+| `mark_all_read`         | Mark all notifications as read       |
+| `unsubscribe`           | Unsubscribe from notification        |
+| `delete_branch`         | Delete branch                        |
+| `new_branch`            | Create new branch                    |
+| `create_pr_from_branch` | Create PR from branch                |
+| `view_prs_for_branch`   | View PRs for branch                  |
+| `switch_view`           | Switch to next view                  |
+| `switch_view_back`      | Switch to previous view              |
+| `toggle_scope`          | Toggle repo scope                    |
+| `toggle_workflow_nav`   | Toggle workflow navigator (actions)  |
+| `rerun_failed`          | Re-run failed jobs (actions)         |
+| `rerun_all`             | Re-run all jobs (actions)            |
+| `cancel_run`            | Cancel workflow run (actions)        |
+| `jump_to_run`           | Jump to Actions run (from PR view)   |
+| `go_back`               | Go back to previous view (actions)   |
+| `close_tab`             | Close ephemeral tab (actions)        |
+| `watch_run`             | Watch/unwatch workflow run (actions) |
+| `go_to_prs`             | Go to PRs view                       |
+| `go_to_issues`          | Go to Issues view                    |
+| `go_to_actions`         | Go to Actions view                   |
+| `go_to_alerts`          | Go to Alerts view                    |
+| `go_to_notifications`   | Go to Notifications view             |
+| `go_to_repo`            | Go to Repo view                      |
 
 ---
 
@@ -286,17 +286,17 @@ The full list of names accepted by the `builtin` field:
 The following keys are UI mechanics handled directly by the input layer and
 cannot be rebound:
 
-| Key | Where | Role |
-|---|---|---|
-| `y` / `Y` | All confirmation prompts | Confirm action |
-| `n` / `N` / `Esc` | All confirmation prompts | Abort action |
-| `Esc` | Search / text-input modes | Exit mode |
-| `Enter` | Search mode | Submit search |
-| `Backspace` | Text-input modes | Delete character |
-| Printable chars | Text-input modes (search, comment, branch name, assignee, label) | Character input |
-| `Tab` / `Shift+Tab` / `↑` / `↓` / `Enter` | Autocomplete suggestion lists (assign, label) | Navigate and select suggestions |
-| `Ctrl+D` | Comment / assign submit | Submit multi-line input |
-| `m` / `M` | PR update-branch method picker | Choose merge strategy |
-| `?` / `Esc` | Help overlay | Dismiss overlay |
-| `j` / `k` / `↑` / `↓` / `Enter` / `Esc` | Actions workflow nav panel (when focused) | Navigate the popup list |
-| `j` / `k` / `↑` / `↓` / `Enter` / `Esc` | Alerts category nav panel (when focused) | Navigate the popup list |
+| Key                                       | Where                                                            | Role                            |
+| ----------------------------------------- | ---------------------------------------------------------------- | ------------------------------- |
+| `y` / `Y`                                 | All confirmation prompts                                         | Confirm action                  |
+| `n` / `N` / `Esc`                         | All confirmation prompts                                         | Abort action                    |
+| `Esc`                                     | Search / text-input modes                                        | Exit mode                       |
+| `Enter`                                   | Search mode                                                      | Submit search                   |
+| `Backspace`                               | Text-input modes                                                 | Delete character                |
+| Printable chars                           | Text-input modes (search, comment, branch name, assignee, label) | Character input                 |
+| `Tab` / `Shift+Tab` / `↑` / `↓` / `Enter` | Autocomplete suggestion lists (assign, label)                    | Navigate and select suggestions |
+| `Ctrl+D`                                  | Comment / assign submit                                          | Submit multi-line input         |
+| `m` / `M`                                 | PR update-branch method picker                                   | Choose merge strategy           |
+| `?` / `Esc`                               | Help overlay                                                     | Dismiss overlay                 |
+| `j` / `k` / `↑` / `↓` / `Enter` / `Esc`   | Actions workflow nav panel (when focused)                        | Navigate the popup list         |
+| `j` / `k` / `↑` / `↓` / `Enter` / `Esc`   | Alerts category nav panel (when focused)                         | Navigate the popup list         |

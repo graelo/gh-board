@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency updates** — `iocraft` 0.8 → 0.9.1: element colors now use
+  iocraft's own `Color` type, so `Color::to_crossterm_color` was renamed to
+  `Color::to_iocraft_color` (same mapping, same SGR output); the direct
+  `crossterm` dependency was removed. No functional changes, MSRV unchanged
+  (1.95.0)
+
 ## [0.17.1] - 2026-08-19
 
 ### Changed

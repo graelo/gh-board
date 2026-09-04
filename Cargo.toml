@@ -17,7 +17,6 @@ chrono = { version = "0.4", features = ["serde"] }
 #
 # CLI
 clap = { version = "4", features = ["derive"] }
-crossterm = "0.29"
 #
 # GitHub emoji shortcodes
 gh-emoji = "1"
@@ -27,7 +26,7 @@ http = "1"
 indexmap = { version = "2.14.0", features = ["serde"] }
 #
 # TUI framework
-iocraft = "0.8"
+iocraft = "0.9.1"
 #
 # Cache
 moka = { version = "0.12", features = ["future"] }
@@ -35,11 +34,7 @@ octocrab = "0.54"
 #
 # Markdown
 pulldown-cmark = "0.13"
-rustls = {
-  version = "0.23",
-  default-features = false,
-  features = ["aws_lc_rs"]
-}
+rustls = { version = "0.23", default-features = false, features = ["aws_lc_rs"] }
 #
 # Serialization / Config
 serde = { version = "1", features = ["derive"] }

@@ -41,10 +41,10 @@ impl ActionFeedback {
 
     pub fn color(&self, theme: &ResolvedTheme, depth: ColorDepth) -> Color {
         match self {
-            Self::Success(_) => theme.text_success.to_crossterm_color(depth),
-            Self::Warning(_) => theme.text_warning.to_crossterm_color(depth),
-            Self::Error(_) => theme.text_error.to_crossterm_color(depth),
-            Self::Info(_) => theme.text_primary.to_crossterm_color(depth),
+            Self::Success(_) => theme.text_success.to_iocraft_color(depth),
+            Self::Warning(_) => theme.text_warning.to_iocraft_color(depth),
+            Self::Error(_) => theme.text_error.to_iocraft_color(depth),
+            Self::Info(_) => theme.text_primary.to_iocraft_color(depth),
         }
     }
 }
@@ -95,13 +95,13 @@ impl RenderedFooter {
     ) -> Self {
         let inactive_fg = colors
             .inactive
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
         let text_fg = colors
             .text
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
         let border_fg = colors
             .border
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
         let separator_fg = text_fg;
 
         let (status_text, status_fg) = match status {
@@ -115,7 +115,7 @@ impl RenderedFooter {
             .map(|(v, color)| FooterView {
                 label: v.icon_label(icons),
                 is_active: *v == active_view,
-                color: color.map_or(Color::White, |c| c.to_crossterm_color(depth)),
+                color: color.map_or(Color::White, |c| c.to_iocraft_color(depth)),
             })
             .collect();
 

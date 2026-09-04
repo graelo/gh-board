@@ -49,19 +49,19 @@ impl RenderedTextInput {
     ) -> Self {
         let text_fg = colors
             .text
-            .map_or(Color::White, |c| c.to_crossterm_color(depth));
+            .map_or(Color::White, |c| c.to_iocraft_color(depth));
         let prompt_fg = colors
             .prompt
-            .map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
+            .map_or(Color::Cyan, |c| c.to_iocraft_color(depth));
         let border_fg = colors
             .border
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
         let highlight_fg = colors
             .highlight
-            .map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
+            .map_or(Color::Cyan, |c| c.to_iocraft_color(depth));
         let suggestion_fg = colors
             .suggestion
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
 
         let rendered_suggestions: Vec<RenderedSuggestion> = suggestions
             .iter()

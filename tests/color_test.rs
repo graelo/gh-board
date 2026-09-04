@@ -2,10 +2,10 @@ use gh_board::color::{Color, ColorDepth};
 use gh_board::config::types::AppConfig;
 use gh_board::theme::{Background, ResolvedTheme};
 
-/// Extract the 16-color index from a crossterm color.  Works for both named
+/// Extract the 16-color index from an iocraft color.  Works for both named
 /// color variants (e.g. `Color::Red` → 9) and `AnsiValue(0..15)`.
-fn to_ansi16_index(c: crossterm::style::Color) -> Option<u8> {
-    use crossterm::style::Color as C;
+fn to_ansi16_index(c: iocraft::Color) -> Option<u8> {
+    use iocraft::Color as C;
     match c {
         C::Black => Some(0),
         C::DarkRed => Some(1),
@@ -113,16 +113,16 @@ fn parse_invalid_hex_bad_chars() {
 }
 
 #[test]
-fn to_crossterm_truecolor_hex() {
+fn to_iocraft_truecolor_hex() {
     let c = Color::Hex {
         r: 0xc0,
         g: 0xca,
         b: 0xf5,
     };
-    let ct = c.to_crossterm_color(ColorDepth::TrueColor);
+    let ct = c.to_iocraft_color(ColorDepth::TrueColor);
     assert_eq!(
         ct,
-        crossterm::style::Color::Rgb {
+        iocraft::Color::Rgb {
             r: 0xc0,
             g: 0xca,
             b: 0xf5
@@ -131,31 +131,31 @@ fn to_crossterm_truecolor_hex() {
 }
 
 #[test]
-fn to_crossterm_truecolor_ansi() {
+fn to_iocraft_truecolor_ansi() {
     let c = Color::Ansi256(42);
-    let ct = c.to_crossterm_color(ColorDepth::TrueColor);
-    assert_eq!(ct, crossterm::style::Color::AnsiValue(42));
+    let ct = c.to_iocraft_color(ColorDepth::TrueColor);
+    assert_eq!(ct, iocraft::Color::AnsiValue(42));
 }
 
 #[test]
-fn to_crossterm_256_ansi_passthrough() {
+fn to_iocraft_256_ansi_passthrough() {
     let c = Color::Ansi256(100);
-    let ct = c.to_crossterm_color(ColorDepth::Color256);
-    assert_eq!(ct, crossterm::style::Color::AnsiValue(100));
+    let ct = c.to_iocraft_color(ColorDepth::Color256);
+    assert_eq!(ct, iocraft::Color::AnsiValue(100));
 }
 
 #[test]
-fn to_crossterm_256_hex_approximated() {
+fn to_iocraft_256_hex_approximated() {
     let c = Color::Hex { r: 255, g: 0, b: 0 };
-    let ct = c.to_crossterm_color(ColorDepth::Color256);
+    let ct = c.to_iocraft_color(ColorDepth::Color256);
     // Should be approximated to an ANSI 256 value (not RGB).
-    assert!(matches!(ct, crossterm::style::Color::AnsiValue(_)));
+    assert!(matches!(ct, iocraft::Color::AnsiValue(_)));
 }
 
 #[test]
-fn to_crossterm_16_color() {
+fn to_iocraft_16_color() {
     let c = Color::Ansi256(196); // bright red in 256 palette
-    let ct = c.to_crossterm_color(ColorDepth::Color16);
+    let ct = c.to_iocraft_color(ColorDepth::Color16);
     // Should map to one of the 16 standard colors (named or AnsiValue).
     let n = to_ansi16_index(ct).expect("expected a 16-color value");
     assert!(n < 16, "expected 16-color index, got {n}");
@@ -208,7 +208,7 @@ fn ansi_only_theme_resolves_at_all_depths() {
             ColorDepth::Color256,
             ColorDepth::Color16,
         ] {
-            // Every resolved color should convert to a crossterm color without panic.
+            // Every resolved color should convert to an iocraft color without panic.
             let colors = [
                 theme.text_primary,
                 theme.text_secondary,
@@ -248,7 +248,7 @@ fn ansi_only_theme_resolves_at_all_depths() {
                 theme.syn_name_builtin,
             ];
             for color in colors {
-                let _ct = color.to_crossterm_color(depth);
+                let _ct = color.to_iocraft_color(depth);
             }
         }
     }
@@ -330,12 +330,12 @@ fn mixed_theme_resolves_at_all_depths() {
         ColorDepth::Color16,
     ] {
         // Hex value converted at each depth
-        let ct = theme.text_primary.to_crossterm_color(depth);
+        let ct = theme.text_primary.to_iocraft_color(depth);
         match depth {
             ColorDepth::TrueColor => {
                 assert_eq!(
                     ct,
-                    crossterm::style::Color::Rgb {
+                    iocraft::Color::Rgb {
                         r: 0xc0,
                         g: 0xca,
                         b: 0xf5
@@ -343,7 +343,7 @@ fn mixed_theme_resolves_at_all_depths() {
                 );
             }
             ColorDepth::Color256 => {
-                assert!(matches!(ct, crossterm::style::Color::AnsiValue(_)));
+                assert!(matches!(ct, iocraft::Color::AnsiValue(_)));
             }
             ColorDepth::Color16 => {
                 let n = to_ansi16_index(ct).expect("expected 16-color");
@@ -352,10 +352,10 @@ fn mixed_theme_resolves_at_all_depths() {
         }
 
         // ANSI value should pass through at TrueColor/256, degrade at 16
-        let ct_ansi = theme.text_secondary.to_crossterm_color(depth);
+        let ct_ansi = theme.text_secondary.to_iocraft_color(depth);
         match depth {
             ColorDepth::TrueColor | ColorDepth::Color256 => {
-                assert_eq!(ct_ansi, crossterm::style::Color::AnsiValue(245));
+                assert_eq!(ct_ansi, iocraft::Color::AnsiValue(245));
             }
             ColorDepth::Color16 => {
                 let n = to_ansi16_index(ct_ansi).expect("expected 16-color");
@@ -430,14 +430,13 @@ primary = "#xyz"
 fn hex_degrades_to_16_color_reasonably() {
     // Pure red hex → should degrade to red (ANSI 1 or 9)
     let red = Color::Hex { r: 255, g: 0, b: 0 };
-    let n =
-        to_ansi16_index(red.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    let n = to_ansi16_index(red.to_iocraft_color(ColorDepth::Color16)).expect("expected 16-color");
     assert!(n == 1 || n == 9, "red should map to ANSI 1 or 9, got {n}");
 
     // Pure green hex → should degrade to green (ANSI 2 or 10)
     let green = Color::Hex { r: 0, g: 255, b: 0 };
     let n =
-        to_ansi16_index(green.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+        to_ansi16_index(green.to_iocraft_color(ColorDepth::Color16)).expect("expected 16-color");
     assert!(
         n == 2 || n == 10,
         "green should map to ANSI 2 or 10, got {n}"
@@ -445,8 +444,7 @@ fn hex_degrades_to_16_color_reasonably() {
 
     // Pure blue hex → should degrade to blue (ANSI 4 or 12)
     let blue = Color::Hex { r: 0, g: 0, b: 255 };
-    let n =
-        to_ansi16_index(blue.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    let n = to_ansi16_index(blue.to_iocraft_color(ColorDepth::Color16)).expect("expected 16-color");
     assert!(
         n == 4 || n == 12,
         "blue should map to ANSI 4 or 12, got {n}"
@@ -459,7 +457,7 @@ fn hex_degrades_to_16_color_reasonably() {
         b: 255,
     };
     let n =
-        to_ansi16_index(white.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+        to_ansi16_index(white.to_iocraft_color(ColorDepth::Color16)).expect("expected 16-color");
     assert!(
         n == 7 || n == 15,
         "white should map to ANSI 7 or 15, got {n}"
@@ -470,12 +468,12 @@ fn hex_degrades_to_16_color_reasonably() {
 fn ansi256_degrades_to_16_color() {
     // ANSI 196 (bright red) → should degrade to a red-ish 16-color
     let c = Color::Ansi256(196);
-    let n = to_ansi16_index(c.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    let n = to_ansi16_index(c.to_iocraft_color(ColorDepth::Color16)).expect("expected 16-color");
     assert!(n == 1 || n == 9, "bright red ANSI 196 → got {n}");
 
     // ANSI 46 (bright green) → should degrade to green-ish
     let c = Color::Ansi256(46);
-    let n = to_ansi16_index(c.to_crossterm_color(ColorDepth::Color16)).expect("expected 16-color");
+    let n = to_ansi16_index(c.to_iocraft_color(ColorDepth::Color16)).expect("expected 16-color");
     assert!(n == 2 || n == 10, "bright green ANSI 46 → got {n}");
 }
 
@@ -507,7 +505,7 @@ fn full_ansi_theme_degrades_to_16_without_panic() {
     ];
 
     for color in all_colors {
-        let ct = color.to_crossterm_color(ColorDepth::Color16);
+        let ct = color.to_iocraft_color(ColorDepth::Color16);
         let n = to_ansi16_index(ct).expect("expected 16-color for Color16 degradation");
         assert!(n < 16, "all colors should degrade to 16-color: got {n}");
     }

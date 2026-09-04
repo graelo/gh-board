@@ -46,7 +46,7 @@ impl RenderedMarkdown {
                     line.spans
                         .iter()
                         .map(|span| {
-                            let fg = span.color.to_crossterm_color(depth);
+                            let fg = span.color.to_iocraft_color(depth);
                             let weight = if span.bold {
                                 Weight::Bold
                             } else {

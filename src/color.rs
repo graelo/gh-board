@@ -88,29 +88,29 @@ impl Color {
         }
     }
 
-    /// Convert to a `crossterm::style::Color` at the given terminal color depth.
+    /// Convert to an `iocraft::Color` at the given terminal color depth.
     ///
-    /// For ANSI indices 0–15, we use crossterm's named color variants so that
-    /// the terminal renders them through its user-configured 16-color palette
-    /// (SGR 30–37 / 90–97) rather than the 256-color palette (`38;5;N`), which
-    /// some terminals do **not** map to the customised palette.
-    pub fn to_crossterm_color(self, depth: ColorDepth) -> crossterm::style::Color {
+    /// For ANSI indices 0–15, we use the named 16-color variants so that the
+    /// terminal renders them through its user-configured palette (SGR 30–37 /
+    /// 90–97) rather than the 256-color palette (`38;5;N`), which some
+    /// terminals do **not** map to the customised palette.
+    pub fn to_iocraft_color(self, depth: ColorDepth) -> iocraft::Color {
         match depth {
             ColorDepth::TrueColor => match self {
-                Color::Hex { r, g, b } => crossterm::style::Color::Rgb { r, g, b },
-                Color::Ansi256(n) => ansi_to_crossterm(n),
+                Color::Hex { r, g, b } => iocraft::Color::Rgb { r, g, b },
+                Color::Ansi256(n) => ansi_to_iocraft(n),
             },
             ColorDepth::Color256 => match self {
                 Color::Hex { r, g, b } => {
                     let idx = approximate_ansi256(r, g, b);
-                    crossterm::style::Color::AnsiValue(idx)
+                    iocraft::Color::AnsiValue(idx)
                 }
-                Color::Ansi256(n) => ansi_to_crossterm(n),
+                Color::Ansi256(n) => ansi_to_iocraft(n),
             },
             ColorDepth::Color16 => {
                 let (r, g, b) = self.to_rgb();
                 let idx = approximate_ansi16(r, g, b);
-                ansi_to_crossterm(idx)
+                ansi_to_iocraft(idx)
             }
         }
     }
@@ -166,16 +166,16 @@ impl ColorDepth {
 }
 
 // ---------------------------------------------------------------------------
-// ANSI index → crossterm Color
+// ANSI index → iocraft Color
 // ---------------------------------------------------------------------------
 
-/// Map an ANSI index to a crossterm `Color`.
+/// Map an ANSI index to an `iocraft::Color`.
 ///
-/// Indices 0–15 are mapped to crossterm's named 16-color variants so the
-/// terminal uses its configured palette (SGR 30–37 / 90–97).  Indices 16–255
-/// pass through as `AnsiValue`.
-fn ansi_to_crossterm(n: u8) -> crossterm::style::Color {
-    use crossterm::style::Color;
+/// Indices 0–15 are mapped to the named 16-color variants so the terminal
+/// uses its configured palette (SGR 30–37 / 90–97).  Indices 16–255 pass
+/// through as `AnsiValue`.
+fn ansi_to_iocraft(n: u8) -> iocraft::Color {
+    use iocraft::Color;
     match n {
         0 => Color::Black,
         1 => Color::DarkRed,

@@ -272,7 +272,7 @@ pub enum ResolvedBinding {
 
 use iocraft::prelude::{KeyCode, KeyEventKind, KeyModifiers};
 
-/// Convert a crossterm `KeyEvent` to our canonical key string format.
+/// Convert an iocraft `KeyEvent` to our canonical key string format.
 ///
 /// Examples: `"j"`, `"G"`, `"ctrl+c"`, `"alt+d"`, `"enter"`, `"space"`,
 /// `"delete"`, `"pagedown"`, `"up"`, `"?"`.

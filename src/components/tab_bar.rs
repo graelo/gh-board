@@ -47,13 +47,13 @@ impl RenderedTabBar {
     ) -> Self {
         let active_fg = colors
             .active
-            .map_or(Color::Cyan, |c| c.to_crossterm_color(depth));
+            .map_or(Color::Cyan, |c| c.to_iocraft_color(depth));
         let inactive_fg = colors
             .inactive
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
         let border_fg = colors
             .border
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
 
         let icon_prefix = if icon.is_empty() {
             String::new()

@@ -261,16 +261,16 @@ impl RenderedSidebar {
             });
         let title_fg = colors
             .title
-            .map_or(Color::White, |c| c.to_crossterm_color(depth));
+            .map_or(Color::White, |c| c.to_iocraft_color(depth));
         let border_fg = colors
             .border
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
         let indicator_fg = colors
             .indicator
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
         let thumb_fg = colors
             .thumb
-            .map_or(border_fg, |c| c.to_crossterm_color(depth));
+            .map_or(border_fg, |c| c.to_iocraft_color(depth));
 
         let layout = compute_visual_layout(lines, scroll_offset, visible_lines, width);
 

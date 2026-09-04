@@ -347,21 +347,21 @@ fn build_alert_sidebar_meta(
     SidebarMeta {
         pill_icon: icons.view_alerts.clone(),
         pill_text,
-        pill_bg: pill_bg.to_crossterm_color(depth),
-        pill_fg: theme.pill_fg.to_crossterm_color(depth),
+        pill_bg: pill_bg.to_iocraft_color(depth),
+        pill_fg: theme.pill_fg.to_iocraft_color(depth),
         pill_left: icons.pill_left.clone(),
         pill_right: icons.pill_right.clone(),
         branch_text,
-        branch_fg: theme.pill_branch.to_crossterm_color(depth),
+        branch_fg: theme.pill_branch.to_iocraft_color(depth),
         update_text,
-        update_fg: update_fg.to_crossterm_color(depth),
+        update_fg: update_fg.to_iocraft_color(depth),
         author_login: alert.package_or_rule.clone(),
         role_icon: String::new(),
         role_text: alert.repo.clone(),
-        role_fg: theme.text_role.to_crossterm_color(depth),
-        label_fg: theme.text_secondary.to_crossterm_color(depth),
+        role_fg: theme.text_role.to_iocraft_color(depth),
+        label_fg: theme.text_secondary.to_iocraft_color(depth),
         participants: vec![],
-        participants_fg: theme.text_actor.to_crossterm_color(depth),
+        participants_fg: theme.text_actor.to_iocraft_color(depth),
         labels_text: None,
         assignees_text: None,
         created_text,
@@ -373,14 +373,14 @@ fn build_alert_sidebar_meta(
         lines_added: None,
         lines_deleted: None,
         reactions_text: None,
-        date_fg: theme.text_faint.to_crossterm_color(depth),
-        date_age_fg: theme.text_secondary.to_crossterm_color(depth),
-        additions_fg: theme.text_success.to_crossterm_color(depth),
-        deletions_fg: theme.text_error.to_crossterm_color(depth),
-        separator_fg: theme.md_horizontal_rule.to_crossterm_color(depth),
-        primary_fg: theme.text_primary.to_crossterm_color(depth),
-        actor_fg: theme.text_actor.to_crossterm_color(depth),
-        reactions_fg: theme.text_primary.to_crossterm_color(depth),
+        date_fg: theme.text_faint.to_iocraft_color(depth),
+        date_age_fg: theme.text_secondary.to_iocraft_color(depth),
+        additions_fg: theme.text_success.to_iocraft_color(depth),
+        deletions_fg: theme.text_error.to_iocraft_color(depth),
+        separator_fg: theme.md_horizontal_rule.to_iocraft_color(depth),
+        primary_fg: theme.text_primary.to_iocraft_color(depth),
+        actor_fg: theme.text_actor.to_iocraft_color(depth),
+        reactions_fg: theme.text_primary.to_iocraft_color(depth),
     }
 }
 
@@ -1615,9 +1615,9 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
     let nav_is_open = nav_open.get();
     let nav_is_focused = nav_focused.get();
     let nav_border_color = if nav_is_focused {
-        theme.border_primary.to_crossterm_color(depth)
+        theme.border_primary.to_iocraft_color(depth)
     } else {
-        theme.border_faint.to_crossterm_color(depth)
+        theme.border_faint.to_iocraft_color(depth)
     };
 
     let width = u32::from(props.width);
@@ -1645,11 +1645,11 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                             View(
                                 border_style: BorderStyle::Single,
                                 border_edges: Edges::Bottom,
-                                border_color: theme_nav.border_faint.to_crossterm_color(depth),
+                                border_color: theme_nav.border_faint.to_iocraft_color(depth),
                             ) {
                                 Text(
                                     content: "Categories",
-                                    color: theme_nav.text_primary.to_crossterm_color(depth),
+                                    color: theme_nav.text_primary.to_iocraft_color(depth),
                                     weight: Weight::Bold,
                                     wrap: TextWrap::NoWrap,
                                 )
@@ -1662,7 +1662,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                                     theme_nav.text_secondary
                                 };
                                 let bg = if is_selected {
-                                    theme_nav.bg_selected.to_crossterm_color(depth)
+                                    theme_nav.bg_selected.to_iocraft_color(depth)
                                 } else {
                                     Color::Reset
                                 };
@@ -1679,7 +1679,7 @@ pub fn AlertsView<'a>(props: &AlertsViewProps<'a>, mut hooks: Hooks) -> impl Int
                                 };
                                 element! {
                                     View(key: i, flex_direction: FlexDirection::Row, background_color: bg) {
-                                        Text(content: format!(" {display}"), color: text_color.to_crossterm_color(depth), wrap: TextWrap::NoWrap)
+                                        Text(content: format!(" {display}"), color: text_color.to_iocraft_color(depth), wrap: TextWrap::NoWrap)
                                     }
                                 }.into_any()
                             }))

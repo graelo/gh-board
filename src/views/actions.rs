@@ -364,21 +364,21 @@ fn build_run_sidebar_meta(
     SidebarMeta {
         pill_icon,
         pill_text,
-        pill_bg: pill_bg_app.to_crossterm_color(depth),
-        pill_fg: theme.pill_fg.to_crossterm_color(depth),
+        pill_bg: pill_bg_app.to_iocraft_color(depth),
+        pill_fg: theme.pill_fg.to_iocraft_color(depth),
         pill_left: icons.pill_left.clone(),
         pill_right: icons.pill_right.clone(),
         branch_text,
-        branch_fg: theme.pill_branch.to_crossterm_color(depth),
+        branch_fg: theme.pill_branch.to_iocraft_color(depth),
         update_text: event_info,
-        update_fg: theme.text_secondary.to_crossterm_color(depth),
+        update_fg: theme.text_secondary.to_iocraft_color(depth),
         author_login,
         role_icon: String::new(),
         role_text: String::new(),
         role_fg: Color::Reset,
-        label_fg: theme.text_secondary.to_crossterm_color(depth),
+        label_fg: theme.text_secondary.to_iocraft_color(depth),
         participants: Vec::new(),
-        participants_fg: theme.text_actor.to_crossterm_color(depth),
+        participants_fg: theme.text_actor.to_iocraft_color(depth),
         labels_text: None,
         assignees_text: None,
         created_text,
@@ -389,14 +389,14 @@ fn build_run_sidebar_meta(
         lines_added: None,
         lines_deleted: None,
         reactions_text: None,
-        date_fg: theme.text_faint.to_crossterm_color(depth),
-        date_age_fg: theme.text_secondary.to_crossterm_color(depth),
-        additions_fg: theme.text_success.to_crossterm_color(depth),
-        deletions_fg: theme.text_error.to_crossterm_color(depth),
-        separator_fg: theme.md_horizontal_rule.to_crossterm_color(depth),
-        primary_fg: theme.text_primary.to_crossterm_color(depth),
-        actor_fg: theme.text_actor.to_crossterm_color(depth),
-        reactions_fg: theme.text_primary.to_crossterm_color(depth),
+        date_fg: theme.text_faint.to_iocraft_color(depth),
+        date_age_fg: theme.text_secondary.to_iocraft_color(depth),
+        additions_fg: theme.text_success.to_iocraft_color(depth),
+        deletions_fg: theme.text_error.to_iocraft_color(depth),
+        separator_fg: theme.md_horizontal_rule.to_iocraft_color(depth),
+        primary_fg: theme.text_primary.to_iocraft_color(depth),
+        actor_fg: theme.text_actor.to_iocraft_color(depth),
+        reactions_fg: theme.text_primary.to_iocraft_color(depth),
     }
 }
 
@@ -2433,9 +2433,9 @@ pub fn ActionsView<'a>(
     let nav_is_open = nav_open.get();
     let nav_is_focused = nav_focused.get();
     let nav_border_color = if nav_is_focused {
-        theme.border_primary.to_crossterm_color(depth)
+        theme.border_primary.to_iocraft_color(depth)
     } else {
-        theme.border_faint.to_crossterm_color(depth)
+        theme.border_faint.to_iocraft_color(depth)
     };
 
     let width = u32::from(props.width);
@@ -2463,11 +2463,11 @@ pub fn ActionsView<'a>(
                             View(
                                 border_style: BorderStyle::Single,
                                 border_edges: Edges::Bottom,
-                                border_color: theme_nav.border_faint.to_crossterm_color(depth),
+                                border_color: theme_nav.border_faint.to_iocraft_color(depth),
                             ) {
                                 Text(
                                     content: "Workflows",
-                                    color: theme_nav.text_primary.to_crossterm_color(depth),
+                                    color: theme_nav.text_primary.to_iocraft_color(depth),
                                     weight: Weight::Bold,
                                     wrap: TextWrap::NoWrap,
                                 )
@@ -2489,7 +2489,7 @@ pub fn ActionsView<'a>(
                                     theme_nav.text_secondary
                                 };
                                 let bg = if is_selected {
-                                    theme_nav.bg_selected.to_crossterm_color(depth)
+                                    theme_nav.bg_selected.to_iocraft_color(depth)
                                 } else {
                                     Color::Reset
                                 };
@@ -2505,8 +2505,8 @@ pub fn ActionsView<'a>(
                                 };
                                 element! {
                                     View(key: i, flex_direction: FlexDirection::Row, background_color: bg) {
-                                        Text(content: dot, color: dot_color.to_crossterm_color(depth), wrap: TextWrap::NoWrap)
-                                        Text(content: format!(" {display}"), color: text_color.to_crossterm_color(depth), wrap: TextWrap::NoWrap)
+                                        Text(content: dot, color: dot_color.to_iocraft_color(depth), wrap: TextWrap::NoWrap)
+                                        Text(content: format!(" {display}"), color: text_color.to_iocraft_color(depth), wrap: TextWrap::NoWrap)
                                     }
                                 }.into_any()
                             }))

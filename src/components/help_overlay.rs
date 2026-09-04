@@ -58,16 +58,16 @@ impl RenderedHelpOverlay {
 
         let title_fg = cfg
             .title_color
-            .map_or(Color::White, |c| c.to_crossterm_color(cfg.depth));
+            .map_or(Color::White, |c| c.to_iocraft_color(cfg.depth));
         let key_fg = cfg
             .key_color
-            .map_or(Color::Cyan, |c| c.to_crossterm_color(cfg.depth));
+            .map_or(Color::Cyan, |c| c.to_iocraft_color(cfg.depth));
         let desc_fg = cfg
             .desc_color
-            .map_or(Color::Grey, |c| c.to_crossterm_color(cfg.depth));
+            .map_or(Color::Grey, |c| c.to_iocraft_color(cfg.depth));
         let border_fg = cfg
             .border_color
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(cfg.depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(cfg.depth));
 
         let rendered_groups = groups
             .into_iter()

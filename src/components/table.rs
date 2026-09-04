@@ -203,11 +203,11 @@ impl RenderedTable {
 
         let header_fg = cfg
             .header_color
-            .map_or(Color::White, |c| c.to_crossterm_color(depth));
+            .map_or(Color::White, |c| c.to_iocraft_color(depth));
         let border_fg = cfg
             .border_color
-            .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth));
-        let selected_bg_color = cfg.selected_bg.map(|c| c.to_crossterm_color(depth));
+            .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth));
+        let selected_bg_color = cfg.selected_bg.map(|c| c.to_iocraft_color(depth));
 
         // Build header cells.
         let header_cells: Vec<HeaderCell> = visible_columns
@@ -298,7 +298,7 @@ impl RenderedTable {
             track_height,
             scrollbar_thumb_fg: cfg
                 .scrollbar_thumb_color
-                .map_or(header_fg, |c| c.to_crossterm_color(depth)),
+                .map_or(header_fg, |c| c.to_iocraft_color(depth)),
         }
     }
 }
@@ -533,9 +533,7 @@ fn render_spans(spans: &[Span], depth: ColorDepth) -> Vec<RenderedSpan> {
         .iter()
         .map(|s| RenderedSpan {
             text: s.text.clone(),
-            fg: s
-                .color
-                .map_or(Color::Reset, |c| c.to_crossterm_color(depth)),
+            fg: s.color.map_or(Color::Reset, |c| c.to_iocraft_color(depth)),
             weight: if s.bold { Weight::Bold } else { Weight::Normal },
         })
         .collect()

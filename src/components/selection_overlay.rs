@@ -63,28 +63,28 @@ impl RenderedSelectionOverlay {
             filter_text: cfg.filter_text,
             title_fg: cfg
                 .title_color
-                .map_or(Color::White, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::White, |c| c.to_iocraft_color(depth)),
             item_fg: cfg
                 .item_color
-                .map_or(Color::Grey, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::Grey, |c| c.to_iocraft_color(depth)),
             cursor_fg: cfg
                 .cursor_color
-                .map_or(Color::White, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::White, |c| c.to_iocraft_color(depth)),
             cursor_bg: cfg
                 .selected_bg
-                .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth)),
             border_fg: cfg
                 .border_color
-                .map_or(Color::DarkGrey, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::DarkGrey, |c| c.to_iocraft_color(depth)),
             hint_fg: cfg
                 .hint_color
-                .map_or(Color::Grey, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::Grey, |c| c.to_iocraft_color(depth)),
             filter_prompt_fg: cfg
                 .filter_prompt_color
-                .map_or(Color::Cyan, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::Cyan, |c| c.to_iocraft_color(depth)),
             filter_text_fg: cfg
                 .filter_text_color
-                .map_or(Color::White, |c| c.to_crossterm_color(depth)),
+                .map_or(Color::White, |c| c.to_iocraft_color(depth)),
         }
     }
 }

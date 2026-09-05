@@ -1,0 +1,265 @@
+.TH GH-BOARD 1 "2026-09-05" "gh-board 0.17.2" "User Commands"
+.SH NAME
+gh-board \- GitHub terminal dashboard
+.SH SYNOPSIS
+.B gh-board
+.RI [ OPTIONS ]
+.RI [ URL ]
+.br
+.B gh-board
+.RI [ OPTIONS ]
+.I COMMAND
+.RI [ COMMAND-OPTIONS ]
+.SH DESCRIPTION
+.B gh-board
+is an interactive terminal dashboard for GitHub pull requests, issues,
+notifications, workflow runs, security alerts, and repository branches.
+It uses the repository detected from the current working directory when
+appropriate and can also operate across all configured repositories.
+.PP
+The dashboard is navigated with the keyboard.  Press
+.B ?
+to display contextual help.  Press
+.B 1
+through
+.B 6
+to select a view, or
+.B n
+and
+.B N
+to cycle through views.
+.PP
+A GitHub pull request, issue, or Actions run URL may be supplied directly as a
+shorthand for the
+.B open
+command.  The explicit form is preferred when scripting or documenting a
+command.
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config " " \fIPATH\fR
+Load only the specified TOML configuration file.  This bypasses normal
+configuration-file discovery.
+.TP
+.B \-\-debug
+Enable debug logging and write logs to
+.I ./debug.log
+instead of the normal cache log.
+.TP
+.BR \-h ", " \-\-help
+Print help information.
+.TP
+.BR \-V ", " \-\-version
+Print version information.
+.TP
+.I URL
+A GitHub pull request, issue, or Actions run URL.  This is shorthand for
+.BR "gh-board open URL" .
+.SH COMMANDS
+.SS init
+Initialize a new configuration file interactively.  The wizard generates a
+starter configuration for the current user.
+.SS themes
+List the names of all built-in themes, one per line.
+.SS config
+Show the resolved configuration after all applicable configuration layers have
+been merged.  Values are printed as
+.IR key = value .
+.TP
+.B \-\-show-origin
+Prefix each entry with the source file and a tab, in the form
+.IR file:path " (tab) " key = value .
+.SS open
+Open a GitHub URL directly in its corresponding view.
+.TP
+.I URL
+A pull request, issue, or Actions run URL.  Both github.com and GitHub
+Enterprise hosts are supported.
+.SH CONFIGURATION
+Configuration is written in TOML.  Unless
+.B \-\-config
+is used, files are loaded in this order:
+.IP 1. 3
+Global configuration: the file named by
+.BR $GH_BOARD_CONFIG ,
+then
+.BR $XDG_CONFIG_HOME/gh-board/config.toml ,
+then
+.BR $HOME/.config/gh-board/config.toml .
+.IP 2. 3
+Ancestor configuration: each
+.I gh-board.toml
+or
+.I .gh-board.toml
+between the user's home directory and the Git repository root, from the
+farthest ancestor inward.
+.IP 3. 3
+Project configuration:
+.I gh-board.toml
+or
+.I .gh-board.toml
+at the Git repository root.
+.PP
+Later layers override earlier layers.  Filter lists replace an earlier list
+when the later list is non-empty; repository paths are merged, with closer
+entries taking precedence.  A
+.B theme_file
+may name a built-in theme with the
+.B builtin:
+prefix or point to a theme-only TOML file.  Inline theme settings override
+the theme file.
+.PP
+The example configuration is available at
+.I examples/config.toml
+in the source repository.  See also
+.I FILTERS.md
+for PR, issue, Actions, alerts, and notification filter syntax, and
+.I KEYBINDINGS.md
+for keybinding customization.
+.SH AUTHENTICATION
+Authentication is resolved separately for each GitHub host.  The following
+sources are tried in order:
+.IP 1. 3
+The GitHub CLI command
+.BR "gh auth token --hostname HOST" .
+.IP 2. 3
+The
+.B GH_TOKEN
+environment variable.
+.IP 3. 3
+The
+.B GITHUB_TOKEN
+environment variable.
+.PP
+Install and authenticate the GitHub CLI with
+.BR "gh auth login" ,
+or set one of the token environment variables before starting
+.BR gh-board .
+.SH ENVIRONMENT
+.TP
+.B GH_BOARD_CONFIG
+Path to a global configuration file.  Used when the file exists.
+.TP
+.B XDG_CONFIG_HOME
+Base directory for the global configuration file
+.IR gh-board/config.toml .
+.TP
+.B XDG_CACHE_HOME
+Base directory for the normal log file
+.IR gh-board/gh-board.log .
+If unset, the cache directory defaults to
+.IR $HOME/.cache/gh-board .
+.TP
+.B GH_TOKEN
+GitHub authentication token.  Takes precedence over
+.BR GITHUB_TOKEN ,
+but not over a token returned by the GitHub CLI.
+.TP
+.B GITHUB_TOKEN
+Fallback GitHub authentication token.
+.TP
+.B RUST_LOG
+Tracing filter used for log output.  If unset, the default level is
+.B warn
+or
+.B debug
+when
+.B \-\-debug
+is supplied.
+.SH FILES
+.TP
+.I $HOME/.config/gh-board/config.toml
+Default global configuration file.
+.TP
+.I $XDG_CONFIG_HOME/gh-board/config.toml
+XDG global configuration file.
+.TP
+.I gh-board.toml
+Project or ancestor configuration file.
+.TP
+.I .gh-board.toml
+Alternative project or ancestor configuration filename.
+.TP
+.I $XDG_CACHE_HOME/gh-board/gh-board.log
+Normal warning-and-above log file.
+.TP
+.I ./debug.log
+Debug log file created with
+.BR \-\-debug .
+.TP
+.I ./panic.log
+Panic report written when the fullscreen interface encounters a panic.
+.SH INTERACTIVE CONTROLS
+The default controls include:
+.IP \(bu 2
+.BR j / k
+or the arrow keys to move through items.
+.IP \(bu 2
+.BR h / l
+or the arrow keys to change filter tabs.
+.IP \(bu 2
+.B p
+to toggle the preview pane.
+.IP \(bu 2
+.BR r / R
+to refresh the selected item or current filter.
+.IP \(bu 2
+.B o
+to open the selected item in a browser.
+.IP \(bu 2
+.B q
+to quit.
+.PP
+Keybindings can be replaced or extended in the
+.B [keybindings]
+configuration section.  Custom shell commands may use item template variables
+such as
+.B {{.Url}}
+and
+.B {{.RepoName}}.
+.SH EXAMPLES
+Start the dashboard using discovered configuration:
+.PP
+.RS
+.nf
+gh-board
+.fi
+.RE
+.PP
+Open a pull request directly:
+.PP
+.RS
+.nf
+gh-board open https://github.com/owner/repo/pull/42
+.fi
+.RE
+.PP
+Use a specific configuration file:
+.PP
+.RS
+.nf
+gh-board --config ~/config/gh-board.toml
+.fi
+.RE
+.PP
+Inspect the merged configuration and its origins:
+.PP
+.RS
+.nf
+gh-board config --show-origin
+.fi
+.RE
+.PP
+Run as a GitHub CLI extension:
+.PP
+.RS
+.nf
+gh board
+.fi
+.RE
+.SH SEE ALSO
+.BR gh (1),
+.UR https://github.com/graelo/gh-board
+project documentation
+.UE
+.SH AUTHORS
+Maintained by the gh-board contributors.

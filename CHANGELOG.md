@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Manpage** — `man/gh-board.1` roff manpage covering options, commands,
+  configuration, authentication, environment variables, and interactive
+  controls; `make man` lints it with `mandoc` and it is wired into
+  `make check-all`
+
 ## [0.17.2] - 2026-09-04
 
 ### Changed

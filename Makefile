@@ -7,12 +7,12 @@
 #
 # The check targets mirror .github/workflows/ci-essentials.yml where practical
 # so a green local run predicts a green CI run. They assume their external tools
-# (cargo-nextest, cargo-deny, cargo-pants, convco, poutine, zizmor, rumdl, and
-# cargo-llvm-cov) are already installed locally.
+# (cargo-nextest, cargo-deny, cargo-pants, convco, poutine, zizmor, rumdl,
+# mandoc, and cargo-llvm-cov) are already installed locally.
 
 .DEFAULT_GOAL := help
 
-.PHONY: help fmt lint test check audit commits ci-security md check-all fix \
+.PHONY: help fmt lint test check audit commits ci-security md man check-all fix \
 	release coverage
 
 help:  ## List available targets
@@ -44,7 +44,10 @@ ci-security:  ## audit GitHub Actions workflows
 md:  ## lint Markdown against rumdl.toml
 	rumdl check .
 
-check-all: check audit commits ci-security md  ## pre-PR gate: everything
+man:  ## lint the roff manpage
+	mandoc -Tlint man/gh-board.1
+
+check-all: check audit commits ci-security md man  ## pre-PR gate: everything
 
 fix:  ## auto-fix: rustfmt + clippy --fix
 	cargo fmt --all

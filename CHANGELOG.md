@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.3] - 2026-09-05
+
 ### Added
 
 - **Manpage** — `man/gh-board.1` roff manpage covering options, commands,

@@ -202,10 +202,8 @@ Merge rules (applied at each layer):
 
 ## Development
 
-For local verification, read the [`Makefile`](Makefile) for the canonical task
-definitions, or run `make help` to list them. Run `make check` before pushing
-and `make check-all` before opening a pull request. See [CONTRIBUTING.md] for
-focused testing, code coverage, and demo asset maintenance.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the development setup, the
+verification gates, commit conventions, and code style.
 
 ## Documentation
 
@@ -216,7 +214,10 @@ focused testing, code coverage, and demo asset maintenance.
 | Keybindings             | [`KEYBINDINGS.md`](KEYBINDINGS.md)             |
 | Themes & colors         | [`THEME.md`](THEME.md)                         |
 | Architecture            | [`ARCHITECTURE.md`](ARCHITECTURE.md)           |
+| Coding conventions      | [`CONVENTIONS.md`](CONVENTIONS.md)             |
 | Contributing            | [`CONTRIBUTING.md`](CONTRIBUTING.md)           |
+| Maintainer runbooks     | [`MAINTAINING.md`](MAINTAINING.md)             |
+| Coding-agent briefing   | [`AGENTS.md`](AGENTS.md)                       |
 
 ## Architecture Highlights
 

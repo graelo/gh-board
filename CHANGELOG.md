@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Dependency updates** — `tree-sitter` and `tree-sitter-highlight` 0.26 → 0.27:
+  `Highlighter::highlight` gained a `cancellation_flag` argument (passed `None`).
+  No functional changes, MSRV unchanged (1.95.0)
+
 ## [0.17.3] - 2026-09-05
 
 ### Added

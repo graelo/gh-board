@@ -196,7 +196,7 @@ pub fn highlight_code(
     };
 
     let mut highlighter = Highlighter::new();
-    let Ok(events) = highlighter.highlight(&config, source.as_bytes(), None, |_| None) else {
+    let Ok(events) = highlighter.highlight(&config, source.as_bytes(), None, None, |_| None) else {
         return vec![SyntaxSpan {
             text: source.to_owned(),
             color: theme.md_code_block,

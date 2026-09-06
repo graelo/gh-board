@@ -1,11 +1,12 @@
 # Architecture
 
-Coding conventions and prescriptive rules live in `CONVENTIONS.md`.
-Runtime wiring, module map, and commands live in `CLAUDE.md`.
+This document describes the runtime wiring and module map. Coding conventions
+and prescriptive rules live in [CONVENTIONS.md](CONVENTIONS.md); local
+verification commands live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## Runtime / thread model
+## Runtime and thread model
 
 Two threads, two async runtimes — strictly isolated. No `async_compat` anywhere.
 
@@ -158,3 +159,28 @@ Key boundaries:
   `EngineHandle`, `Request`, `Event`.
 - **`components/`** is `pub(crate)`; views compose it but it knows nothing
   about views, engine, or config.
+
+---
+
+## Theme pipeline
+
+`Color` is `Copy` (`Ansi256 | Hex`), so `Option<Color>` is `Copy` too and merge
+helpers take `&ColorsTheme` by reference.
+
+`config::types::Theme` holds optional fields. `Theme::merge(base, overlay)`
+resolves them — the overlay's `Some` wins — and
+`theme::ResolvedTheme::resolve()` produces the fully concrete struct every
+component renders from. Builtin themes live in `examples/themes/*.toml` and are
+embedded at compile time by `config/builtin_themes.rs`; `theme_file` selects one
+as the base (`builtin:<name>`) or a path, and inline `[theme.*]` tables overlay
+it.
+
+User-facing theme reference: [THEME.md](THEME.md).
+
+---
+
+## Test layout
+
+Integration tests live in `tests/`, with JSON fixtures in `tests/fixtures/`.
+They drive the UI against `engine/stub.rs`, which serves those fixtures instead
+of calling GitHub — no network access in the test suite.

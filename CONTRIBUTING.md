@@ -51,81 +51,34 @@ gh-board --debug                # logs written to debug.log
 LOG_LEVEL=trace gh-board --debug
 ```
 
+## Commit messages
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
+`make commits` (part of `make check-all`) verifies the branch with Convco, and
+the same check runs in CI — non-conforming messages fail the build.
+
+```text
+<type>(<optional scope>): <description>
+```
+
+Common types in this repo: `feat`, `fix`, `refactor`, `docs`, `test`, `build`,
+`chore`, `ci`. Release commits use `build(release): gh-board v<version>`.
+
 ## Code style
 
 - Clippy runs with `-Wclippy::pedantic` (configured in `.cargo/config.toml`).
   Targeted `#[allow]` suppressions exist for `module_name_repetitions`,
   `must_use_candidate`, and `missing_errors_doc`.
-- Prefer editing existing files over creating new ones.
-- Keep changes minimal — don't refactor surrounding code as part of a bug fix.
-
-## Recording demo assets
-
-Demo videos and screenshots live in `demo/` and are recorded with
-[VHS](https://github.com/charmbracelet/vhs).
-
-### Files
-
-| File             | Purpose                                                |
-| ---------------- | ------------------------------------------------------ |
-| `demo/hero.tape` | VHS script — captures a static screenshot (`hero.png`) |
-| `demo/hero.png`  | Static screenshot used as the video poster frame       |
-| `demo/nav.tape`  | VHS script — records the navigation walkthrough        |
-| `demo/nav.gif`   | GIF output of the walkthrough                          |
-| `demo/nav.mp4`   | MP4 output of the walkthrough (embedded in README)     |
-
-### Re-recording
-
-```bash
-# Install VHS: https://github.com/charmbracelet/vhs#installation
-
-# 1. Record the hero screenshot
-vhs demo/hero.tape              # produces demo/hero.png and demo/hero.gif
-
-# 2. Record the navigation walkthrough
-vhs demo/nav.tape               # produces demo/nav.gif and demo/nav.mp4
-```
-
-Both tapes require a working gh-board config with filters that return results.
-Adjust the `Sleep` durations and key presses in the tape files to match your
-data.
-
-### Adding a poster frame
-
-GitHub's video player uses the first frame as its thumbnail. Since the VHS
-recording starts from a blank terminal, prepend the hero screenshot as a
-1-second still frame:
-
-```bash
-ffmpeg -loop 1 -framerate 25 -t 1 -i demo/hero.png \
-  -i demo/nav.mp4 \
-  -filter_complex \
-    "[0:v]format=yuv420p[poster];[1:v]format=yuv420p[main];[poster][main]concat=n=2:v=1:a=0[out]" \
-  -map "[out]" -c:v libx264 -preset medium -crf 18 -movflags +faststart \
-  demo/nav-final.mp4
-
-mv demo/nav-final.mp4 demo/nav.mp4
-```
-
-Verify the first frame:
-
-```bash
-ffmpeg -i demo/nav.mp4 -vframes 1 /tmp/poster-check.png
-open /tmp/poster-check.png
-```
-
-### Updating the README video
-
-The README embeds the video via a GitHub `user-attachments` URL (not a local
-file path). After producing a new `demo/nav.mp4`:
-
-1. Open a GitHub issue or PR comment in the repo
-2. Drag-and-drop `demo/nav.mp4` into the comment box
-3. GitHub processes the upload and inserts a `user-attachments` URL
-4. Copy that URL and replace line 6 of `README.md`
-5. Discard the comment (the uploaded asset persists)
+- Prescriptive rules — view structure, state binding, module visibility — live
+  in [CONVENTIONS.md](CONVENTIONS.md). Read it before adding a view or
+  touching the engine boundary.
 
 ## Project layout
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for the full module map and design
 decisions.
+
+## Maintainer tasks
+
+Releasing and demo-asset recording are documented in
+[MAINTAINING.md](MAINTAINING.md).

@@ -7,11 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.17.4] - 2026-09-15
+
 ### Changed
 
-- **Dependency updates** — `tree-sitter` and `tree-sitter-highlight` 0.26 → 0.27:
-  `Highlighter::highlight` gained a `cancellation_flag` argument (passed `None`).
-  No functional changes, MSRV unchanged (1.95.0)
+- **Dependency updates** — `tree-sitter` and `tree-sitter-highlight` 0.26 →
+    0.27: `Highlighter::highlight` gained a `cancellation_flag` argument (passed
+    `None`); `rustls` bumped to 0.23.45. No functional changes, MSRV unchanged
+    (1.95.0)
+- **CI playbook v1.8** — workflow action digests updated to the v1.8 pins
 
 ## [0.17.3] - 2026-09-05
 

@@ -7,6 +7,15 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Beta/nightly compatibility builds** — the unused `tree-sitter-dockerfile`
+  dependency, declared since the initial commit but never wired into the
+  markdown syntax highlighter, is removed; now that cargo warnings are
+  denied it failed the beta and nightly clippy runs. The crate cannot be
+  wired in cleanly anyway: it only ships tree-sitter 0.20 bindings and does
+  not export a highlights query
+
 ### Changed
 
 - **Homebrew tap trust** — the release workflow now runs `brew trust --tap`

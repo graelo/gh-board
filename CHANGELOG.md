@@ -17,6 +17,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
   `target:` instead of `targets:`); the now-unneeded `.github/zizmor.yml`
   superfluous-actions suppression was removed along with its paths-filter
   entry, and the poutine skip purl was updated to the new action
+- **Local cargo warnings denied** — `.cargo/config.toml` now sets
+  `[build] warnings = "deny"` so local builds deny cargo warnings (e.g.
+  `cargo::unused_dependencies`) the same way CI does via
+  `actions-rust-lang/setup-rust-toolchain`
 
 ## [0.17.4] - 2026-09-15
 

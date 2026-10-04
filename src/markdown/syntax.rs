@@ -133,6 +133,12 @@ fn config_for_language(lang: &str) -> Option<HighlightConfiguration> {
             "",
             "",
         ),
+        "dockerfile" | "docker" | "containerfile" => (
+            tree_sitter_containerfile::LANGUAGE.into(),
+            tree_sitter_containerfile::HIGHLIGHTS_QUERY,
+            tree_sitter_containerfile::INJECTIONS_QUERY,
+            "",
+        ),
         "c" => (
             tree_sitter_c::LANGUAGE.into(),
             tree_sitter_c::HIGHLIGHT_QUERY,
@@ -261,6 +267,21 @@ mod tests {
     }
 
     #[test]
+    fn highlight_dockerfile_code() {
+        let theme = test_theme();
+        let code = "FROM rust:1.95 AS build\nRUN cargo build --release\nCMD [\"./app\"]\n";
+        let spans = highlight_code(code, "dockerfile", &theme, ColorDepth::TrueColor);
+        assert!(!spans.is_empty());
+
+        let full_text: String = spans.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(full_text, code);
+
+        // Keywords like FROM/RUN must not keep the plain code-block color.
+        let from_span = spans.iter().find(|s| s.text.contains("FROM")).unwrap();
+        assert_ne!(from_span.color, theme.md_code_block);
+    }
+
+    #[test]
     fn unsupported_language_returns_plain() {
         let theme = test_theme();
         let code = "some exotic code";
@@ -284,6 +305,9 @@ mod tests {
             "toml",
             "html",
             "css",
+            "dockerfile",
+            "docker",
+            "containerfile",
             "c",
             "cpp",
             "java",

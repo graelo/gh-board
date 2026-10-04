@@ -7,6 +7,37 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Dockerfile syntax highlighting** — markdown code blocks tagged
+  `dockerfile`, `docker`, or `containerfile` are now highlighted via the
+  maintained `tree-sitter-containerfile` grammar (WharfLab), which ships
+  modern tree-sitter bindings and a highlights query
+
+### Changed
+
+- **Homebrew tap trust** — the release workflow now runs `brew trust --tap`
+  before tapping the formula repo, instead of `brew trust` after Homebrew
+  has already evaluated it (follow-up to the 0.17.1 `brew trust` addition)
+- **CI playbook v1.9** — `dtolnay/rust-toolchain` replaced with
+  `actions-rust-lang/setup-rust-toolchain` v2.0.0 (SHA-pinned, `cache: false`,
+  `target:` instead of `targets:`); the now-unneeded `.github/zizmor.yml`
+  superfluous-actions suppression was removed along with its paths-filter
+  entry, and the poutine skip purl was updated to the new action
+- **Local cargo warnings denied** — `.cargo/config.toml` now sets
+  `[build] warnings = "deny"` so local builds deny cargo warnings (e.g.
+  `cargo::unused_dependencies`) the same way CI does via
+  `actions-rust-lang/setup-rust-toolchain`
+
+### Fixed
+
+- **Beta/nightly compatibility builds** — the unused `tree-sitter-dockerfile`
+  dependency, declared since the initial commit but never wired into the
+  markdown syntax highlighter, is removed; now that cargo warnings are
+  denied it failed the beta and nightly clippy runs. The crate cannot be
+  wired in cleanly anyway: it only ships tree-sitter 0.20 bindings and does
+  not export a highlights query
+
 ## [0.17.4] - 2026-09-15
 
 ### Changed

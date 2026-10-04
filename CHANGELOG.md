@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-04
+
 ### Added
 
 - **Dockerfile syntax highlighting** — markdown code blocks tagged
@@ -568,7 +570,10 @@ project adheres to [Semantic Versioning](https://semver.org/).
 Initial release — terminal dashboard for GitHub pull requests, issues, and
 notifications with configurable filters, themes, and keybindings.
 
-[Unreleased]: https://github.com/graelo/gh-board/compare/v0.17.2...HEAD
+[Unreleased]: https://github.com/graelo/gh-board/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/graelo/gh-board/compare/v0.17.4...v0.18.0
+[0.17.4]: https://github.com/graelo/gh-board/compare/v0.17.3...v0.17.4
+[0.17.3]: https://github.com/graelo/gh-board/compare/v0.17.2...v0.17.3
 [0.17.2]: https://github.com/graelo/gh-board/compare/v0.17.1...v0.17.2
 [0.17.1]: https://github.com/graelo/gh-board/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/graelo/gh-board/compare/v0.16.0...v0.17.0

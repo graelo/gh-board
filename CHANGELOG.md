@@ -7,6 +7,17 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Homebrew tap trust** — the release workflow now runs `brew trust --tap`
+  before tapping the formula repo, instead of `brew trust` after Homebrew
+  has already evaluated it (follow-up to the 0.17.1 `brew trust` addition)
+- **CI playbook v1.9** — `dtolnay/rust-toolchain` replaced with
+  `actions-rust-lang/setup-rust-toolchain` v2.0.0 (SHA-pinned, `cache: false`,
+  `target:` instead of `targets:`); the now-unneeded `.github/zizmor.yml`
+  superfluous-actions suppression was removed along with its paths-filter
+  entry, and the poutine skip purl was updated to the new action
+
 ## [0.17.4] - 2026-09-15
 
 ### Changed

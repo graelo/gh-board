@@ -7,6 +7,14 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Bump `rustls` 0.23.45 → 0.23.46, fixing RUSTSEC-2026-0346 (TLS secrets
+  exposed via `Debug` impls of client session values), RUSTSEC-2026-0347
+  (buffered application data sent to the outer server after ECH rejection)
+  and RUSTSEC-2026-0348 (Brotli certificate decompression can allocate up
+  to 1 GiB before authentication)
+
 ## [0.18.0] - 2026-10-04
 
 ### Added

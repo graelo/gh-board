@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-10-15
+
 ### Security
 
 - Bump `rustls` 0.23.45 → 0.23.46, fixing RUSTSEC-2026-0346 (TLS secrets
@@ -14,6 +16,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
   (buffered application data sent to the outer server after ECH rejection)
   and RUSTSEC-2026-0348 (Brotli certificate decompression can allocate up
   to 1 GiB before authentication)
+
+### Changed
+
+- **Dependency updates** — Renovate patch sweep across `Cargo.lock` (no
+  minor/major bumps, no functional changes, MSRV unchanged 1.95.0)
+- **CI** — pinned workflow action digests refreshed (upload/download-artifact
+  v7/v8 patch bumps, taiki-e/install-action, renovatebot/github-action)
 
 ## [0.18.0] - 2026-10-04
 

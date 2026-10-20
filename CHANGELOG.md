@@ -7,6 +7,18 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Bump `rustls-webpki` 0.103.15 → 0.103.16, fixing RUSTSEC-2026-0382
+  (certificate verification may accept certificate paths containing distrusted
+  emSign intermediates, whose private keys are now well known)
+
+### Changed
+
+- Dropped stale `advisories.ignore` entries from `deny.toml` —
+  `RUSTSEC-2023-0071` (rsa) and the commented `RUSTSEC-2020-0071` (time 0.1
+  via chrono) no longer match any crate in the dependency tree
+
 ## [0.18.1] - 2026-10-15
 
 ### Security

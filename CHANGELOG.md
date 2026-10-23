@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.3] - 2026-10-23
+
 ### Security
 
 - Bump `tokio` 1.53.2 → 1.53.3, fixing RUSTSEC-2026-0386 (`AsyncFd::new` and

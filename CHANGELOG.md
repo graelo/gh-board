@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Bump `tokio` 1.53.2 → 1.53.3, fixing RUSTSEC-2026-0386 (`AsyncFd::new` and
+  related constructors accept any `T: AsRawFd` without ownership or validity,
+  violating I/O safety)
+
 ## [0.18.2] - 2026-10-21
 
 ### Security

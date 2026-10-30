@@ -7,6 +7,12 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+
+- Bump `pulldown-cmark` 0.13.4 → 0.13.6, fixing RUSTSEC-2026-0414 (a wikilink
+  with a pipe separator and empty display text, such as `[[a|]]`, leaks its
+  child node's sibling chain, yielding exponentially many parser events)
+
 ## [0.18.3] - 2026-10-23
 
 ### Security

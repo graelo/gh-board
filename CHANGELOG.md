@@ -7,6 +7,8 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.18.4] - 2026-10-30
+
 ### Security
 
 - Bump `pulldown-cmark` 0.13.4 → 0.13.6, fixing RUSTSEC-2026-0414 (a wikilink

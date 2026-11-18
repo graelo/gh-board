@@ -20,6 +20,7 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # A list of advisory IDs to ignore. Note that ignored advisories will still
 # output a note when they are encountered.
 ignore = [
+  "RUSTSEC-2026-0543", # chrono is unmaintained - accepted until a replacement lands; future chrono CVEs get their own advisory IDs
 ]
 # Threshold for security vulnerabilities, any vulnerability with a CVSS score
 # lower than the range specified will be ignored. Note that ignored advisories

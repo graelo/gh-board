@@ -7,6 +7,13 @@ project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Ignored `RUSTSEC-2026-0543` in `deny.toml` — `chrono` is unmaintained at all
+  versions; accepted for now since it is both a direct dependency and pulled in
+  by `octocrab`. The ignore is scoped to that advisory ID, so any future
+  `chrono` vulnerability advisory still fails the checks.
+
 ## [0.18.4] - 2026-10-30
 
 ### Security
